@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     s3_secure: bool = False
 
     # Runtime
-    runner: str = "docker"  # docker | local
+    runner: str = "docker"  # docker | launcher | local
     work_root: Path = Path("/var/lib/prsec/work")
     skills_dir: Path = Path("/var/lib/prsec/skills/current")
     skills_version: str = "dev"
@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     worker_concurrency: int = 4
     reconcile_interval_s: int = 900
     admin_token: str = ""  # X-PRSec-Admin for POST /scans; empty disables the route
+
+    # Workbench launcher (runner "launcher"): the only service with the Docker socket.
+    launcher_url: str = "http://launcher:8090"
+    launcher_token: str = ""  # shared bearer token between worker and launcher
 
 
 @lru_cache

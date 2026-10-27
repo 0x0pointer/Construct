@@ -31,6 +31,7 @@ dev = ["pytest>=8", "pytest-asyncio>=0.24", "pytest-cov>=7", "respx>=0.21"]
 prsec-api = "prsec.api.main:run"
 prsec-worker = "prsec.orchestrator.worker:main"
 prsec-dashboard = "prsec.dashboard.main:run"
+prsec-launcher = "prsec.launcher.main:run"
 prsec-stage = "prsec.sandbox.entrypoint.main:main"
 prsec-cite = "prsec.sandbox.cli.cite:main"
 prsec-skills-lint = "prsec.skills_lint:main"

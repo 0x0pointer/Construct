@@ -167,15 +167,20 @@ It is enabled by setting `PRSEC_ADMIN_TOKEN`.
 
 Notes on the compose stack:
 
-- **The Docker socket** is mounted into `worker` only. It is root-equivalent on the VM.
-  This is accepted for the MVP because PR code runs in workbenches without the socket.
-  Harden it with a docker-socket-proxy or rootless Docker; the risk goes away with K8sRunner.
-- **The worker mounts `work`, `skills` and `harness` at the same absolute host path**
-  (`PRSEC_HOST_ROOT`). This is needed because DockerRunner bind-mounts them into
-  workbenches through the host daemon.
-- **Per-scan networks** (`prsec-scan-<id>`, internal) are created by the worker. The
-  worker attaches the fixed-name `prsec-llm-gateway` container to each one, with the
-  alias `llm-gateway`.
+- **The Docker socket** is mounted into the `launcher` service only. The socket is
+  root-equivalent on the VM, so the launcher is kept as small as possible: it holds no
+  database, object store, GitHub or LLM credentials, sits alone on the internal `launcher`
+  network with the worker, and requires `PRSEC_LAUNCHER_TOKEN` on every call. It builds each
+  workbench itself from a fixed recipe (`prsec/launcher/main.py`) and refuses anything else:
+  images not named in `policy.yaml`, host paths outside the work, skills and harness
+  directories, other networks, other commands. A compromised worker can only start the
+  workbenches it could start anyway. The worker has no socket at all.
+- **The worker and launcher mount `work`, `skills` and `harness` at the same absolute host
+  path** (`PRSEC_HOST_ROOT`). This is needed because workbenches bind-mount them through the
+  host daemon.
+- **Per-scan networks** (`prsec-scan-<id>`, internal) are created by the launcher. It
+  attaches the fixed-name `prsec-llm-gateway` container to each one, with the alias
+  `llm-gateway`.
 - **The gateway has its own Postgres** (`llm-gateway-db`) on an internal network that only
   the gateway joins. It is separate from the prsec database.
 - **MinIO** uses Chainguard's image, pinned by digest, because upstream stopped publishing
@@ -188,7 +193,8 @@ Notes on the compose stack:
 GitHub ──webhook──► caddy ─/webhooks/*─► api (HMAC verify → ScanRequest → Postgres queue)
                       └── everything else ─► oauth2-proxy (OIDC) ─► dashboard
                                                                          │
- worker ── lease from queue (FOR UPDATE SKIP LOCKED) ── per stage: DockerRunner
+ worker ── lease from queue (FOR UPDATE SKIP LOCKED) ── per stage: ask the launcher
+   │         launcher (only holder of the Docker socket, fixed container recipe)
    │         └── per-scan internal network prsec-scan-<id>:
    │               [workbench: prsec-stage + harness volume + skills + PR source]
    │               └── only reachable host: prsec-llm-gateway (LiteLLM)
@@ -221,7 +227,7 @@ These are the main ideas. The approved architecture plan has the full rationale.
 | `prsec/policy/policy.yaml` | central scan policy (harness + model per stage, budgets, experiments, per-repo overrides) |
 | `prsec-skills/` | the methodology (SKILL.md skills), its own repo in production |
 | `deploy/compose/` | single-VM stack: `docker-compose.yml`, `caddy/Caddyfile`, `litellm/config.yaml` + `prsec_hooks.py` |
-| `images/prsec/` | service image (`prsec-api`, `prsec-worker`, `prsec-dashboard`) |
+| `images/prsec/` | service image (`prsec-api`, `prsec-worker`, `prsec-launcher`, `prsec-dashboard`) |
 | `images/workbench-base/` | workbench image: Ubuntu 24.04, toolchains (mise: node, python, go, temurin), `prsec-stage`; **no harness CLIs** |
 | `images/harness/build.sh` | builds a self-contained harness volume |
 | `tests/` | unit tests; `-m db` needs Postgres, `-m docker` a Docker daemon |

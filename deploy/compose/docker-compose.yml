@@ -4,8 +4,9 @@
 #
 # Only caddy publishes ports. Everything else talks over the `control` network.
 # Per-scan workbench networks (prsec-scan-<id>, internal) are created at runtime by the
-# worker through the Docker API; the worker attaches `prsec-llm-gateway` to each one so
-# the gateway is the only thing a workbench can reach.
+# launcher through the Docker API; it attaches `prsec-llm-gateway` to each one so the
+# gateway is the only thing a workbench can reach. The launcher is the only service with
+# the Docker socket; the worker asks it to run workbenches over the private `launcher` network.
 
 name: prsec
 
@@ -153,7 +154,10 @@ services:
     command: ["prsec-worker"]
     environment:
       <<: *prsec-env
-      PRSEC_RUNNER: docker
+      # No Docker socket here: workbenches are started by the launcher service.
+      PRSEC_RUNNER: launcher
+      PRSEC_LAUNCHER_URL: http://launcher:8090
+      PRSEC_LAUNCHER_TOKEN: ${PRSEC_LAUNCHER_TOKEN:?set PRSEC_LAUNCHER_TOKEN}
       PRSEC_GATEWAY_URL: http://llm-gateway:4000
       PRSEC_GATEWAY_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY}
       PRSEC_WORK_ROOT: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/work
@@ -164,21 +168,10 @@ services:
       PRSEC_WORKER_CONCURRENCY: ${PRSEC_WORKER_CONCURRENCY:-4}
       PRSEC_RECONCILE_INTERVAL_S: ${PRSEC_RECONCILE_INTERVAL_S:-900}
     secrets: [github_app_key]
-    # Docker group of the host socket, so the non-root worker can use the Docker API.
-    group_add: ["${DOCKER_GID:-999}"]
     volumes:
       - *policy-mount
-      # RISK: the Docker socket is root-equivalent on this VM. Anyone who controls the
-      # worker process (or a dependency of it) controls the host. Accepted for the MVP
-      # because PR code never runs in this container (it runs in per-scan workbenches
-      # without the socket). Mitigations: keep the worker image minimal, never mount the
-      # socket anywhere else, consider a docker-socket-proxy limited to
-      # containers/networks/images, or rootless Docker. Goes away with K8sRunner.
-      - type: bind
-        source: /var/run/docker.sock
-        target: /var/run/docker.sock
-      # DockerRunner bind-mounts these dirs into workbenches by HOST path, through the
-      # host daemon, so they must appear at the SAME absolute path in here.
+      # The launcher bind-mounts these dirs into workbenches by HOST path, so worker and
+      # launcher must see them at the SAME absolute path as the host.
       - type: bind
         source: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/work
         target: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/work
@@ -190,12 +183,56 @@ services:
         source: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/harness
         target: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/harness
         read_only: true
-    networks: [control]
+    networks: [control, launcher]
     depends_on:
       migrate: { condition: service_completed_successfully }
       llm-gateway: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
+      launcher: { condition: service_healthy }
     stop_grace_period: 60s  # let in-flight stages finish their heartbeat / lease release
+
+  launcher:
+    <<: [*prsec-image, *restart, *logging]
+    command: ["prsec-launcher"]
+    environment:
+      PRSEC_LAUNCHER_PORT: "8090"
+      PRSEC_LAUNCHER_TOKEN: ${PRSEC_LAUNCHER_TOKEN:?set PRSEC_LAUNCHER_TOKEN}
+      # Images are allowed only if the AppSec policy names them (workbench_image + repo overrides).
+      PRSEC_POLICY_PATH: /etc/prsec/policy.yaml
+      PRSEC_WORK_ROOT: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/work
+      PRSEC_SKILLS_DIR: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/skills/current
+      PRSEC_HARNESS_ROOT: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/harness
+    # Docker group of the host socket, so the non-root launcher can use the Docker API.
+    group_add: ["${DOCKER_GID:-999}"]
+    volumes:
+      - *policy-mount
+      # RISK: the Docker socket is root-equivalent on this VM. It lives only here: a small
+      # service with no database, SCM or LLM credentials, reachable only by the worker over
+      # the internal `launcher` network with a bearer token, which only starts workbenches
+      # from a fixed recipe (prsec/launcher/main.py). Goes away entirely with K8sRunner.
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      - type: bind
+        source: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/work
+        target: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/work
+      - type: bind
+        source: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/skills
+        target: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/skills
+        read_only: true
+      - type: bind
+        source: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/harness
+        target: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/harness
+        read_only: true
+    networks: [launcher]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:size=64m"]  # NOSONAR(S5443) private per-container tmpfs
+    healthcheck:
+      <<: *http-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=3)"]
+    stop_grace_period: 60s
 
   dashboard:
     <<: [*prsec-image, *restart, *logging]
@@ -314,6 +351,9 @@ services:
 networks:
   control:
     name: prsec-control
+  launcher:
+    name: prsec-launcher
+    internal: true
   gateway-db:
     name: prsec-gateway-db
     internal: true

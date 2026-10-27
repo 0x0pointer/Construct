@@ -29,7 +29,7 @@ def services(compose: dict) -> dict:
 
 def test_expected_services(services: dict) -> None:
     assert {
-        "caddy", "oauth2-proxy", "api", "worker", "dashboard", "postgres",
+        "caddy", "oauth2-proxy", "api", "worker", "launcher", "dashboard", "postgres",
         "minio", "minio-init", "llm-gateway", "llm-gateway-db", "migrate",
     } <= set(services)
 
@@ -77,24 +77,43 @@ def test_provider_keys_only_in_gateway(services: dict) -> None:
         assert has == (name == "llm-gateway"), name
 
 
-def test_worker_mounts_host_paths_identically(services: dict) -> None:
-    worker = services["worker"]
-    binds = [v for v in worker["volumes"] if isinstance(v, dict)]
-    assert any(v["source"] == "/var/run/docker.sock" for v in binds)
+@pytest.mark.parametrize("name", ["worker", "launcher"])
+def test_host_paths_mounted_identically(services: dict, name: str) -> None:
+    binds = [v for v in services[name]["volumes"] if isinstance(v, dict)]
     for sub in ("work", "skills", "harness"):
         (bind,) = [v for v in binds if v["target"].endswith(f"/{sub}")]
         assert bind["source"] == bind["target"], sub
-    env = worker["environment"]
-    assert env["PRSEC_RUNNER"] == "docker"
-    assert env["PRSEC_GATEWAY_URL"] == "http://llm-gateway:4000"
+    env = services[name]["environment"]
     assert env["PRSEC_WORK_ROOT"].endswith("/work")
     assert env["PRSEC_HARNESS_ROOT"].endswith("/harness")
 
 
-def test_docker_socket_only_in_worker(services: dict) -> None:
+def test_worker_uses_launcher(services: dict) -> None:
+    env = services["worker"]["environment"]
+    assert env["PRSEC_RUNNER"] == "launcher"
+    assert env["PRSEC_LAUNCHER_URL"] == "http://launcher:8090"
+    assert env["PRSEC_GATEWAY_URL"] == "http://llm-gateway:4000"
+    assert "group_add" not in services["worker"]
+
+
+def test_docker_socket_only_in_launcher(services: dict) -> None:
     for name, svc in services.items():
         vols = yaml.safe_dump(svc.get("volumes") or [])
-        assert ("docker.sock" in vols) == (name == "worker"), name
+        assert ("docker.sock" in vols) == (name == "launcher"), name
+
+
+def test_launcher_is_isolated(compose: dict, services: dict) -> None:
+    launcher = services["launcher"]
+    assert launcher["networks"] == ["launcher"]
+    assert compose["networks"]["launcher"]["internal"] is True
+    joined = sorted(n for n, s in services.items() if "launcher" in (s.get("networks") or []))
+    assert joined == ["launcher", "worker"]
+    assert "${PRSEC_LAUNCHER_TOKEN:?" in launcher["environment"]["PRSEC_LAUNCHER_TOKEN"]
+    # no database, object store, SCM or gateway credentials next to the socket
+    assert not any(k.startswith(("PRSEC_DATABASE", "PRSEC_S3", "PRSEC_GITHUB", "PRSEC_GATEWAY")) for k in launcher["environment"])
+    assert "secrets" not in launcher
+    assert launcher["read_only"] is True
+    assert launcher["cap_drop"] == ["ALL"]
 
 
 def test_minio_healthcheck_uses_mc_ready(services: dict) -> None:

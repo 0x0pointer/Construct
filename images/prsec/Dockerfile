@@ -17,7 +17,8 @@ ENV PATH=/opt/prsec/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PRSEC_API_HOST=0.0.0.0 \
-    PRSEC_DASHBOARD_HOST=0.0.0.0
+    PRSEC_DASHBOARD_HOST=0.0.0.0 \
+    PRSEC_LAUNCHER_HOST=0.0.0.0
 # uid/gid 10001 matches the workbench 'agent' user so files in the shared host work dir
 # have one owner across worker and workbenches.
 RUN groupadd --system --gid 10001 prsec \
@@ -25,5 +26,5 @@ RUN groupadd --system --gid 10001 prsec \
 COPY --from=build /opt/prsec /opt/prsec
 USER prsec
 WORKDIR /home/prsec
-EXPOSE 8080 8081
+EXPOSE 8080 8081 8090
 CMD ["prsec-api"]
