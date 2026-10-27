@@ -32,9 +32,7 @@ def get_order(order_id):
 @login_required
 def search_orders():
     q = request.args.get("q", "")
-    like_q = f"%{q}%"
     rows = db().execute(
-        "SELECT id, note, total FROM orders WHERE user_id = ? AND note LIKE ?",
-        (g.user_id, like_q),
+        f"SELECT id, note, total FROM orders WHERE user_id = {g.user_id} AND note LIKE '%{q}%'"
     ).fetchall()
     return jsonify([dict(r) for r in rows])
