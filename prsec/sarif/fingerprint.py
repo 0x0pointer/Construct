@@ -21,18 +21,16 @@ from pathlib import PurePosixPath
 VERSION = "prsec/v1"
 
 _HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE", "CONNECT", "ANY", "ALL"}
-_PARAM_SEGMENT = re.compile(
-    r"""^(
-        :[^/]+                      # :id
-      | \{[^/]*\}                   # {id} / {id:int}
-      | <[^/]*>                     # <int:id> (flask)
-      | \[[^/]*\]                   # [id] (next.js)
-      | \d+                         # 123
-      | [0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}  # uuid
-      | [0-9a-fA-F]{24,}            # object ids / hashes
-    )$""",
-    re.VERBOSE,
+# A path segment that is a parameter, not a literal. Split into a few patterns, each kept simple.
+_PARAM_SEGMENTS = (
+    re.compile(r"^(?::[^/]+|\{[^/]*\}|<[^/]*>|\[[^/]*\])$"),  # :id, {id} / {id:int}, <int:id> (flask), [id] (next.js)
+    re.compile(r"^(?:\d+|[0-9a-fA-F]{24,})$"),  # 123, object ids / hashes
+    re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"),  # uuid
 )
+
+
+def _is_param_segment(segment: str) -> bool:
+    return any(p.match(segment) for p in _PARAM_SEGMENTS)
 
 
 def normalise_file(path: str) -> str:
@@ -77,7 +75,7 @@ def normalise_entry_point(entry_point: str | None) -> str:
 def _normalise_route(route: str) -> str:
     path = route.split(" ", 1)[0].split("?", 1)[0].split("#", 1)[0]
     segs = [s for s in path.split("/") if s]
-    out = ["{}" if _PARAM_SEGMENT.match(s) else s for s in segs]
+    out = ["{}" if _is_param_segment(s) else s for s in segs]
     return "/" + "/".join(out)
 
 

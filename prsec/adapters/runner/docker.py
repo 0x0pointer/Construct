@@ -38,6 +38,24 @@ def harness_mount(harness: str) -> str:
     return f"/opt/harness/{harness}/current"
 
 
+def _give_to_nonroot(d: Path, uid_remapped: bool) -> None:
+    """Make a bind-mounted dir writable for the container's NONROOT uid.
+
+    A root runner on a plain daemon chowns the dir to NONROOT, so it never has to be world-writable.
+    A runner that cannot chown (non-root with PRSEC_DOCKER_USER=NONROOT), or a daemon that remaps
+    uids (userns-remap / rootless, where container 65532 is a different host uid), falls back to a
+    world-writable dir as before; the dir is a fresh per-task dir under the private work root.
+    """
+    if not uid_remapped:
+        uid, gid = (int(x) for x in NONROOT.split(":"))
+        try:
+            os.chown(d, uid, gid)
+            return
+        except PermissionError:
+            log.info("cannot chown %s to %s; making it world-writable instead", d, NONROOT)
+    os.chmod(d, 0o777)  # NOSONAR(S2612) fallback only: see the docstring for why chown cannot work here
+
+
 class DockerRunner:
     name = "docker"
 
@@ -128,7 +146,8 @@ class DockerRunner:
             "HOME": home,
             "XDG_CONFIG_HOME": f"{home}/.config",
             "XDG_CACHE_HOME": f"{home}/.cache",
-            "TMPDIR": "/tmp",
+            # '/tmp' is inside the container: the per-container tmpfs below, never a shared host dir.
+            "TMPDIR": "/tmp",  # NOSONAR(S5443)
             "PRSEC_CITE_ROOT": t.workdir,
         }
         if spec.harness_volume:
@@ -147,7 +166,7 @@ class DockerRunner:
             "cap_drop": ["ALL"],
             "security_opt": ["no-new-privileges:true"],
             "read_only": True,
-            "tmpfs": {"/tmp": f"rw,nosuid,nodev,size={self.tmp_size},mode=1777"},
+            "tmpfs": {"/tmp": f"rw,nosuid,nodev,size={self.tmp_size},mode=1777"},  # NOSONAR(S5443) private per-container tmpfs
             "pids_limit": self.pids_limit,
             "mem_limit": self.mem_limit,
             "memswap_limit": self.mem_limit,
@@ -165,11 +184,21 @@ class DockerRunner:
             kw["runtime"] = self.runtime
         return kw
 
+    def _uid_remapped(self) -> bool:
+        """True when the daemon maps container uids to other host uids (userns-remap or rootless)."""
+        try:
+            opts = self.client.info().get("SecurityOptions")
+        except Exception:  # unreachable daemon: run_container fails right after with the real error
+            return False
+        return isinstance(opts, list) and any("name=userns" in o or "name=rootless" in o for o in opts if isinstance(o, str))
+
     def _prepare_dirs(self, spec: WorkbenchSpec) -> None:
+        nonroot = self._user() == NONROOT
+        remapped = nonroot and self._uid_remapped()
         for d in (Path(spec.in_dir), Path(spec.out_dir), Path(spec.out_dir) / ".home"):
             d.mkdir(parents=True, exist_ok=True)
-            if self._user() == NONROOT:
-                os.chmod(d, 0o777)
+            if nonroot:
+                _give_to_nonroot(d, remapped)
 
     def run_container(self, spec: WorkbenchSpec, command: list[str], timeout_s: float,
                       entrypoint: list[str] | None = None) -> tuple[int | None, str, bool]:

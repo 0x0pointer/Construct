@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
@@ -27,7 +26,7 @@ MAX_TOKENS = 16_000
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 ANTHROPIC_DEFAULT_MODEL = "claude-opus-5-5"
-_FENCE = re.compile(r"^\s*```(?:json)?\s*\n(.*?)\n\s*```\s*$", re.S)
+_FENCE = "```"
 
 RAW_NOTE = """
 
@@ -56,8 +55,30 @@ def _inside(path: Path, root: Path) -> bool:
 
 
 def _strip_fences(text: str) -> str:
-    m = _FENCE.match(text)
-    return m.group(1) if m else text.strip()
+    """The body of a reply wrapped in one ``` / ```json fence, else the stripped text.
+
+    Plain string scanning (linear time) with the semantics of the regex
+    ^\\s*```(?:json)?\\s*\\n(.*?)\\n\\s*```\\s*$ (re.S): the body starts after the last newline
+    of the whitespace following the opening fence that still leaves a closing newline, and ends at
+    the first newline of the whitespace run before the closing fence.
+    """
+    stripped = text.strip()
+    lead = len(text) - len(text.lstrip())
+    end = len(text.rstrip())
+    if not text.startswith(_FENCE, lead) or not text.endswith(_FENCE, 0, end):
+        return stripped
+    start = lead + len(_FENCE)
+    if text.startswith("json", start):
+        start += len("json")
+    open_ws_end = len(text) - len(text[start:].lstrip())
+    close = end - len(_FENCE)
+    close_ws_start = len(text[:close].rstrip())
+    last_close_nl = text.rfind("\n", close_ws_start, close)
+    open_nl = text.rfind("\n", start, min(open_ws_end, last_close_nl)) if last_close_nl >= 0 else -1
+    if open_nl < 0:
+        return stripped
+    close_nl = text.find("\n", max(close_ws_start, open_nl + 1), close)
+    return text[open_nl + 1:close_nl]
 
 
 @register
@@ -79,7 +100,8 @@ class RawAdapter:
     def build(self, task: StageTask, gw: GatewayConfig | None, prompt: str) -> Invocation:
         raise NotImplementedError("raw runs in-process; use run_inprocess()")
 
-    def build_resume(self, task: StageTask, gw: GatewayConfig | None, session_id: str, prompt: str) -> Invocation | None:
+    # build_resume/session_id keep the HarnessAdapter Protocol signatures; raw has no sessions (Caps.resume=False).
+    def build_resume(self, task: StageTask, gw: GatewayConfig | None, session_id: str, prompt: str) -> Invocation | None:  # NOSONAR(S1172)
         return None
 
     def parse_events(self, lines: Iterable[str]) -> Iterator[Event]:
@@ -87,7 +109,7 @@ class RawAdapter:
             if line.strip():
                 yield Event(kind=EventKind.system, text=line[:8000], data={"unparsed": True})
 
-    def session_id(self, events: list[Event]) -> str | None:
+    def session_id(self, events: list[Event]) -> str | None:  # NOSONAR(S1172) Protocol signature, see build_resume
         return None
 
     def usage(self, events: list[Event]) -> Usage:

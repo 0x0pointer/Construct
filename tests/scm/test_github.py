@@ -173,9 +173,12 @@ def test_get_pr_paginates_and_caps(scm):
     pr = scm.get_pr("acme/app", 5, installation_id=7)
     assert len(pr.commits) == MAX_COMMITS
     assert commits.call_count == 3
-    assert pr.commits[0].message == "m0" and pr.commits[0].author == "N"
+    assert pr.commits[0].message == "m0"
+    assert pr.commits[0].author == "N"
     assert pr.changed_files == ["a.py", "b.py"]
-    assert pr.head_sha == "h" * 40 and pr.base_ref == "main" and pr.body == ""
+    assert pr.head_sha == "h" * 40
+    assert pr.base_ref == "main"
+    assert pr.body == ""
     assert pr.is_fork is False
     assert pr.author == "dev"
 
@@ -230,7 +233,8 @@ def test_plain_403_not_retried(scm, sleeps):
     route = respx.get(f"{API}/repos/acme/app/pulls/5").mock(return_value=httpx.Response(403))
     with pytest.raises(httpx.HTTPStatusError):
         scm.get_diff("acme/app", 5, installation_id=7)
-    assert route.call_count == 1 and sleeps == []
+    assert route.call_count == 1
+    assert sleeps == []
 
 
 # ------------------------------------------------------------------ diff
@@ -264,7 +268,8 @@ def test_get_diff_falls_back_to_files(scm):
     )
     diff = scm.get_diff("acme/app", 5, installation_id=7)
     lines = diff.splitlines()
-    assert lines[0].startswith("# prsec: diff reconstructed") and "1 without patch" in lines[0]
+    assert lines[0].startswith("# prsec: diff reconstructed")
+    assert "1 without patch" in lines[0]
     assert "diff --git a/new.py b/new.py\n--- /dev/null\n+++ b/new.py\n@@ -0,0 +1 @@\n+x = 1" in diff
     assert "--- a/mod.py\n+++ b/mod.py" in diff
     assert "diff --git a/o.py b/n.py\nrename from o.py\nrename to n.py\n--- a/o.py\n+++ b/n.py" in diff
@@ -300,7 +305,9 @@ def test_list_open_prs_all_installations(scm):
         ("acme/app", 1, False), ("acme/app", 2, True), ("other/lib", 9, False)]
     assert all(p.commits == [] and p.changed_files == [] for p in prs)
     params = app.calls[0].request.url.params
-    assert params["state"] == "open" and params["sort"] == "updated" and params["per_page"] == "100"
+    assert params["state"] == "open"
+    assert params["sort"] == "updated"
+    assert params["per_page"] == "100"
     # installation learned from the listing: no /installation lookup needed afterwards
     assert scm.resolve_installation("other/lib") == 8
 
@@ -352,7 +359,8 @@ def test_fetch_source_follows_redirect_and_strips_top(scm, tmp_path):
     assert dest == tmp_path / "src"
     assert (dest / "README.md").read_text() == "hi"
     assert (dest / "src/main.py").read_text() == "print(1)"
-    assert (dest / "src/link.py").is_symlink() and (dest / "src/link.py").read_text() == "print(1)"
+    assert (dest / "src/link.py").is_symlink()
+    assert (dest / "src/link.py").read_text() == "print(1)"
     assert (dest / "copy.md").read_text() == "hi"
     assert not (dest / "acme-app-abc123").exists()
     assert "authorization" not in cl.calls[0].request.headers
@@ -383,7 +391,8 @@ def test_safe_extract_rejects_malicious(tmp_path, bad):
     with tarfile.open(fileobj=io.BytesIO(data), mode="r:*") as tf, pytest.raises(UnsafeArchiveError):
         safe_extract(tf, dest, strip_top=True)
     assert list(dest.iterdir()) == []  # validated before anything is written
-    assert not (tmp_path / "evil").exists() and not (tmp_path / "outside").exists()
+    assert not (tmp_path / "evil").exists()
+    assert not (tmp_path / "outside").exists()
 
 
 def test_safe_extract_requires_single_top(tmp_path):

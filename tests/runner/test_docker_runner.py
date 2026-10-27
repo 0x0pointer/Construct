@@ -42,23 +42,27 @@ def test_create_scan_network_is_internal_and_attaches_gateway(client, monkeypatc
 
     assert DockerRunner(client).create_scan_network(42) == "prsec-scan-42"
     args, kw = client.networks.create.call_args
-    assert args == ("prsec-scan-42",) and kw["internal"] is True and kw["driver"] == "bridge"
+    assert args == ("prsec-scan-42",)
+    assert kw["internal"] is True
+    assert kw["driver"] == "bridge"
     assert kw["labels"]["prsec.scan_id"] == "42"
     net.connect.assert_called_once_with("my-gateway", aliases=["llm-gateway"])
 
 
 def test_existing_non_internal_network_refused(client):
     client.networks.get.return_value.attrs = {"Internal": False}
+    runner = DockerRunner(client)
     with pytest.raises(RuntimeError, match="not internal"):
-        DockerRunner(client).create_scan_network(1)
+        runner.create_scan_network(1)
 
 
 def test_missing_gateway_is_fatal_already_connected_tolerated(client):
     net = client.networks.get.return_value
     net.attrs = {"Internal": True}
     net.connect.side_effect = NotFound("no gateway")
+    runner = DockerRunner(client)
     with pytest.raises(RuntimeError, match="gateway container"):
-        DockerRunner(client).create_scan_network(1)
+        runner.create_scan_network(1)
     net.connect.side_effect = APIError("endpoint with name prsec-llm-gateway already exists in network")
     assert DockerRunner(client).create_scan_network(1) == "prsec-scan-1"
 
@@ -76,29 +80,38 @@ def test_run_workbench_security_options(client, spec, monkeypatch):
     container.logs.return_value = b"prsec-stage: done\n"
 
     res = DockerRunner(client).run_workbench(spec)
-    assert res.status == StageStatus.ok and res.output == {"decision": "skip"}
+    assert res.status == StageStatus.ok
+    assert res.output == {"decision": "skip"}
 
     kw = client.containers.run.call_args.kwargs
     assert kw["image"] == "prsec/workbench-base:test"
-    assert kw["entrypoint"] == ["prsec-stage"] and kw["command"] == ["/work/in/task.json"]
+    assert kw["entrypoint"] == ["prsec-stage"]
+    assert kw["command"] == ["/work/in/task.json"]
     # Docker runs entrypoint + command: exactly one argument reaches prsec-stage's main()
     assert kw["entrypoint"] + kw["command"] == ["prsec-stage", "/work/in/task.json"]
     assert kw["cap_drop"] == ["ALL"]
     assert kw["security_opt"] == ["no-new-privileges:true"]
     assert kw["read_only"] is True
     assert "/tmp" in kw["tmpfs"]
-    assert kw["pids_limit"] > 0 and kw["mem_limit"] and kw["nano_cpus"] > 0
-    assert kw["network"] == "prsec-scan-42" and "network_mode" not in kw
-    assert not kw["user"].startswith("0:") and kw["user"] != "root"
-    assert "privileged" not in kw and "runtime" not in kw
+    assert kw["pids_limit"] > 0
+    assert kw["mem_limit"]
+    assert kw["nano_cpus"] > 0
+    assert kw["network"] == "prsec-scan-42"
+    assert "network_mode" not in kw
+    assert not kw["user"].startswith("0:")
+    assert kw["user"] != "root"
+    assert "privileged" not in kw
+    assert "runtime" not in kw
     vols = kw["volumes"]
     assert vols[str(spec.src_dir)] == {"bind": "/work/src", "mode": "ro"}
     assert vols[str(spec.skills_dir)] == {"bind": "/skills", "mode": "ro"}
     assert vols["prsec-harness-codex-0.50"] == {"bind": "/opt/harness/codex/current", "mode": "ro"}
-    assert vols[str(spec.in_dir)]["mode"] == "rw" and vols[str(spec.out_dir)]["mode"] == "rw"
+    assert vols[str(spec.in_dir)]["mode"] == "rw"
+    assert vols[str(spec.out_dir)]["mode"] == "rw"
     env = kw["environment"]
     assert env["PRSEC_HARNESS_HOME"] == "/opt/harness/codex/current"
-    assert env["HOME"].startswith("/work/out/") and env["PRSEC_GATEWAY_KEY"] == "sk-scan"
+    assert env["HOME"].startswith("/work/out/")
+    assert env["PRSEC_GATEWAY_KEY"] == "sk-scan"
     assert kw["labels"]["prsec.scan_id"] == "42"
 
     written = json.loads((spec.in_dir / "task.json").read_text())
@@ -114,7 +127,8 @@ def test_gvisor_runtime_and_no_network(client, spec, monkeypatch):
     assert kw["runtime"] == "runsc"
     spec.network = None
     kw = DockerRunner(client).container_kwargs(spec, ["true"])
-    assert kw["network_mode"] == "none" and "network" not in kw
+    assert kw["network_mode"] == "none"
+    assert "network" not in kw
 
 
 def test_run_workbench_timeout_kills_container(client, spec):
@@ -132,11 +146,14 @@ def test_run_workbench_missing_result_and_image(client, spec):
     container.wait.return_value = {"StatusCode": 137}
     container.logs.return_value = b"OOMKilled"
     res = DockerRunner(client).run_workbench(spec)
-    assert res.status == StageStatus.harness_error and "137" in res.errors[0] and "OOMKilled" in res.errors[1]
+    assert res.status == StageStatus.harness_error
+    assert "137" in res.errors[0]
+    assert "OOMKilled" in res.errors[1]
 
     client.containers.run.side_effect = ImageNotFound("no such image")
     res = DockerRunner(client).run_workbench(spec)
-    assert res.status == StageStatus.harness_error and "no such image" in "\n".join(res.errors)
+    assert res.status == StageStatus.harness_error
+    assert "no such image" in "\n".join(res.errors)
 
 
 def test_destroy_scan_disconnects_gateway_then_removes(client, monkeypatch):
@@ -171,6 +188,62 @@ def test_effective_workbench_argv_with_image_entrypoint(client, spec):
     image_entrypoint = json.loads(re.search(r"^ENTRYPOINT (.+)$", dockerfile, re.M).group(1))
     kw = DockerRunner(client).container_kwargs(spec, ["/work/in/task.json"], ["prsec-stage"])
     argv = kw.get("entrypoint", image_entrypoint) + kw["command"]
-    assert argv[0] == "prsec-stage" and argv.count("prsec-stage") == 1
+    assert argv[0] == "prsec-stage"
+    assert argv.count("prsec-stage") == 1
     assert stage_main.main(argv[1:] + ["extra"]) == 2  # main() rejects anything but exactly one argument
     assert len(argv[1:]) == 1
+
+
+def _mode(p: Path) -> int:
+    return p.stat().st_mode & 0o777
+
+
+def test_prepare_dirs_chowns_to_nonroot_when_possible(client, spec, monkeypatch):
+    monkeypatch.setenv("PRSEC_DOCKER_USER", "65532:65532")
+    client.info.return_value = {"SecurityOptions": ["name=seccomp,profile=builtin"]}
+    chowned = []
+    monkeypatch.setattr("prsec.adapters.runner.docker.os.chown", lambda d, u, g: chowned.append((Path(d), u, g)))
+
+    DockerRunner(client)._prepare_dirs(spec)
+
+    dirs = [spec.in_dir, spec.out_dir, spec.out_dir / ".home"]
+    assert chowned == [(d, 65532, 65532) for d in dirs]
+    for d in dirs:
+        assert _mode(d) & 0o002 == 0  # not world-writable when the chown worked
+
+
+def test_prepare_dirs_falls_back_to_writable_when_chown_denied(client, spec, monkeypatch):
+    # non-root runner forcing PRSEC_DOCKER_USER=NONROOT: chown fails, the container must still write
+    monkeypatch.setenv("PRSEC_DOCKER_USER", "65532:65532")
+    client.info.return_value = {"SecurityOptions": []}
+
+    def deny(*_a):
+        raise PermissionError("not root")
+
+    monkeypatch.setattr("prsec.adapters.runner.docker.os.chown", deny)
+    DockerRunner(client)._prepare_dirs(spec)
+    for d in (spec.in_dir, spec.out_dir, spec.out_dir / ".home"):
+        assert _mode(d) == 0o777
+
+
+@pytest.mark.parametrize("opt", ["name=userns", "name=rootless"])
+def test_prepare_dirs_skips_chown_on_uid_remapping_daemon(client, spec, monkeypatch, opt):
+    # chown would succeed but container uid 65532 maps to another host uid
+    monkeypatch.setenv("PRSEC_DOCKER_USER", "65532:65532")
+    client.info.return_value = {"SecurityOptions": ["name=seccomp,profile=builtin", opt]}
+    chown = MagicMock()
+    monkeypatch.setattr("prsec.adapters.runner.docker.os.chown", chown)
+    DockerRunner(client)._prepare_dirs(spec)
+    chown.assert_not_called()
+    for d in (spec.in_dir, spec.out_dir, spec.out_dir / ".home"):
+        assert _mode(d) == 0o777
+
+
+def test_prepare_dirs_leaves_modes_for_runner_uid(client, spec, monkeypatch):
+    monkeypatch.setenv("PRSEC_DOCKER_USER", "10001:10001")
+    chown = MagicMock()
+    monkeypatch.setattr("prsec.adapters.runner.docker.os.chown", chown)
+    DockerRunner(client)._prepare_dirs(spec)
+    chown.assert_not_called()
+    client.info.assert_not_called()
+    assert _mode(spec.out_dir) & 0o002 == 0

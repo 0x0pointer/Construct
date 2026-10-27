@@ -19,6 +19,7 @@ from prsec.adapters.harness.base import GatewayConfig, get_adapter
 from prsec.models import StageResult, StageStatus, StageTask
 from prsec.sandbox.entrypoint.run import run_task
 
+TASK_FILE = "task.json"  # the runners always write <in_dir>/task.json
 RESULT_FILE = "result.json"
 TRANSCRIPT_FILE = "transcript.jsonl"
 
@@ -50,13 +51,21 @@ def write_outputs(result: StageResult, out_dir: Path) -> None:
     tmp.replace(out_dir / RESULT_FILE)
 
 
+def task_file(arg: str) -> Path:
+    """Resolve the CLI argument to the runner-written task file; anything but a regular `task.json` is refused."""
+    path = Path(arg).resolve()
+    if path.name != TASK_FILE or not path.is_file():
+        raise ValueError(f"expected an existing {TASK_FILE} file")
+    return path
+
+
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if len(args) != 1:
         print("usage: prsec-stage <task.json>", file=sys.stderr)
         return 2
     try:
-        task = StageTask.model_validate(json.loads(Path(args[0]).read_text()))
+        task = StageTask.model_validate(json.loads(task_file(args[0]).read_text()))
     except Exception as e:
         print(f"prsec-stage: invalid task file {args[0]}: {e}", file=sys.stderr)
         return 2

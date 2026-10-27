@@ -60,10 +60,14 @@ def test_result_mapping():
         "app/api.py", "app/svc.py", "app/orders.py"]
     assert [l["kinds"] for l in flow] == [["source"], ["taint"], ["sink"]]
     p = res["properties"]
-    assert p["label"] == "likely" and p["severity"] == "high" and p["introduced"] is True
-    assert p["entry_point"] == "GET /orders/{id}" and p["hypothesis_id"] == "H1"
+    assert p["label"] == "likely"
+    assert p["severity"] == "high"
+    assert p["introduced"] is True
+    assert p["entry_point"] == "GET /orders/{id}"
+    assert p["hypothesis_id"] == "H1"
     assert p["provenance"]["static_verify"]["harness"] == "claude-code"
-    assert "evidenceUri" in p and "label_reason" in p
+    assert "evidenceUri" in p
+    assert "label_reason" in p
 
 
 def test_no_flow_without_source_or_path():
@@ -74,7 +78,8 @@ def test_no_flow_without_source_or_path():
 def test_empty_scan_validates():
     doc = build_sarif(pr(scm="gitlab", url="https://gitlab.example.com/g/p/-/merge_requests/3"), 1, [], {})
     validate(doc)
-    assert doc["runs"][0]["results"] == [] and doc["runs"][0]["tool"]["driver"]["rules"] == []
+    assert doc["runs"][0]["results"] == []
+    assert doc["runs"][0]["tool"]["driver"]["rules"] == []
 
 
 @pytest.mark.parametrize("sev,level", [("critical", "error"), ("high", "error"), ("medium", "warning"),

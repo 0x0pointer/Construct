@@ -35,7 +35,8 @@ def test_enqueue_idempotent(sql):
     assert queue.enqueue(req("h1"), SK, 0, 5) is None
     assert queue.enqueue(req("h1", reason="reconcile"), SK, 0, 5) is None
     b = queue.enqueue(req("h1"), "sk-2", 0, 5)
-    assert b is not None and b != a
+    assert b is not None
+    assert b != a
     assert sql.execute("SELECT count(*) AS n FROM scans").fetchone()["n"] == 2
     r = row(sql, a)
     assert (r["status"], r["installation_id"], r["base_sha"], r["skills_version"]) == ("queued", 5, "base", SK)
@@ -105,8 +106,11 @@ def test_superseded_head_revived_on_force_push_back(sql):
 def test_lease_sets_running(sql):
     a = queue.enqueue(req("h1"), SK, 0, 5)
     r = queue.lease_next(lease_s=300)
-    assert r["id"] == a and r["status"] == "running" and r["attempts"] == 1
-    assert r["started_at"] is not None and r["repo"] == "acme/api"
+    assert r["id"] == a
+    assert r["status"] == "running"
+    assert r["attempts"] == 1
+    assert r["started_at"] is not None
+    assert r["repo"] == "acme/api"
     assert 290 < (r["lease_until"] - r["started_at"]).total_seconds() <= 300
     assert queue.lease_next() is None
 
@@ -151,10 +155,12 @@ def test_expired_lease_requeue(sql):
     queue.lease_next()
     sql.execute("UPDATE scans SET lease_until = now() - interval '1 second' WHERE id = %s", (a,))
     assert queue.requeue_expired_leases() == 1
-    assert row(sql, a)["status"] == "queued" and row(sql, a)["lease_until"] is None
+    assert row(sql, a)["status"] == "queued"
+    assert row(sql, a)["lease_until"] is None
     assert row(sql, b)["status"] == "running"
     again = queue.lease_next()
-    assert again["id"] == a and again["attempts"] == 2
+    assert again["id"] == a
+    assert again["attempts"] == 2
 
 
 def test_expired_lease_fails_after_max_attempts(sql):
@@ -163,7 +169,8 @@ def test_expired_lease_fails_after_max_attempts(sql):
     sql.execute("UPDATE scans SET attempts = 3, lease_until = now() - interval '1 second' WHERE id = %s", (a,))
     assert queue.requeue_expired_leases(max_attempts=3) == 0
     r = row(sql, a)
-    assert r["status"] == "failed" and "lease expired" in r["error"]
+    assert r["status"] == "failed"
+    assert "lease expired" in r["error"]
 
 
 def test_heartbeat_extends_lease(sql):
@@ -187,13 +194,18 @@ def test_finish_add_cost_and_stage_runs(sql):
     queue.record_stage_run(a, res.model_copy(update={"attempts": 2}), "s3://prsec/t.jsonl")
     queue.finish(a, ScanStatus.done, triage={"decision": "full"}, sarif_uri="s3://prsec/sarif/x.sarif")
     r = row(sql, a)
-    assert r["status"] == "done" and float(r["cost_usd"]) == 1.75
-    assert r["triage"] == {"decision": "full"} and r["sarif_uri"].endswith("x.sarif")
-    assert r["finished_at"] is not None and r["lease_until"] is None
+    assert r["status"] == "done"
+    assert float(r["cost_usd"]) == 1.75
+    assert r["triage"] == {"decision": "full"}
+    assert r["sarif_uri"].endswith("x.sarif")
+    assert r["finished_at"] is not None
+    assert r["lease_until"] is None
     runs = sql.execute("SELECT * FROM stage_runs WHERE scan_id = %s", (a,)).fetchall()
     assert len(runs) == 1
-    assert runs[0]["attempts"] == 2 and runs[0]["transcript_uri"] == "s3://prsec/t.jsonl"
-    assert runs[0]["usage"]["tokens_in"] == 10 and runs[0]["output"] == {"decision": "full"}
+    assert runs[0]["attempts"] == 2
+    assert runs[0]["transcript_uri"] == "s3://prsec/t.jsonl"
+    assert runs[0]["usage"]["tokens_in"] == 10
+    assert runs[0]["output"] == {"decision": "full"}
 
 
 def test_finish_keeps_superseded(sql):
@@ -202,7 +214,8 @@ def test_finish_keeps_superseded(sql):
     queue.enqueue(req("h2"), SK, 0, 5)
     queue.finish(a, ScanStatus.failed, error="boom")
     r = row(sql, a)
-    assert r["status"] == "superseded" and r["error"] == "boom"
+    assert r["status"] == "superseded"
+    assert r["error"] == "boom"
 
 
 def test_concurrent_enqueue_same_key(sql):
@@ -249,8 +262,10 @@ def test_stale_lease_holder_cannot_write(sql):
     sql.execute("UPDATE scans SET lease_until = now() - interval '1 second' WHERE id = %s", (a,))
     assert queue.requeue_expired_leases() == 1
     second = queue.lease_next()
-    assert second["id"] == a and second["lease_token"] != first["lease_token"]
-    assert not queue.owns_lease(a, first["lease_token"]) and queue.owns_lease(a, second["lease_token"])
+    assert second["id"] == a
+    assert second["lease_token"] != first["lease_token"]
+    assert not queue.owns_lease(a, first["lease_token"])
+    assert queue.owns_lease(a, second["lease_token"])
     assert not queue.heartbeat(a, 600, first["lease_token"])
     assert queue.heartbeat(a, 600, second["lease_token"])
     res = StageResult(task_id=f"{a}-triage", stage=Stage.triage, status=StageStatus.ok, harness="raw", model="m")
@@ -262,7 +277,9 @@ def test_stale_lease_holder_cannot_write(sql):
     assert sql.execute("SELECT count(*) AS n FROM stage_runs").fetchone()["n"] == 1
     assert queue.finish(a, ScanStatus.done, lease_token=second["lease_token"])
     r = row(sql, a)
-    assert r["status"] == "done" and r["lease_token"] is None and r["error"] is None
+    assert r["status"] == "done"
+    assert r["lease_token"] is None
+    assert r["error"] is None
 
 
 def test_failed_scan_retried_with_backoff_and_cap(sql):

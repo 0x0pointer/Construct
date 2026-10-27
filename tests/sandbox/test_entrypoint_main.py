@@ -24,7 +24,8 @@ def test_main_writes_result_and_transcript(tmp_path, monkeypatch):
     assert entry.main([str(_write_task(task, tmp_path))]) == 0
 
     res = StageResult.model_validate_json((Path(task.out_dir) / "result.json").read_text())
-    assert res.status == StageStatus.ok and res.model == "agent-small"
+    assert res.status == StageStatus.ok
+    assert res.model == "agent-small"
     lines = (Path(task.out_dir) / "transcript.jsonl").read_text().splitlines()
     assert len(lines) == len(res.transcript) > 0
     Event.model_validate_json(lines[0])
@@ -45,7 +46,8 @@ def test_unknown_harness_gives_harness_error_result(tmp_path):
     task = make_task(tmp_path, harness="does-not-exist")
     assert entry.main([str(_write_task(task, tmp_path))]) == 0
     res = json.loads((Path(task.out_dir) / "result.json").read_text())
-    assert res["status"] == "harness_error" and "does-not-exist" in res["errors"][0]
+    assert res["status"] == "harness_error"
+    assert "does-not-exist" in res["errors"][0]
 
 
 def test_bad_task_file(tmp_path):
@@ -63,3 +65,16 @@ def test_module_entrypoint_with_extra_adapter_module(tmp_path):
                           env=env, capture_output=True, text=True, timeout=60)
     assert proc.returncode == 0, proc.stderr
     assert json.loads((Path(task.out_dir) / "result.json").read_text())["status"] == "ok"
+
+
+def test_task_file_must_be_an_existing_task_json(tmp_path):
+    other = tmp_path / "secrets.json"
+    other.write_text("{}")
+    assert entry.main([str(other)]) == 2
+    assert entry.main([str(tmp_path / "task.json")]) == 2  # missing
+    (tmp_path / "dir").mkdir()
+    (tmp_path / "dir" / "task.json").mkdir()
+    assert entry.main([str(tmp_path / "dir" / "task.json")]) == 2  # not a regular file
+    p = tmp_path / "task.json"
+    p.write_text("{}")
+    assert entry.task_file(str(tmp_path / "dir" / ".." / "task.json")) == p.resolve()

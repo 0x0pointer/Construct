@@ -47,7 +47,9 @@ def test_run_one_heartbeats(monkeypatch):
 
     monkeypatch.setattr(worker.pipeline, "run_scan", run_scan)
     assert worker.run_one(lease_s=30, heartbeat_s=0.03)
-    assert ran.is_set() and beats and set(beats) == {(9, "tok")}
+    assert ran.is_set()
+    assert beats
+    assert set(beats) == {(9, "tok")}
 
 
 def test_heartbeat_stops_once_lease_is_lost(monkeypatch):

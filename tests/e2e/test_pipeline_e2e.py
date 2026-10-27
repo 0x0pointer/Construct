@@ -130,7 +130,8 @@ def _enqueue(env: dict, pr: int, head: str) -> int:
 
 def _lease(scan_id: int) -> dict:
     row = queue.lease_next(600)
-    assert row is not None and row["id"] == scan_id
+    assert row is not None
+    assert row["id"] == scan_id
     return row
 
 
@@ -143,7 +144,8 @@ def test_css_only_pr_is_skipped_by_rules(env: dict) -> None:
     pipeline.run_scan(_lease(scan_id))
     row = _scan(env["sql"], scan_id)
     assert row["status"] == "skipped", row["error"]
-    assert row["triage"]["source"] == "rules" and row["triage"]["reason"].startswith("noise_only")
+    assert row["triage"]["source"] == "rules"
+    assert row["triage"]["reason"].startswith("noise_only")
     assert env["scm"].fetched == []  # never downloaded source, never ran a stage
     assert env["sql"].execute("SELECT count(*) AS n FROM stage_runs").fetchone()["n"] == 0
 
@@ -155,7 +157,8 @@ def test_sqli_pr_yields_likely_finding_and_valid_sarif(env: dict) -> None:
     sql = env["sql"]
     row = _scan(sql, scan_id)
     assert row["status"] == "done", row["error"]
-    assert row["triage"]["decision"] == "full" and row["triage"]["source"] == "llm"
+    assert row["triage"]["decision"] == "full"
+    assert row["triage"]["source"] == "llm"
     assert float(row["cost_usd"]) > 0
 
     runs = sql.execute("SELECT stage, harness, status FROM stage_runs WHERE scan_id = %s ORDER BY stage", (scan_id,)).fetchall()
@@ -172,17 +175,21 @@ def test_sqli_pr_yields_likely_finding_and_valid_sarif(env: dict) -> None:
     assert len(findings) == 1
     f = findings[0]
     assert f["bug_class"] == "sqli"  # 'sql-injection' alias canonicalised before fingerprinting
-    assert f["label"] == "likely" and f["status"] == "open" and f["sink_file"] == "app.py"
+    assert f["label"] == "likely"
+    assert f["status"] == "open"
+    assert f["sink_file"] == "app.py"
 
     uri = row["sarif_uri"]
-    assert uri.startswith("file://") and uri.endswith(f"{head}.sarif")
+    assert uri.startswith("file://")
+    assert uri.endswith(f"{head}.sarif")
     doc = json.loads(read_uri(uri))
     jsonschema.Draft4Validator(SARIF_SCHEMA).validate(doc)
     results = doc["runs"][0]["results"]
     assert [r["ruleId"] for r in results] == ["sqli"]
     assert results[0]["properties"]["label"] == "likely"
     region = results[0]["locations"][0]["physicalLocation"]["region"]
-    assert region["startLine"] == 35 and "LIKE" in region["snippet"]["text"]
+    assert region["startLine"] == 35
+    assert "LIKE" in region["snippet"]["text"]
     dropped = {d["id"]: d["reason"] for d in doc["runs"][0]["properties"]["dropped"]}
     assert dropped == {"H3": "hypothesis_citations_unverified", "H2": "static_refuted"}
 
@@ -197,7 +204,8 @@ def test_newer_head_supersedes_running_scan(env: dict) -> None:
 
     pipeline.run_scan(leased)  # the worker notices and aborts without writing findings
     row = _scan(sql, old)
-    assert row["status"] == "superseded" and row["sarif_uri"] is None
+    assert row["status"] == "superseded"
+    assert row["sarif_uri"] is None
     assert sql.execute("SELECT count(*) AS n FROM stage_runs WHERE scan_id = %s", (old,)).fetchone()["n"] == 0
 
     pipeline.run_scan(_lease(new))

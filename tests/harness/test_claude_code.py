@@ -54,7 +54,10 @@ def test_registered_and_protocol() -> None:
     a = get_adapter("claude-code")
     assert isinstance(a, ClaudeCodeAdapter)
     assert isinstance(a, HarnessAdapter)
-    assert a.caps.native_skills and a.caps.resume and a.caps.json_events and a.caps.max_turns
+    assert a.caps.native_skills
+    assert a.caps.resume
+    assert a.caps.json_events
+    assert a.caps.max_turns
 
 
 COMMON = [
@@ -109,7 +112,8 @@ def test_build_dev_mode_keeps_login(task: StageTask) -> None:
     out = task.out_dir
     # login only: no user/project settings, CLAUDE.md, hooks, plugins or personal skills
     assert inv.argv == COMMON + isolation(out) + ["--add-dir", "/work/in", out, "--max-budget-usd", "3"]
-    assert "HOME" not in inv.env and "CLAUDE_CONFIG_DIR" not in inv.env
+    assert "HOME" not in inv.env
+    assert "CLAUDE_CONFIG_DIR" not in inv.env
     assert inv.env["CLAUDE_CODE_DISABLE_CLAUDE_MDS"] == "1"
     assert not any(k.startswith("ANTHROPIC_") for k in inv.env)
     assert "--model" not in inv.argv
@@ -123,7 +127,9 @@ def test_build_resume(task: StageTask) -> None:
     assert inv.stdin == "fix the schema errors"
     assert inv.env == a.build(task, GW, "p").env
     dev = a.build_resume(task, None, "sess-1", "again")
-    assert dev is not None and dev.argv[-2:] == ["--resume", "sess-1"] and "HOME" not in dev.env
+    assert dev is not None
+    assert dev.argv[-2:] == ["--resume", "sess-1"]
+    assert "HOME" not in dev.env
 
 
 def test_install_skills_into_writable_home(task: StageTask) -> None:
@@ -142,14 +148,16 @@ def test_parse_real_tool_use_transcript() -> None:
     a = ClaudeCodeAdapter()
     ev = list(a.parse_events(lines("tool_use.jsonl")))
     kinds = [e.kind for e in ev]
-    assert kinds[0] == EventKind.system and ev[0].data["subtype"] == "init"
+    assert kinds[0] == EventKind.system
+    assert ev[0].data["subtype"] == "init"
     assert ev[0].data["skills"] == ["prsec-fixture"]
     calls = [e for e in ev if e.kind == EventKind.tool_call]
     assert [c.tool for c in calls] == ["Bash", "Write"]
     assert calls[0].data["input"]["command"] == "ls"
     assert calls[1].data["input"]["file_path"] == "/work/out/output.json"
     results = [e for e in ev if e.kind == EventKind.tool_result]
-    assert results[0].text == "app.py" and results[0].data["tool_use_id"] == calls[0].data["id"]
+    assert results[0].text == "app.py"
+    assert results[0].data["tool_use_id"] == calls[0].data["id"]
     assert results[0].data["is_error"] is False
     assert [e.text for e in ev if e.kind == EventKind.message] == ["DONE"]
     assert ev[1].ts is not None
@@ -177,7 +185,9 @@ def test_usage_aggregates_across_runs_and_falls_back_without_result() -> None:
     # killed before the result line: per-message usage, de-duplicated by message id
     truncated = [l for l in lines("tool_use.jsonl") if '"type":"result"' not in l]
     u = a.usage(list(a.parse_events(truncated)))
-    assert u.turns == 2 and u.tokens_out > 0 and u.usd == 0
+    assert u.turns == 2
+    assert u.tokens_out > 0
+    assert u.usd == 0
 
 
 def test_parse_gateway_error_transcript() -> None:
@@ -185,11 +195,13 @@ def test_parse_gateway_error_transcript() -> None:
     ev = list(a.parse_events(lines("gateway_unreachable.jsonl")))
     assert ev[0].data["model"] == "agent-large"
     retries = [e for e in ev if e.data.get("subtype") == "api_retry"]
-    assert len(retries) == 10 and retries[0].data["attempt"] == 1
+    assert len(retries) == 10
+    assert retries[0].data["attempt"] == 1
     errors = [e for e in ev if e.kind == EventKind.error]
     # synthetic assistant message flagged error=server_error, then result is_error=true
     assert [e.text for e in errors][0] == "server_error"
-    assert "ECONNREFUSED" in (errors[-1].text or "") and errors[-1].data["terminal_reason"] == "api_error"
+    assert "ECONNREFUSED" in (errors[-1].text or "")
+    assert errors[-1].data["terminal_reason"] == "api_error"
     assert a.usage(ev).tokens_in == 0
 
 
@@ -200,7 +212,8 @@ def test_parse_garbage_never_raises() -> None:
     assert {e.text for e in unparsed} >= {"Reading prompt from stdin...", "not json {", "[1, 2, 3]", '"just a string"'}
     assert a.session_id(ev) is None
     u = a.usage(ev)
-    assert u.tokens_in == 0 and u.usd == 0
+    assert u.tokens_in == 0
+    assert u.usd == 0
 
 
 def test_resume_fixture_keeps_session() -> None:
@@ -211,7 +224,8 @@ def test_resume_fixture_keeps_session() -> None:
 
 def test_version(monkeypatch: pytest.MonkeyPatch) -> None:
     def ok(argv, **kw):
-        assert argv == ["/opt/harness/bin/claude", "--version"] and kw["timeout"] == 10
+        assert argv == ["/opt/harness/bin/claude", "--version"]
+        assert kw["timeout"] == 10
         return subprocess.CompletedProcess(argv, 0, "2.1.311 (Claude Code)\n", "")
 
     monkeypatch.setattr(subprocess, "run", ok)

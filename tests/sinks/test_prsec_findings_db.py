@@ -18,15 +18,20 @@ def test_insert_then_update_preserves_triage(pg_pool):
     f = finding()
     db.upsert_findings(s1, "acme/shop", 7, [f], {"app/orders.py"})
     [row] = db.list_findings({"repo": "acme/shop"})
-    assert row["status"] == "open" and row["first_scan_id"] == s1 and row["label"] == "likely"
+    assert row["status"] == "open"
+    assert row["first_scan_id"] == s1
+    assert row["label"] == "likely"
     db.set_triage(row["id"], "tp", "real", actor="alice@example.com")
 
     s2 = insert_scan(pg_pool, head_sha="2" * 40)
     db.upsert_findings(s2, "acme/shop", 7, [finding(label="reproduced", sink=f.sink.model_copy(update={"line": 50}))], set())
     got = db.get_finding(row["id"])
-    assert got["first_scan_id"] == s1 and got["last_scan_id"] == s2
-    assert got["label"] == "reproduced" and got["sink_line"] == 50
-    assert got["triage_state"] == "tp" and "alice@example.com" in got["triage_note"]
+    assert got["first_scan_id"] == s1
+    assert got["last_scan_id"] == s2
+    assert got["label"] == "reproduced"
+    assert got["sink_line"] == 50
+    assert got["triage_state"] == "tp"
+    assert "alice@example.com" in got["triage_note"]
     assert [o["scan_id"] for o in got["occurrences"]] == [s2, s1]
     assert got["data"]["label"] == "reproduced"
 
@@ -65,7 +70,8 @@ def test_idempotent_rescan(pg_pool):
     db.upsert_findings(s1, "acme/shop", 7, [finding()], {"app/orders.py"})
     db.upsert_findings(s1, "acme/shop", 7, [finding()], {"app/orders.py"})
     [row] = db.list_findings()
-    assert len(db.get_finding(row["id"])["occurrences"]) == 1 and row["status"] == "open"
+    assert len(db.get_finding(row["id"])["occurrences"]) == 1
+    assert row["status"] == "open"
 
 
 def test_set_triage_validates(pg_pool):
@@ -94,19 +100,25 @@ def test_queries_and_metrics(pg_pool):
     scans = db.list_scans()
     assert [s["id"] for s in scans] == [s2, s1]
     s = db.get_scan(s1)
-    assert s["triage_decision"] == "full" and s["findings_total"] == 3 and s["findings_reproduced"] == 1
-    assert len(s["stage_runs"]) == 3 and 89 <= s["duration_s"] <= 120
+    assert s["triage_decision"] == "full"
+    assert s["findings_total"] == 3
+    assert s["findings_reproduced"] == 1
+    assert len(s["stage_runs"]) == 3
+    assert 89 <= s["duration_s"] <= 120
     assert db.list_scans({"status": "skipped"})[0]["id"] == s2
     assert db.list_findings({"label": "reproduced"})[0]["bug_class"] == "idor"
     assert db.list_findings({"triage_state": "fp", "bug_class": "sqli", "bogus": 1})[0]["id"] == rows[1]["id"]
 
     m = db.metrics()
     assert m["scans_by_status"]["30d"] == {"done": 1, "skipped": 1}
-    assert m["skip_rate"] == 0.5 and m["total_cost_usd"] == 1.51
+    assert m["skip_rate"] == 0.5
+    assert m["total_cost_usd"] == 1.51
     prec = {r["key"]: r for r in m["precision_by_bug_class"]}
-    assert prec["sqli"]["precision"] == 0.5 and prec["idor"]["precision"] is None
+    assert prec["sqli"]["precision"] == 0.5
+    assert prec["idor"]["precision"] is None
     harness = {r["harness"]: r for r in m["per_harness"]}
-    assert harness["codex"]["runs"] == 2 and harness["codex"]["ok_rate"] == 0.5
+    assert harness["codex"]["runs"] == 2
+    assert harness["codex"]["ok_rate"] == 0.5
     assert harness["claude-code"]["total_cost"] == 0.5
     assert {(r["stage"], r["harness"]) for r in m["per_stage_harness"]} == {("hypothesise", "claude-code"),
                                                                            ("hypothesise", "codex")}

@@ -19,6 +19,23 @@ def _get(d: Any, *path: str) -> Any:
     return d
 
 
+def _skip_reason(pr: dict[str, Any], repo: str, policy: Policy | None) -> str | None:
+    """Why a well-formed PR event is not scanned (state / policy), or None to scan it."""
+    if pr.get("state", "open") != "open":
+        return "pr_not_open"
+    scan_drafts = policy.scan_drafts if policy else True
+    scan_forks = policy.scan_forks if policy else False
+    if policy and not policy.repo_enabled(repo):
+        return "repo_disabled"
+    if pr.get("draft") and not scan_drafts:
+        return "draft"
+    head_repo = _get(pr, "head", "repo", "full_name")
+    base_repo = _get(pr, "base", "repo", "full_name") or repo
+    if head_repo != base_repo and not scan_forks:
+        return "fork"
+    return None
+
+
 def github_event_to_request(event: str, payload: dict[str, Any], policy: Policy | None = None) -> Normalized:
     """Return (request, None) for a scannable event, else (None, ignore_reason).
 
@@ -39,19 +56,9 @@ def github_event_to_request(event: str, payload: dict[str, Any], policy: Policy 
     if not isinstance(repo, str) or not isinstance(number, int) or not isinstance(head_sha, str) or not head_sha:
         return None, "malformed:missing repo/number/head_sha"
 
-    if pr.get("state", "open") != "open":
-        return None, "pr_not_open"
-
-    scan_drafts = policy.scan_drafts if policy else True
-    scan_forks = policy.scan_forks if policy else False
-    if policy and not policy.repo_enabled(repo):
-        return None, "repo_disabled"
-    if pr.get("draft") and not scan_drafts:
-        return None, "draft"
-    head_repo = _get(pr, "head", "repo", "full_name")
-    base_repo = _get(pr, "base", "repo", "full_name") or repo
-    if head_repo != base_repo and not scan_forks:
-        return None, "fork"
+    skip = _skip_reason(pr, repo, policy)
+    if skip is not None:
+        return None, skip
 
     installation_id = _get(payload, "installation", "id")
     return ScanRequest(

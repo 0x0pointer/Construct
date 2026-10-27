@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
@@ -14,6 +16,8 @@ from prsec.db import findings as db
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 PAGE_SIZE = 50
+FINDING_NOT_FOUND = "finding not found"
+
 
 
 def _fmt_usd(v: Any) -> str:
@@ -48,6 +52,25 @@ def _render(request: Request, name: str, **ctx: Any) -> HTMLResponse:
     return TEMPLATES.TemplateResponse(request, name, {"user": _user(request), **ctx})
 
 
+def _local_path(path: str, fallback: str = "/findings") -> str:
+    """`path` if it is a same-site absolute path, else `fallback`: never redirect off-site.
+
+    Refuses anything with a scheme or host, protocol-relative `//host`, backslashes (browsers read
+    `/\\host` as `//host`) and control characters (stripped by browsers before parsing).
+    """
+    parts = urlsplit(path)
+    if (
+        not path.startswith("/")
+        or path.startswith("//")
+        or "\\" in path
+        or any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in path)
+        or parts.scheme
+        or parts.netloc
+    ):
+        return fallback
+    return path
+
+
 def _clean(params: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in params.items() if v not in (None, "")}
 
@@ -73,7 +96,7 @@ def scans(request: Request, repo: str | None = None, status: str | None = None, 
     )
 
 
-@app.get("/scans/{scan_id}", response_class=HTMLResponse)
+@app.get("/scans/{scan_id}", response_class=HTMLResponse, responses={404: {"description": "Scan not found"}})
 def scan_detail(request: Request, scan_id: int):
     scan = db.get_scan(scan_id)
     if scan is None:
@@ -97,7 +120,7 @@ def findings(
     )
     page = max(page, 1)
     rows = db.list_findings(filters, limit=PAGE_SIZE + 1, offset=(page - 1) * PAGE_SIZE)
-    ctx = dict(findings=rows[:PAGE_SIZE], filters=filters, page=page, has_next=len(rows) > PAGE_SIZE)
+    ctx = {"findings": rows[:PAGE_SIZE], "filters": filters, "page": page, "has_next": len(rows) > PAGE_SIZE}
     if request.headers.get("hx-request") and request.headers.get("hx-target") == "findings-table":
         return _render(request, "_findings_table.html", **ctx)
     return _render(
@@ -114,11 +137,11 @@ def findings(
     )
 
 
-@app.get("/findings/{finding_id}", response_class=HTMLResponse)
+@app.get("/findings/{finding_id}", response_class=HTMLResponse, responses={404: {"description": "Finding not found"}})
 def finding_detail(request: Request, finding_id: int):
     f = db.get_finding(finding_id)
     if f is None:
-        raise HTTPException(404, "finding not found")
+        raise HTTPException(404, FINDING_NOT_FOUND)
     data = f["data"] or {}
     flow = []
     if data.get("source"):
@@ -128,15 +151,20 @@ def finding_detail(request: Request, finding_id: int):
     return _render(request, "finding.html", f=f, data=data, flow=flow, triage_states=db.TRIAGE_STATES)
 
 
-@app.post("/findings/{finding_id}/triage", response_class=HTMLResponse)
-def triage(request: Request, finding_id: int, state: str = Form(...), note: str = Form("")):
+@app.post(
+    "/findings/{finding_id}/triage",
+    response_class=HTMLResponse,
+    responses={404: {"description": "Finding not found"}, 422: {"description": "Unknown triage state"}},
+)
+def triage(request: Request, finding_id: int, state: Annotated[str, Form()], note: Annotated[str, Form()] = ""):
     if state not in db.TRIAGE_STATES:
         raise HTTPException(422, f"state must be one of {db.TRIAGE_STATES}")
     row = db.set_triage(finding_id, state, note, actor=_user(request))
     if row is None:
-        raise HTTPException(404, "finding not found")
+        raise HTTPException(404, FINDING_NOT_FOUND)
     if not request.headers.get("hx-request"):
-        return RedirectResponse(f"/findings/{finding_id}", status_code=303)
+        # Built from the database row's integer id, and still checked to stay on this site.
+        return RedirectResponse(_local_path(f"/findings/{int(row['id'])}"), status_code=303)
     return _render(request, "_triage.html", f={"id": finding_id, **row}, triage_states=db.TRIAGE_STATES, saved=True)
 
 
@@ -145,7 +173,7 @@ def metrics(request: Request):
     return _render(request, "metrics.html", m=db.metrics())
 
 
-@app.get("/sarif/{scan_id}")
+@app.get("/sarif/{scan_id}", responses={404: {"description": "No SARIF stored for this scan, or it is unreadable"}})
 def sarif(scan_id: int) -> Response:
     scan = db.get_scan(scan_id)
     if scan is None or not scan.get("sarif_uri"):
@@ -173,17 +201,25 @@ def _artifact(uri: str | None, what: str) -> bytes:
         raise HTTPException(502, f"{what} unavailable: {type(e).__name__}") from e
 
 
-@app.get("/stage-runs/{stage_run_id}/transcript", response_class=PlainTextResponse)
+@app.get(
+    "/stage-runs/{stage_run_id}/transcript",
+    response_class=PlainTextResponse,
+    responses={404: {"description": "Artifact not stored or unreadable"}, 502: {"description": "Object store error"}},
+)
 def stage_transcript(stage_run_id: int) -> Response:
     body = _artifact(db.stage_run_transcript_uri(stage_run_id), "transcript")
     return Response(body, media_type="text/plain; charset=utf-8")
 
 
-@app.get("/findings/{finding_id}/evidence", response_class=PlainTextResponse)
+@app.get(
+    "/findings/{finding_id}/evidence",
+    response_class=PlainTextResponse,
+    responses={404: {"description": "Artifact not stored or unreadable"}, 502: {"description": "Object store error"}},
+)
 def finding_evidence(finding_id: int) -> Response:
     f = db.get_finding(finding_id)
     if f is None:
-        raise HTTPException(404, "finding not found")
+        raise HTTPException(404, FINDING_NOT_FOUND)
     body = _artifact((f["data"] or {}).get("evidence_uri"), "evidence")
     return Response(body, media_type="text/plain; charset=utf-8")
 
@@ -191,4 +227,15 @@ def finding_evidence(finding_id: int) -> Response:
 def run() -> None:
     import uvicorn
 
-    uvicorn.run("prsec.dashboard.main:app", host="0.0.0.0", port=8081, proxy_headers=True, forwarded_allow_ips="*")
+    # Loopback by default; the prsec image and compose stack set PRSEC_DASHBOARD_HOST=0.0.0.0 so
+    # oauth2-proxy can reach it. That port is NOT isolated: every service on the compose `control`
+    # network (llm-gateway included, which also joins the per-scan networks) can connect directly,
+    # and identity comes from X-Forwarded-* headers trusted from any peer (forwarded_allow_ips="*").
+    # Do not publish this port; only oauth2-proxy should be the dashboard's entry point.
+    uvicorn.run(
+        "prsec.dashboard.main:app",
+        host=os.environ.get("PRSEC_DASHBOARD_HOST", "127.0.0.1"),
+        port=int(os.environ.get("PRSEC_DASHBOARD_PORT", "8081")),
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+    )

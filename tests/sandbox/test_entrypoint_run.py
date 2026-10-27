@@ -31,10 +31,14 @@ def test_valid_first_try(tmp_path, mode):
     res = run_task(task, get_adapter("fake"), GW)
 
     assert res.status == StageStatus.ok, res.errors
-    assert res.output["decision"] == "light" and res.output["focus_files"] == []
+    assert res.output["decision"] == "light"
+    assert res.output["focus_files"] == []
     assert res.attempts == 1
-    assert res.harness == "fake" and res.harness_version == "fake 1.0" and res.model == "agent-small"
-    assert res.usage.usd == pytest.approx(0.01) and res.usage.tokens_in == 100
+    assert res.harness == "fake"
+    assert res.harness_version == "fake 1.0"
+    assert res.model == "agent-small"
+    assert res.usage.usd == pytest.approx(0.01)
+    assert res.usage.tokens_in == 100
     kinds = {e.kind for e in res.transcript}
     assert {EventKind.message, EventKind.tool_call, EventKind.usage, EventKind.system} <= kinds
     assert all(e.ts is not None for e in res.transcript)
@@ -53,7 +57,8 @@ def test_valid_first_try(tmp_path, mode):
 def test_dev_mode_without_gateway_uses_task_model(tmp_path, mode):
     mode("valid")
     res = run_task(make_task(tmp_path), get_adapter("fake"), None)
-    assert res.status == StageStatus.ok and res.model == "agent-small"
+    assert res.status == StageStatus.ok
+    assert res.model == "agent-small"
 
 
 def test_stale_output_is_not_accepted(tmp_path, mode):
@@ -75,7 +80,9 @@ def test_repair_via_resume(tmp_path, mode):
     calls = prompts(task)
     assert calls[1]["resume"] == "sess-1"
     repair = calls[1]["prompt"]
-    assert "failed validation" in repair and "decision" in repair and "OUTPUT CONTRACT" not in repair
+    assert "failed validation" in repair
+    assert "decision" in repair
+    assert "OUTPUT CONTRACT" not in repair
     assert (Path(task.out_dir) / "triage.attempt1.invalid.json").exists()
     assert res.usage.usd == pytest.approx(0.02)
 
@@ -90,7 +97,10 @@ def test_repair_via_fresh_call_when_no_resume(tmp_path, mode):
     second = prompts(task)[1]
     assert second["resume"] is None
     p = second["prompt"]
-    assert "OUTPUT CONTRACT" in p and "REPAIR" in p and '"maybe"' in p and "$.decision" in p
+    assert "OUTPUT CONTRACT" in p
+    assert "REPAIR" in p
+    assert '"maybe"' in p
+    assert "$.decision" in p
 
 
 def test_resume_refused_falls_back_to_fresh(tmp_path, mode):
@@ -98,13 +108,15 @@ def test_resume_refused_falls_back_to_fresh(tmp_path, mode):
     task = make_task(tmp_path, harness="fake-resume-refused")
     res = run_task(task, get_adapter("fake-resume-refused"), GW)
     assert res.status == StageStatus.ok
-    assert prompts(task)[1]["resume"] is None and "REPAIR" in prompts(task)[1]["prompt"]
+    assert prompts(task)[1]["resume"] is None
+    assert "REPAIR" in prompts(task)[1]["prompt"]
 
 
 def test_not_json_is_repaired(tmp_path, mode):
     mode("not_json_then_valid")
     res = run_task(make_task(tmp_path), get_adapter("fake"), GW)
-    assert res.status == StageStatus.ok and res.attempts == 2
+    assert res.status == StageStatus.ok
+    assert res.attempts == 2
 
 
 def test_never_valid_gives_output_invalid(tmp_path, mode):
@@ -166,7 +178,8 @@ def test_install_skills_failure_is_harness_error(tmp_path, mode, monkeypatch):
     adapter = get_adapter("fake")
     monkeypatch.setattr(adapter, "install_skills", lambda task: (_ for _ in ()).throw(OSError("ro fs")))
     res = run_task(make_task(tmp_path), adapter, GW)
-    assert res.status == StageStatus.harness_error and "ro fs" in res.errors[0]
+    assert res.status == StageStatus.harness_error
+    assert "ro fs" in res.errors[0]
 
 
 def test_raising_parse_events_does_not_hang(tmp_path, mode, monkeypatch):
@@ -191,7 +204,8 @@ def test_inprocess_valid_and_repair(tmp_path, mode):
     mode("invalid_then_valid")
     adapter = get_adapter("fake-inproc")
     res = run_task(make_task(tmp_path, harness="fake-inproc"), adapter, GW)
-    assert res.status == StageStatus.ok and res.attempts == 2
+    assert res.status == StageStatus.ok
+    assert res.attempts == 2
     assert "REPAIR" in adapter.calls[1]
     assert res.usage.usd == pytest.approx(0.04)
 
@@ -216,12 +230,14 @@ def test_pydantic_model_applies_only_to_matching_schema(tmp_path):
     task = make_task(tmp_path)
     Path(task.output_path).write_text(json.dumps(VALID))
     out, errs, _ = contract.validate_output(task)
-    assert not errs and out["business_flows_touched"] == []
+    assert not errs
+    assert out["business_flows_touched"] == []
 
     custom = task.model_copy(update={"output_schema": {"type": "object", "required": ["x"]}})
     Path(task.output_path).write_text(json.dumps({"x": 1}))
     out, errs, _ = contract.validate_output(custom)
-    assert not errs and out == {"x": 1}
+    assert not errs
+    assert out == {"x": 1}
 
     Path(task.output_path).write_text("[1, 2]")
     _, errs, _ = contract.validate_output(task)
@@ -239,7 +255,8 @@ def test_budget_uses_gateway_spend_for_per_task_keys(tmp_path, mode, monkeypatch
     mode("never_valid")
     task = make_task(tmp_path, usd_budget=1.0, repair_attempts=2)
     res = run_task(task, get_adapter("fake"), dataclasses.replace(GW, per_task_key=True))
-    assert res.status == StageStatus.budget_exceeded and res.attempts == 1
+    assert res.status == StageStatus.budget_exceeded
+    assert res.attempts == 1
     assert res.usage.usd == pytest.approx(5.0)
     assert calls == [("http://llm-gateway:4000", "sk-scan")]
 
@@ -250,4 +267,5 @@ def test_shared_scan_key_spend_is_not_used(tmp_path, mode, monkeypatch):
     monkeypatch.setattr(gateway, "self_spend", lambda url, key: pytest.fail("scan-wide spend must not be queried"))
     mode("valid")
     res = run_task(make_task(tmp_path), get_adapter("fake"), GW)
-    assert res.status == StageStatus.ok and res.usage.usd == pytest.approx(0.01)
+    assert res.status == StageStatus.ok
+    assert res.usage.usd == pytest.approx(0.01)

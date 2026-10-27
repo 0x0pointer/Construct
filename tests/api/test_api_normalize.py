@@ -32,7 +32,8 @@ def test_ignored_actions(action):
 @pytest.mark.parametrize("event", ["push", "issues", "check_run", ""])
 def test_ignored_events(event):
     req, reason = github_event_to_request(event, pr_payload(), policy())
-    assert req is None and reason == f"event:{event}"
+    assert req is None
+    assert reason == f"event:{event}"
 
 
 def test_draft_respects_policy():
@@ -50,7 +51,8 @@ def test_fork_respects_policy():
     p = pr_payload(pull_request__head={"sha": "c" * 40, "repo": {"full_name": "mallory/api"}})
     assert github_event_to_request("pull_request", p, policy(scan_forks=False)) == (None, "fork")
     req, _ = github_event_to_request("pull_request", p, policy(scan_forks=True))
-    assert req is not None and req.head_sha == "c" * 40
+    assert req is not None
+    assert req.head_sha == "c" * 40
 
 
 def test_deleted_fork_head_repo_is_fork():
@@ -83,14 +85,16 @@ def test_malformed(mutate):
     p = pr_payload()
     mutate(p)
     req, reason = github_event_to_request("pull_request", p, policy())
-    assert req is None and reason.startswith("malformed")
+    assert req is None
+    assert reason.startswith("malformed")
 
 
 def test_missing_installation_and_no_policy_defaults():
     p = pr_payload()
     p.pop("installation")
     req, _ = github_event_to_request("pull_request", p)
-    assert req is not None and req.installation_id is None
+    assert req is not None
+    assert req.installation_id is None
     fork = pr_payload(pull_request__head={"sha": "c" * 40, "repo": {"full_name": "x/y"}})
     assert github_event_to_request("pull_request", fork) == (None, "fork")
     draft = pr_payload(pull_request__draft=True)
@@ -101,4 +105,5 @@ def test_number_falls_back_to_pull_request():
     p = pr_payload()
     p.pop("number")
     req, _ = github_event_to_request("pull_request", p, policy())
-    assert req is not None and req.pr == 7
+    assert req is not None
+    assert req.pr == 7

@@ -8,6 +8,7 @@
     <label><input type="radio" name="state" value="{{ s }}" {% if f.triage_state == s %}checked{% endif %} required> {{ s }}</label>
   {% endfor %}
   </p>
-  <p><textarea name="note" rows="3" style="width:100%" placeholder="Note (why tp / fp / accepted)"></textarea></p>
+  <p><label for="triage-note" class="muted">Note</label><br>
+     <textarea id="triage-note" name="note" rows="3" style="width:100%" placeholder="Note (why tp / fp / accepted)"></textarea></p>
   <button type="submit">Save triage</button>
 </form>

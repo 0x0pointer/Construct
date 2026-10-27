@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from prsec.adapters.harness.base import adapter_names, get_adapter, resolve_cli
+from prsec.adapters.harness.base import get_adapter, resolve_cli
 from prsec.adapters.protocols import WorkbenchSpec
 from prsec.adapters.runner.local import LocalRunner
 from prsec.citations import verify_all
@@ -23,7 +23,7 @@ from prsec.orchestrator import stages
 from prsec.skills_lint import bug_class_aliases
 from prsec.stages.outputs import HypothesesOutput
 
-from .conftest import cli_name
+from .conftest import cli_name, shipped_adapter_names
 
 ROOT = Path(__file__).resolve().parents[2]
 SKILLS = ROOT / "prsec-skills"
@@ -37,7 +37,7 @@ pytestmark = [
 
 def _selected() -> list[str]:
     only = {n.strip() for n in os.environ.get("PRSEC_LIVE_HARNESSES", "").split(",") if n.strip()}
-    return [n for n in adapter_names() if not only or n in only]
+    return [n for n in shipped_adapter_names() if not only or n in only]
 
 
 def _available(name: str) -> str | None:
@@ -89,11 +89,13 @@ def test_live_hypothesise_finds_sqli(harness: str, tmp_path: Path) -> None:
     print(f"\n[{harness}] status={result.status} attempts={result.attempts} usage={result.usage} "
           f"version={result.harness_version} duration={result.duration_s}s")
     assert result.status == StageStatus.ok, result.errors
-    assert result.transcript and result.usage.turns >= 1
+    assert result.transcript
+    assert result.usage.turns >= 1
     out = HypothesesOutput.model_validate(result.output)
     aliases = bug_class_aliases(SKILLS)
     sqli = [h for h in out.hypotheses if aliases.get(h.bug_class, h.bug_class) == "sqli"]
     assert sqli, [h.bug_class for h in out.hypotheses]
     h = sqli[0]
-    assert h.sink.file == "app.py" and 33 <= h.sink.line <= 38, h.sink
+    assert h.sink.file == "app.py", h.sink
+    assert 33 <= h.sink.line <= 38, h.sink
     assert verify_all([h.sink, *([h.source] if h.source else []), *h.path], src) == []

@@ -32,6 +32,7 @@ from prsec.models import Event, EventKind, StageTask, Usage
 CLI = "codex"
 PROVIDER = "prsec"
 KEY_ENV = "PRSEC_CODEX_API_KEY"
+CODEX_DIR = ".codex"
 
 
 def _toml(value: str | bool | int) -> str:
@@ -69,21 +70,21 @@ class CodexAdapter:
     def home(self, task: StageTask) -> Path:
         return Path(task.out_dir) / ".home"
 
-    def codex_home(self, task: StageTask, gw: GatewayConfig | None) -> Path:
-        return self.home(task) / ".codex"
+    def codex_home(self, task: StageTask) -> Path:
+        return self.home(task) / CODEX_DIR
 
     @staticmethod
     def user_codex_home() -> Path:
-        return Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+        return Path(os.environ.get("CODEX_HOME") or Path.home() / CODEX_DIR)
 
     def install_skills(self, task: StageTask) -> None:
         home = self.home(task)
         copy_skills(task, home / ".agents" / "skills")
-        copy_skills(task, home / ".codex" / "skills")
+        copy_skills(task, home / CODEX_DIR / "skills")
 
     # ----------------------------------------------------------- invocation
 
-    def _overrides(self, task: StageTask, gw: GatewayConfig | None) -> list[str]:
+    def _overrides(self, gw: GatewayConfig | None) -> list[str]:
         cfg: dict[str, str | bool | int] = {
             "approval_policy": "never",
             "check_for_update_on_startup": False,
@@ -123,13 +124,13 @@ class CodexAdapter:
         return opts
 
     def _env(self, task: StageTask, gw: GatewayConfig | None) -> dict[str, str]:
-        env = {"HOME": str(self.home(task)), "CODEX_HOME": str(self.codex_home(task, gw))}
+        env = {"HOME": str(self.home(task)), "CODEX_HOME": str(self.codex_home(task))}
         if gw is not None:
             env[KEY_ENV] = gw.api_key
         return env
 
     def _prepare(self, task: StageTask, gw: GatewayConfig | None) -> None:
-        home = self.codex_home(task, gw)
+        home = self.codex_home(task)
         home.mkdir(parents=True, exist_ok=True)
         if gw is not None:
             return
@@ -140,12 +141,12 @@ class CodexAdapter:
 
     def build(self, task: StageTask, gw: GatewayConfig | None, prompt: str) -> Invocation:
         self._prepare(task, gw)
-        argv = [resolve_cli(CLI), *self._overrides(task, gw), "exec", *self._exec_opts(task, gw), "-"]
+        argv = [resolve_cli(CLI), *self._overrides(gw), "exec", *self._exec_opts(task, gw), "-"]
         return Invocation(argv=argv, env=self._env(task, gw), cwd=task.out_dir, stdin=prompt)
 
     def build_resume(self, task: StageTask, gw: GatewayConfig | None, session_id: str, prompt: str) -> Invocation | None:
         self._prepare(task, gw)
-        argv = [resolve_cli(CLI), *self._overrides(task, gw), "exec", *self._exec_opts(task, gw), "resume", session_id, "-"]
+        argv = [resolve_cli(CLI), *self._overrides(gw), "exec", *self._exec_opts(task, gw), "resume", session_id, "-"]
         return Invocation(argv=argv, env=self._env(task, gw), cwd=task.out_dir, stdin=prompt)
 
     # --------------------------------------------------------------- events
@@ -233,7 +234,10 @@ class CodexAdapter:
             text = str(item.get("aggregated_output") or "")
         elif it == "mcp_tool_call":
             res, err = item.get("result"), item.get("error")
-            text = json.dumps(err if err else (res or {}).get("content", []) if isinstance(res, dict) else res)
+            if err:
+                text = json.dumps(err)
+            else:
+                text = json.dumps(res.get("content", []) if isinstance(res, dict) else res)
         elif it == "file_change":
             text = "\n".join(f"{c.get('kind')} {c.get('path')}" for c in item.get("changes") or [] if isinstance(c, dict))
         else:

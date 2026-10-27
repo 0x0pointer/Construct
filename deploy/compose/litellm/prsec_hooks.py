@@ -21,7 +21,7 @@ is resolved relative to config.yaml).
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, NoReturn
 
 try:  # the module is unit-tested without litellm installed
     from litellm.integrations.custom_logger import CustomLogger
@@ -62,35 +62,41 @@ class RemoteContentRejected(ValueError):
     status_code = 400
 
 
+def _is_remote(value: str) -> bool:
+    v = value.strip()
+    return bool(v) and not v.lower().startswith("data:")
+
+
+def _collect_urls(node: Any, found: list[str]) -> None:
+    if isinstance(node, list):
+        for item in node:
+            _collect_urls(item, found)
+        return
+    if not isinstance(node, dict):
+        return
+    for key, value in node.items():
+        if key in URL_KEYS and isinstance(value, str):
+            if _is_remote(value):
+                found.append(value)
+        else:
+            _collect_urls(value, found)
+
+
 def remote_urls(data: dict[str, Any]) -> list[str]:
     """Every non-`data:` URL referenced by message content in the request."""
     found: list[str] = []
-
-    def walk(node: Any) -> None:
-        if isinstance(node, dict):
-            for key, value in node.items():
-                if key in URL_KEYS and isinstance(value, str):
-                    if value.strip() and not value.strip().lower().startswith("data:"):
-                        found.append(value)
-                else:
-                    walk(value)
-        elif isinstance(node, list):
-            for item in node:
-                walk(item)
-
     for name in CONTENT_FIELDS:
         if name in data:
-            walk(data[name])
+            _collect_urls(data[name], found)
     return found
 
 
-def _reject(message: str) -> Exception:
+def _reject(message: str) -> NoReturn:
     try:
         from fastapi import HTTPException
-
-        return HTTPException(status_code=400, detail=message)
     except ImportError:  # pragma: no cover - fastapi ships with the proxy
-        return RemoteContentRejected(message)
+        raise RemoteContentRejected(message) from None
+    raise HTTPException(status_code=400, detail=message)
 
 
 def is_server_tool(tool: Any) -> bool:
@@ -102,23 +108,26 @@ def is_server_tool(tool: Any) -> bool:
     return ttype.startswith(SERVER_TOOL_PREFIXES)
 
 
+def _strip_tools(data: dict[str, Any]) -> list[str]:
+    """Drop server-side entries from `data["tools"]`; returns their types."""
+    tools = data.get("tools")
+    if not isinstance(tools, list):
+        return []
+    removed = [str(tool.get("type")) for tool in tools if is_server_tool(tool)]
+    if not removed:
+        return []
+    kept = [tool for tool in tools if not is_server_tool(tool)]
+    if kept:
+        data["tools"] = kept
+    else:  # an empty tools list / dangling tool_choice is rejected by providers
+        data.pop("tools")
+        data.pop("tool_choice", None)
+    return removed
+
+
 def strip_request(data: dict[str, Any]) -> list[str]:
     """Remove server-side tools/params from `data` in place. Returns what was removed."""
-    removed: list[str] = []
-    tools = data.get("tools")
-    if isinstance(tools, list):
-        kept = []
-        for tool in tools:
-            if is_server_tool(tool):
-                removed.append(str(tool.get("type")))
-            else:
-                kept.append(tool)
-        if removed:
-            if kept:
-                data["tools"] = kept
-            else:  # an empty tools list / dangling tool_choice is rejected by providers
-                data.pop("tools")
-                data.pop("tool_choice", None)
+    removed = _strip_tools(data)
     choice = data.get("tool_choice")
     if isinstance(choice, dict) and is_server_tool(choice):
         data.pop("tool_choice")
@@ -138,7 +147,7 @@ class StripServerTools(CustomLogger):  # type: ignore[misc,valid-type]
         urls = remote_urls(data)
         if urls:
             log.warning("prsec: rejected request with %d remote content URL(s) (call_type=%s)", len(urls), call_type)
-            raise _reject("prsec: remote URLs in message content are not allowed; inline the content as data: URLs")
+            _reject("prsec: remote URLs in message content are not allowed; inline the content as data: URLs")
         return data
 
 

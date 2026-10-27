@@ -1,5 +1,6 @@
 import re
 
+import jinja2
 import pytest
 
 from prsec import prompts
@@ -26,7 +27,8 @@ def _ctx(has_tools: bool) -> dict:
 def test_prompts_are_harness_neutral(stage, has_tools):
     text = prompts.render(stage, **_ctx(has_tools))
     assert not FORBIDDEN.search(text), FORBIDDEN.search(text)
-    assert "{{" not in text and "{%" not in text
+    assert "{{" not in text
+    assert "{%" not in text
 
 
 @pytest.mark.parametrize("stage", STAGES)
@@ -34,26 +36,31 @@ def test_has_tools_changes_prompt(stage):
     with_tools = prompts.render(stage, **_ctx(True))
     without = prompts.render(stage, **_ctx(False))
     assert with_tools != without
-    assert "/work/out/output.json" in with_tools and "/work/out/output.json" not in without
+    assert "/work/out/output.json" in with_tools
+    assert "/work/out/output.json" not in without
     assert "/work/in/diff.patch" not in without
     assert "cannot run commands" in without
 
 
 def test_prompt_content():
     hyp = prompts.render("hypothesise", **_ctx(True))
-    assert "at most **5**" in hyp and "invariant" in hyp.lower() and "/work/in/pr.json" in hyp
+    assert "at most **5**" in hyp
+    assert "invariant" in hyp.lower()
+    assert "/work/in/pr.json" in hyp
     assert "`business-logic`" in hyp
     tri = prompts.render("triage", **_ctx(True))
     for term in ("authorisation", "workflow", "money", "tenant", "rate limits", "skip", "light", "full"):
         assert term in tri
     sv = prompts.render("static_verify", **_ctx(True))
-    assert "H2" in sv and "false positive" in sv and "database constraints" in sv.lower()
+    assert "H2" in sv
+    assert "false positive" in sv
+    assert "database constraints" in sv.lower()
     sk = prompts.render("skeptic", **_ctx(False))
     assert "When unsure, refute" in sk
 
 
 def test_missing_variable_is_an_error():
-    with pytest.raises(Exception):
+    with pytest.raises(jinja2.UndefinedError, match="is undefined"):
         prompts.render("triage", repo="x")
 
 
@@ -62,5 +69,6 @@ def test_prior_findings_instruction_only_when_present():
     assert "prior_findings.json" not in prompts.render("hypothesise", **ctx)
     ctx["context_files"] = [*ctx["context_files"], "prior_findings.json"]
     text = prompts.render("hypothesise", **ctx)
-    assert "/work/in/prior_findings.json" in text and "Re-evaluate every one" in text
+    assert "/work/in/prior_findings.json" in text
+    assert "Re-evaluate every one" in text
     assert not FORBIDDEN.search(text)

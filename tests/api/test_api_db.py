@@ -61,4 +61,5 @@ def test_webhook_enqueues_then_dedupes(client):
     from prsec.db import queue
 
     leased = queue.lease_next()
-    assert leased["id"] == scan_id and leased["installation_id"] == 99
+    assert leased["id"] == scan_id
+    assert leased["installation_id"] == 99

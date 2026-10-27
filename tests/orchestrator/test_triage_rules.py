@@ -10,7 +10,8 @@ def _diff(path: str, removed: list[str], added: list[str], *, new: bool = False)
 def test_css_only_skip():
     d = _diff("web/app.css", [".btn { padding: 2px; }"], [".btn { padding: 3px; }"])
     decision, reason = classify(["web/app.css", "web/logo.png"], d)
-    assert decision == "skip" and "asset=2" in reason
+    assert decision == "skip"
+    assert "asset=2" in reason
 
 
 def test_docs_skip():
@@ -21,7 +22,8 @@ def test_docs_skip():
 def test_lockfile_only_skip():
     d = _diff("package-lock.json", ['"version": "1.0.0"'], ['"version": "1.0.1"']) + _diff("go.sum", ["a"], ["b"])
     decision, reason = classify(["package-lock.json", "go.sum"], d)
-    assert decision == "skip" and "lockfile=2" in reason
+    assert decision == "skip"
+    assert "lockfile=2" in reason
 
 
 def test_manifest_version_bump_skip():
@@ -59,7 +61,8 @@ def test_comment_only_diff_skip():
     d = _diff("src/pay.ts", ["// old comment", "/**", " * doc line", " */"], ["// new comment", "/**", " * doc line two", " */", ""])
     d += _diff("app/svc.py", ["    # note"], ["    # better note"])
     decision, reason = classify(["src/pay.ts", "app/svc.py"], d)
-    assert decision == "skip" and "comments_whitespace=2" in reason
+    assert decision == "skip"
+    assert "comments_whitespace=2" in reason
 
 
 def test_comment_plus_code_goes_to_llm():

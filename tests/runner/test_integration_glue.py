@@ -36,7 +36,8 @@ def test_host_task_rewrites_prompt_and_fields(tmp_path: Path) -> None:
     spec = WorkbenchSpec(scan_id=1, task=task, image="x", harness_volume=None, src_dir=tmp_path / "s",
                          in_dir=tmp_path / "i", out_dir=tmp_path / "o", skills_dir=tmp_path / "k")
     t = host_task(spec)
-    assert "/work/" not in t.prompt_md and str(tmp_path / "o" / "output.json") in t.prompt_md
+    assert "/work/" not in t.prompt_md
+    assert str(tmp_path / "o" / "output.json") in t.prompt_md
     assert t.output_path == str(tmp_path / "o" / "output.json")
 
 
@@ -46,9 +47,11 @@ def test_invocation_env_unsets_parent_session(monkeypatch: pytest.MonkeyPatch, t
     task = StageTask(scan_id=1, stage=Stage.triage, task_id="t", harness="claude-code", output_schema={},
                      prompt_md="p", out_dir=str(tmp_path), workdir=str(tmp_path))
     inv = ClaudeCodeAdapter().build(task, None, "p")
-    assert "CLAUDECODE" in inv.unset_env and set(PARENT_SESSION_ENV) == set(inv.unset_env)
+    assert "CLAUDECODE" in inv.unset_env
+    assert set(PARENT_SESSION_ENV) == set(inv.unset_env)
     env = run_mod._invocation_env(task, inv)
-    assert "CLAUDECODE" not in env and env["KEEP_ME"] == "1"
+    assert "CLAUDECODE" not in env
+    assert env["KEEP_ME"] == "1"
     env = run_mod._invocation_env(task, Invocation(argv=["x"], env={"CLAUDECODE": "set-by-adapter"}, cwd=".",
                                                    unset_env=["CLAUDECODE"]))
     assert env["CLAUDECODE"] == "set-by-adapter"  # the overlay wins over the unset list
@@ -66,7 +69,8 @@ def test_inprocess_tuple_return_is_unpacked(tmp_path: Path) -> None:
     task = StageTask(scan_id=1, stage=Stage.triage, task_id="t", harness="raw", output_schema={}, prompt_md="p",
                      out_dir=str(tmp_path))
     att = run_mod._run_inprocess(Fake(), task, None, "p", deadline=__import__("time").monotonic() + 5)
-    assert att.exit_code == 0 and [e.text for e in att.events] == ["hi"]
+    assert att.exit_code == 0
+    assert [e.text for e in att.events] == ["hi"]
 
 
 def test_canonical_bug_classes() -> None:

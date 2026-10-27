@@ -26,13 +26,14 @@ SKILL_MD_MAX_BYTES = 100_000
 REFERENCE_WARN_BYTES = 60_000
 MIN_BODY_CHARS = 100
 BUG_CLASSES_FILE = "bug-classes.yaml"
+SKILL_MD = "SKILL.md"
 
 _I = re.IGNORECASE
 
 HARNESS_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("task-tool", re.compile(r"\bTask\s+tool\b", _I)),
     ("subagent", re.compile(r"\bsub-?agents?\b", _I)),
-    ("slash-command", re.compile(r"^\s*(?:[-*>]\s+|\d+\.\s+)?/[a-z][a-z0-9-]*(?=$|[\s`.,:;)])")),
+    ("slash-command", re.compile(r"^\s*(?:(?:[-*>]|\d+\.)\s+)?/[a-z][a-z0-9-]*(?=$|[\s`.,:;)])")),
     ("slash-command", re.compile(r"\bslash[\s-]commands?\b", _I)),
     ("todo-tool", re.compile(r"\bTodo(?:Write|Read)\b")),
     ("claude-code", re.compile(r"\bclaude[\s-]code\b", _I)),
@@ -95,8 +96,51 @@ def split_frontmatter(text: str) -> tuple[str, str, int] | None:
     return None
 
 
-def lint_frontmatter(skill_md: Path, text: str) -> list[Issue]:
+def _frontmatter_line(fm_text: str, key: str) -> int:
+    for i, ln in enumerate(fm_text.splitlines(), start=2):
+        if ln.startswith(f"{key}:"):
+            return i
+    return 1
+
+
+def _lint_name(skill_md: Path, fm: dict, fm_text: str) -> list[Issue]:
+    dir_name = skill_md.parent.name
+    name = fm.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return [_err(skill_md, 1, "name", "frontmatter 'name' is required")]
     issues: list[Issue] = []
+    if name != dir_name:
+        issues.append(_err(skill_md, _frontmatter_line(fm_text, "name"), "name", f"name {name!r} must match directory {dir_name!r}"))
+    if not NAME_RE.match(name):
+        issues.append(_err(skill_md, _frontmatter_line(fm_text, "name"), "name", f"name {name!r} must be kebab-case"))
+    return issues
+
+
+def _lint_description(skill_md: Path, fm: dict, fm_text: str) -> list[Issue]:
+    desc = fm.get("description")
+    dline = _frontmatter_line(fm_text, "description")
+    if not isinstance(desc, str) or not desc.strip():
+        return [_err(skill_md, dline, "description", "frontmatter 'description' is required")]
+    issues: list[Issue] = []
+    if len(desc) > MAX_DESCRIPTION:
+        issues.append(
+            _err(skill_md, dline, "description", f"description is {len(desc)} chars (max {MAX_DESCRIPTION})")
+        )
+    raw = next((ln for ln in fm_text.splitlines() if ln.startswith("description:")), "")
+    inline = raw.split(":", 1)[1].strip() if ":" in raw else ""
+    if not inline or inline[0] in "|>":
+        issues.append(
+            _err(
+                skill_md,
+                dline,
+                "description",
+                "description must be a single-line scalar (the fallback skills index reads one line)",
+            )
+        )
+    return issues
+
+
+def lint_frontmatter(skill_md: Path, text: str) -> list[Issue]:
     split = split_frontmatter(text)
     if split is None:
         return [_err(skill_md, 1, "frontmatter", "SKILL.md must start with a '---' YAML frontmatter block")]
@@ -108,43 +152,7 @@ def lint_frontmatter(skill_md: Path, text: str) -> list[Issue]:
     if not isinstance(fm, dict):
         return [_err(skill_md, 1, "frontmatter", "frontmatter must be a YAML mapping")]
 
-    def line_of(key: str) -> int:
-        for i, ln in enumerate(fm_text.splitlines(), start=2):
-            if ln.startswith(f"{key}:"):
-                return i
-        return 1
-
-    dir_name = skill_md.parent.name
-    name = fm.get("name")
-    if not isinstance(name, str) or not name.strip():
-        issues.append(_err(skill_md, 1, "name", "frontmatter 'name' is required"))
-    else:
-        if name != dir_name:
-            issues.append(_err(skill_md, line_of("name"), "name", f"name {name!r} must match directory {dir_name!r}"))
-        if not NAME_RE.match(name):
-            issues.append(_err(skill_md, line_of("name"), "name", f"name {name!r} must be kebab-case"))
-
-    desc = fm.get("description")
-    dline = line_of("description")
-    if not isinstance(desc, str) or not desc.strip():
-        issues.append(_err(skill_md, dline, "description", "frontmatter 'description' is required"))
-    else:
-        if len(desc) > MAX_DESCRIPTION:
-            issues.append(
-                _err(skill_md, dline, "description", f"description is {len(desc)} chars (max {MAX_DESCRIPTION})")
-            )
-        raw = next((ln for ln in fm_text.splitlines() if ln.startswith("description:")), "")
-        inline = raw.split(":", 1)[1].strip() if ":" in raw else ""
-        if not inline or inline[0] in "|>":
-            issues.append(
-                _err(
-                    skill_md,
-                    dline,
-                    "description",
-                    "description must be a single-line scalar (the fallback skills index reads one line)",
-                )
-            )
-
+    issues = _lint_name(skill_md, fm, fm_text) + _lint_description(skill_md, fm, fm_text)
     if len(body.strip()) < MIN_BODY_CHARS:
         issues.append(_err(skill_md, 1, "size", f"SKILL.md body is nearly empty (< {MIN_BODY_CHARS} chars)"))
     return issues
@@ -188,7 +196,7 @@ def lint_harness_language(path: Path, text: str) -> list[Issue]:
 
 def _skill_dir_of(path: Path, root: Path) -> Path:
     for d in [path.parent, *path.parent.parents]:
-        if (d / "SKILL.md").is_file():
+        if (d / SKILL_MD).is_file():
             return d
         if d == root:
             break
@@ -205,26 +213,32 @@ def _iter_outside_fences(lines: list[str]) -> Iterator[tuple[int, str]]:
             yield i, ln
 
 
+def _link_issue(path: Path, line: int, target: str, root_r: Path) -> Issue | None:
+    """The problem with one markdown link target, if any (external and in-page links are fine)."""
+    if not target or target.startswith("#") or SCHEME_RE.match(target):
+        return None
+    rel = unquote(target.split("#", 1)[0])
+    if not rel:
+        return None
+    if rel.startswith("/"):
+        return _err(path, line, "link", f"absolute link {target!r}; use a path relative to this file")
+    resolved = (path.parent / rel).resolve()
+    if not resolved.is_relative_to(root_r):
+        return _err(path, line, "link", f"link {target!r} escapes the skills directory")
+    if not resolved.exists():
+        return _err(path, line, "link", f"broken relative link {target!r}")
+    return None
+
+
 def lint_links(path: Path, text: str, root: Path) -> list[Issue]:
     issues: list[Issue] = []
     root_r = root.resolve()
     skill_dir = _skill_dir_of(path, root)
     for i, ln in _iter_outside_fences(text.splitlines()):
         for m in LINK_RE.finditer(ln):
-            target = m.group(1).strip("<>")
-            if not target or target.startswith("#") or SCHEME_RE.match(target):
-                continue
-            rel = unquote(target.split("#", 1)[0])
-            if not rel:
-                continue
-            if rel.startswith("/"):
-                issues.append(_err(path, i, "link", f"absolute link {target!r}; use a path relative to this file"))
-                continue
-            resolved = (path.parent / rel).resolve()
-            if not resolved.is_relative_to(root_r):
-                issues.append(_err(path, i, "link", f"link {target!r} escapes the skills directory"))
-            elif not resolved.exists():
-                issues.append(_err(path, i, "link", f"broken relative link {target!r}"))
+            issue = _link_issue(path, i, m.group(1).strip("<>"), root_r)
+            if issue:
+                issues.append(issue)
         for m in CODE_REF_RE.finditer(ln):
             ref = m.group(1).rstrip("/.")
             if not any((base / ref).exists() for base in (path.parent, skill_dir)):
@@ -253,14 +267,7 @@ def bug_class_aliases(root: Path) -> dict[str, str]:
     return out
 
 
-def lint_bug_classes(root: Path) -> list[Issue]:
-    f = root / BUG_CLASSES_FILE
-    try:
-        classes = load_bug_classes(root)
-    except yaml.YAMLError as e:
-        return [_err(f, 1, "bug-classes", f"invalid YAML: {e}")]
-    if classes is None:
-        return []
+def _alias_issues(f: Path, classes: dict[str, dict]) -> list[Issue]:
     issues: list[Issue] = []
     seen: dict[str, str] = {}
     for name, meta in classes.items():
@@ -270,16 +277,30 @@ def lint_bug_classes(root: Path) -> list[Issue]:
             if alias in seen and seen[alias] != name:
                 issues.append(_err(f, 1, "bug-classes", f"{alias!r} maps to both {seen[alias]!r} and {name!r}"))
             seen[alias] = name
-    refs = root / "static-validation" / "references"
-    if refs.is_dir():
-        for ref in sorted(refs.glob("*.md")):
-            if ref.stem.lower() == "readme":
-                continue
-            if ref.stem not in classes:
-                issues.append(
-                    _err(ref, 1, "bug-classes", f"reference {ref.name} is not a canonical bug class in {BUG_CLASSES_FILE}")
-                )
     return issues
+
+
+def _reference_issues(root: Path, classes: dict[str, dict]) -> list[Issue]:
+    """static-validation references must each be named after a canonical bug class."""
+    refs = root / "static-validation" / "references"
+    if not refs.is_dir():
+        return []
+    return [
+        _err(ref, 1, "bug-classes", f"reference {ref.name} is not a canonical bug class in {BUG_CLASSES_FILE}")
+        for ref in sorted(refs.glob("*.md"))
+        if ref.stem.lower() != "readme" and ref.stem not in classes
+    ]
+
+
+def lint_bug_classes(root: Path) -> list[Issue]:
+    f = root / BUG_CLASSES_FILE
+    try:
+        classes = load_bug_classes(root)
+    except yaml.YAMLError as e:
+        return [_err(f, 1, "bug-classes", f"invalid YAML: {e}")]
+    if classes is None:
+        return []
+    return _alias_issues(f, classes) + _reference_issues(root, classes)
 
 
 # ------------------------------------------------------------------ drivers
@@ -287,7 +308,7 @@ def lint_bug_classes(root: Path) -> list[Issue]:
 
 def lint_skill(skill_dir: Path, root: Path | None = None) -> list[Issue]:
     root = root or skill_dir
-    skill_md = skill_dir / "SKILL.md"
+    skill_md = skill_dir / SKILL_MD
     if not skill_md.is_file():
         return [_err(skill_dir, 1, "missing", "skill directory has no SKILL.md")]
     text = skill_md.read_text(encoding="utf-8")
@@ -303,15 +324,15 @@ def lint_skill(skill_dir: Path, root: Path | None = None) -> list[Issue]:
 def lint_markdown(path: Path, root: Path) -> list[Issue]:
     text = path.read_text(encoding="utf-8")
     issues = lint_harness_language(path, text) + lint_links(path, text, root)
-    if path.name != "SKILL.md" and len(text.encode()) > REFERENCE_WARN_BYTES:
+    if path.name != SKILL_MD and len(text.encode()) > REFERENCE_WARN_BYTES:
         issues.append(_warn(path, 1, "size", f"{path.name} is {len(text.encode())} bytes; consider splitting"))
     return issues
 
 
 def skill_dirs(root: Path) -> list[Path]:
-    if (root / "SKILL.md").is_file():
+    if (root / SKILL_MD).is_file():
         return [root]
-    return sorted(d for d in root.iterdir() if d.is_dir() and (d / "SKILL.md").is_file())
+    return sorted(d for d in root.iterdir() if d.is_dir() and (d / SKILL_MD).is_file())
 
 
 def lint_tree(root: Path) -> list[Issue]:

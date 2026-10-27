@@ -40,6 +40,13 @@ OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 
+def shipped_adapter_names() -> list[str]:
+    """Adapters PRSec ships. Other suites register test-only fakes (tests/sandbox/fakeharness.py) in the
+    same global registry; benching those would overwrite their CLI script with the stub shim."""
+    return [n for n in adapter_names()
+            if type(get_adapter(n)).__module__.startswith("prsec.adapters.harness.")]
+
+
 def cli_name(adapter: HarnessAdapter) -> str | None:
     if not adapter.caps.subprocess:
         return None
@@ -58,6 +65,13 @@ def prompt_for(scenario: str) -> str:
 # ------------------------------------------------------------- raw stub gateway
 
 
+def _skill_body(system: str, name: str) -> str | None:
+    """Text between `<skill name="...">` and the next `</skill>` (plain string search, linear time)."""
+    _, opened, rest = system.partition(f'<skill name="{name}">')
+    body, closed, _ = rest.partition("</skill>")
+    return body if opened and closed else None
+
+
 @dataclass
 class StubGateway:
     """OpenAI-compatible /v1/chat/completions stand-in for the raw adapter (in-process harness)."""
@@ -73,8 +87,8 @@ class StubGateway:
         n = len(self.calls) + 1
         sm = re.search(r"SCENARIO=(\w+)", system)
         scenario = sm.group(1) if sm else "ok"
-        skill = re.search(r'<skill name="conformance-fixture">(.*?)</skill>', system, re.S)
-        tm = re.search(r"CONFORMANCE_TOKEN=([\w-]+)", skill.group(1)) if skill else None
+        skill = _skill_body(system, "conformance-fixture")
+        tm = re.search(r"CONFORMANCE_TOKEN=([\w-]+)", skill) if skill is not None else None
         self.calls.append({"call": n, "scenario": scenario, "system": system, "auth": auth,
                            "skill_token": tm.group(1) if tm else None, "model": body.get("model")})
         if scenario == "hang":
@@ -203,7 +217,7 @@ class Bench:
         return self.runner.run_workbench(spec), spec
 
 
-@pytest.fixture(params=adapter_names())
+@pytest.fixture(params=shipped_adapter_names())
 def bench(request: pytest.FixtureRequest, tmp_path: Path, stub_gateway: StubGateway,
           monkeypatch: pytest.MonkeyPatch) -> Bench:
     for var in ("PRSEC_GATEWAY_URL", "PRSEC_GATEWAY_KEY", "PRSEC_GATEWAY_MODEL", "PRSEC_HARNESS_HOME"):

@@ -252,9 +252,11 @@ class GitHubAppSCM:
             if not patch:
                 out.append(f"Binary files a/{old} and b/{new} differ (patch omitted by GitHub)")
                 continue
-            out.append("--- /dev/null" if status == "added" else f"--- a/{old}")
-            out.append("+++ /dev/null" if status == "removed" else f"+++ b/{new}")
-            out.append(patch.rstrip("\n"))
+            out.extend((
+                "--- /dev/null" if status == "added" else f"--- a/{old}",
+                "+++ /dev/null" if status == "removed" else f"+++ b/{new}",
+                patch.rstrip("\n"),
+            ))
         return "\n".join(out) + "\n"
 
     def fetch_source(self, repo: str, sha: str, dest: Path, installation_id: int | None = None) -> Path:
@@ -350,55 +352,64 @@ def _check_rel(name: str, what: str) -> PurePosixPath:
     return p
 
 
+def _single_top(members: list[tarfile.TarInfo]) -> str:
+    tops = {p.parts[0] for p in (_check_rel(m.name, "member") for m in members) if p.parts}
+    if len(tops) != 1:
+        raise UnsafeArchiveError(f"expected a single top-level directory, got {sorted(tops)[:5]}")
+    return tops.pop()
+
+
+def _strip(name: str, top: str | None) -> str | None:
+    parts = _check_rel(name, "member").parts
+    if top is not None:
+        parts = parts[1:]
+    return "/".join(parts) if parts else None
+
+
+def _plan_member(m: tarfile.TarInfo, rel: str, dest: Path, top: str | None, symlinks: set[str]) -> tarfile.TarInfo:
+    """Validate one (already stripped) member against `dest`; returns it renamed to `rel`."""
+    parts = rel.split("/")
+    if any("/".join(parts[:i]) in symlinks for i in range(1, len(parts))):
+        raise UnsafeArchiveError(f"member written through a symlink: {m.name!r}")
+    target = (dest / rel).resolve()
+    if not target.is_relative_to(dest):
+        raise UnsafeArchiveError(f"member escapes destination: {m.name!r}")
+    if m.issym():
+        if PurePosixPath(m.linkname).is_absolute():
+            raise UnsafeArchiveError(f"absolute symlink target: {m.name!r} -> {m.linkname!r}")
+        link_target = ((dest / rel).parent / m.linkname).resolve()
+        if not link_target.is_relative_to(dest):
+            raise UnsafeArchiveError(f"symlink escapes destination: {m.name!r} -> {m.linkname!r}")
+        symlinks.add(rel)
+    if m.islnk():
+        linked = _strip(m.linkname, top)
+        if linked is None or not (dest / linked).resolve().is_relative_to(dest):
+            raise UnsafeArchiveError(f"hardlink escapes destination: {m.name!r} -> {m.linkname!r}")
+        m = m.replace(linkname=linked, deep=False)
+    return m.replace(name=rel, deep=False)
+
+
 def safe_extract(tf: tarfile.TarFile, dest: Path, *, strip_top: bool = False) -> None:
     """Validate every member first, then extract. Rejects absolute paths, '..', links escaping
     `dest`, and device/fifo members. With strip_top, removes the single top-level directory."""
     dest = Path(dest).resolve()
     members = tf.getmembers()
-    top: str | None = None
-    if strip_top:
-        tops = {p.parts[0] for p in (_check_rel(m.name, "member") for m in members) if p.parts}
-        if len(tops) != 1:
-            raise UnsafeArchiveError(f"expected a single top-level directory, got {sorted(tops)[:5]}")
-        top = tops.pop()
-
-    def strip(name: str) -> str | None:
-        parts = _check_rel(name, "member").parts
-        if top is not None:
-            parts = parts[1:]
-        return "/".join(parts) if parts else None
+    top = _single_top(members) if strip_top else None
 
     plan: list[tarfile.TarInfo] = []
     symlinks: set[str] = set()
     for m in members:
         if not (m.isfile() or m.isdir() or m.issym() or m.islnk()):
             raise UnsafeArchiveError(f"unsupported member type for {m.name!r}")
-        rel = strip(m.name)
-        if rel is None:
-            continue
-        parts = rel.split("/")
-        if any("/".join(parts[:i]) in symlinks for i in range(1, len(parts))):
-            raise UnsafeArchiveError(f"member written through a symlink: {m.name!r}")
-        target = (dest / rel).resolve()
-        if not target.is_relative_to(dest):
-            raise UnsafeArchiveError(f"member escapes destination: {m.name!r}")
-        if m.issym():
-            if PurePosixPath(m.linkname).is_absolute():
-                raise UnsafeArchiveError(f"absolute symlink target: {m.name!r} -> {m.linkname!r}")
-            link_target = ((dest / rel).parent / m.linkname).resolve()
-            if not link_target.is_relative_to(dest):
-                raise UnsafeArchiveError(f"symlink escapes destination: {m.name!r} -> {m.linkname!r}")
-            symlinks.add(rel)
-        if m.islnk():
-            linked = strip(m.linkname)
-            if linked is None or not (dest / linked).resolve().is_relative_to(dest):
-                raise UnsafeArchiveError(f"hardlink escapes destination: {m.name!r} -> {m.linkname!r}")
-            m = m.replace(linkname=linked, deep=False)
-        plan.append(m.replace(name=rel, deep=False))
+        rel = _strip(m.name, top)
+        if rel is not None:
+            plan.append(_plan_member(m, rel, dest, top, symlinks))
+
+    # data filter: defence in depth (re-checks with real paths, drops setuid bits / ownership).
+    tf.extraction_filter = tarfile.data_filter
 
     try:
         for m in plan:
-            # data filter: defence in depth (re-checks with real paths, drops setuid bits / ownership).
-            tf.extract(m, dest, filter="data")
+            tf.extract(m, dest)
     except tarfile.FilterError as e:
         raise UnsafeArchiveError(str(e)) from e

@@ -47,7 +47,8 @@ def test_fallbacks_reference_known_aliases(cfg: dict) -> None:
     names = set(_models(cfg))
     for entry in cfg["router_settings"]["fallbacks"]:
         for src, dsts in entry.items():
-            assert src in names and set(dsts) <= names
+            assert src in names
+            assert set(dsts) <= names
     assert {"agent-large": ["agent-large-openai"]} in cfg["router_settings"]["fallbacks"]
 
 
@@ -84,19 +85,23 @@ def test_strip_openai_responses_tools_and_choice(hooks) -> None:
         "web_search_options": {},
     }
     hooks.strip_request(data)
-    assert "tools" not in data and "tool_choice" not in data and "web_search_options" not in data
+    assert "tools" not in data
+    assert "tool_choice" not in data
+    assert "web_search_options" not in data
 
 
 def test_function_tools_untouched(hooks) -> None:
     data = {"tools": [{"type": "function", "function": {"name": "mcp_like_name"}}], "tool_choice": "auto"}
     assert hooks.strip_request(data) == []
-    assert data["tool_choice"] == "auto" and len(data["tools"]) == 1
+    assert data["tool_choice"] == "auto"
+    assert len(data["tools"]) == 1
 
 
 def test_pre_call_hook_returns_data(hooks) -> None:
     data = {"tools": [{"type": "web_fetch_20250910", "name": "web_fetch"}]}
     out = asyncio.run(hooks.strip_server_tools.async_pre_call_hook(None, None, data, "anthropic_messages"))
-    assert out is data and "tools" not in data
+    assert out is data
+    assert "tools" not in data
 
 
 @pytest.mark.parametrize("data", [
@@ -111,8 +116,10 @@ def test_pre_call_hook_returns_data(hooks) -> None:
 ])
 def test_remote_content_urls_rejected(hooks, data) -> None:
     assert hooks.remote_urls(data)
-    with pytest.raises(Exception) as exc:
-        asyncio.run(hooks.strip_server_tools.async_pre_call_hook(None, None, data, "acompletion"))
+    call = hooks.strip_server_tools.async_pre_call_hook(None, None, data, "acompletion")
+    # HTTPException inside the proxy image, RemoteContentRejected without fastapi: both carry status 400
+    with pytest.raises(Exception, match="remote URLs in message content are not allowed") as exc:
+        asyncio.run(call)
     assert getattr(exc.value, "status_code", None) == 400
 
 

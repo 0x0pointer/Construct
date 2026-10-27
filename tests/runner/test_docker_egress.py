@@ -72,7 +72,8 @@ def test_workbench_has_no_egress_but_reaches_gateway(docker_client, tmp_path, mo
                              src_dir=tmp_path / "src", in_dir=tmp_path / "in", out_dir=tmp_path / "out",
                              skills_dir=tmp_path / "skills", network=network)
         code, logs, killed = runner.run_container(spec, ["python", "-c", PROBE], timeout_s=120)
-        assert code == 0 and not killed, logs
+        assert code == 0, logs
+        assert not killed, logs
 
         r = json.loads(Path(tmp_path / "out" / "probe.json").read_text())
         assert r["uid"] != 0
@@ -83,5 +84,7 @@ def test_workbench_has_no_egress_but_reaches_gateway(docker_client, tmp_path, mo
     finally:
         runner.destroy_scan(scan_id)
         gateway.remove(force=True)
-    with pytest.raises(Exception):
+    from docker.errors import NotFound
+
+    with pytest.raises(NotFound):
         docker_client.networks.get(f"prsec-scan-{scan_id}")

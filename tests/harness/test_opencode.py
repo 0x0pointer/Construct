@@ -52,8 +52,11 @@ def test_registered_and_protocol() -> None:
     a = get_adapter("opencode")
     assert isinstance(a, OpenCodeAdapter)
     assert isinstance(a, HarnessAdapter)
-    assert a.caps.native_skills and a.caps.resume and a.caps.json_events
-    assert not a.caps.max_turns and a.caps.subprocess
+    assert a.caps.native_skills
+    assert a.caps.resume
+    assert a.caps.json_events
+    assert not a.caps.max_turns
+    assert a.caps.subprocess
 
 
 BASE = ["/opt/harness/bin/opencode", "run", "--format", "json", "--auto", "--title", "42-hypothesise"]
@@ -85,16 +88,19 @@ def test_build_gateway(task: StageTask) -> None:
     assert list(prov["models"]) == ["agent-large"]
     assert cfg["permission"]["*"] == "allow"
     assert cfg["permission"]["webfetch"] == cfg["permission"]["task"] == "deny"
-    assert cfg["autoupdate"] is False and cfg["share"] == "disabled"
+    assert cfg["autoupdate"] is False
+    assert cfg["share"] == "disabled"
 
 
 def test_build_dev_mode_keeps_login(task: StageTask, monkeypatch: pytest.MonkeyPatch) -> None:
     inv = OpenCodeAdapter().build(task, None, "p")
     assert inv.argv == BASE
-    assert "HOME" not in inv.env and opencode.KEY_ENV not in inv.env
+    assert "HOME" not in inv.env
+    assert opencode.KEY_ENV not in inv.env
     assert inv.env["OPENCODE_DISABLE_PROJECT_CONFIG"] == "1"
     cfg = json.loads(inv.env["OPENCODE_CONFIG_CONTENT"])
-    assert "provider" not in cfg and "model" not in cfg
+    assert "provider" not in cfg
+    assert "model" not in cfg
     assert cfg["permission"]["*"] == "allow"
 
     monkeypatch.setenv(opencode.DEV_MODEL_ENV, "anthropic/claude-sonnet-4-5")
@@ -127,11 +133,14 @@ def test_parse_tool_write() -> None:
         EventKind.system, EventKind.message, EventKind.usage,
     ]
     call, result = events[2], events[3]
-    assert call.tool == "write" and call.data["id"] == "call_1"
+    assert call.tool == "write"
+    assert call.data["id"] == "call_1"
     assert call.data["input"]["filePath"] == "/work/out/output.json"
-    assert result.text == "Wrote file successfully." and result.data == result.data | {"tool_use_id": "call_1", "is_error": False}
+    assert result.text == "Wrote file successfully."
+    assert result.data == result.data | {"tool_use_id": "call_1", "is_error": False}
     assert events[1].text == "Writing output."
-    assert events[0].ts is not None and events[0].ts.year == 2026
+    assert events[0].ts is not None
+    assert events[0].ts.year == 2026
     assert a.session_id(events) == SID
 
     u = a.usage(events)
@@ -147,7 +156,8 @@ def test_parse_resume() -> None:
 
 def test_parse_error() -> None:
     events = list(OpenCodeAdapter().parse_events(lines("error.jsonl")))
-    assert len(events) == 1 and events[0].kind == EventKind.error
+    assert len(events) == 1
+    assert events[0].kind == EventKind.error
     assert events[0].text.startswith("Unexpected server error")
     assert events[0].data["name"] == "UnknownError"
 
@@ -163,7 +173,9 @@ def test_parse_tool_error_and_cost() -> None:
     })
     a = OpenCodeAdapter()
     events = list(a.parse_events([line, finish]))
-    assert events[1].kind == EventKind.tool_result and events[1].text == "boom" and events[1].data["is_error"]
+    assert events[1].kind == EventKind.tool_result
+    assert events[1].text == "boom"
+    assert events[1].data["is_error"]
     u = a.usage(events)
     assert (u.tokens_in, u.tokens_out, u.tokens_cache_read, u.usd) == (12, 8, 7, 0.0125)
 

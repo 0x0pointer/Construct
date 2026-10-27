@@ -26,7 +26,8 @@ def test_all_ok(tmp_path, root, capsys):
            "guards": [{"description": "none", "citation": {"file": "h.py", "line": 2, "quote": "name = req.args['n']"}}]}
     assert main(["check", str(write(tmp_path, doc)), "--root", str(root)]) == 0
     out = capsys.readouterr().out
-    assert "2/2 citations verified" in out and "$.guards[0].citation" in out
+    assert "2/2 citations verified" in out
+    assert "$.guards[0].citation" in out
 
 
 def test_failure_exits_1(tmp_path, root, capsys):
@@ -34,7 +35,9 @@ def test_failure_exits_1(tmp_path, root, capsys):
            "path": [{"file": "../etc/passwd", "line": 1, "quote": "root:x:0:0"}, {"file": "h.py", "line": 0, "quote": "x"}]}
     assert main(["check", str(write(tmp_path, doc)), "--root", str(root)]) == 1
     out = capsys.readouterr().out
-    assert out.count("FAIL") == 3 and "malformed citation" in out and "0/3" in out
+    assert out.count("FAIL") == 3
+    assert "malformed citation" in out
+    assert "0/3" in out
 
 
 def test_root_from_env(tmp_path, root, monkeypatch):

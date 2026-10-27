@@ -126,15 +126,20 @@ def find_skill(cli: str, argv: list[str], env: dict[str, str]) -> Path | None:
     return None
 
 
-def _secret_visible(value: str, argv: list[str], env: dict[str, str]) -> bool:
-    if not value:
+def _visible_to_cli(stub_var: str, argv: list[str], env: dict[str, str]) -> bool:
+    """Whether the value the test planted in `stub_var` reaches the harness (argv, env, pi's models.json).
+
+    Only this boolean is logged; the value itself never goes into the call log.
+    """
+    needle = env.get(stub_var, "")
+    if not needle:
         return False
     hay = [v for k, v in env.items() if not k.startswith("PRSEC_STUB_")] + argv
-    if any(value in h for h in hay):
+    if any(needle in h for h in hay):
         return True
     agent_dir = env.get("PI_CODING_AGENT_DIR")  # pi reads provider config from a file
     models = Path(agent_dir) / "models.json" if agent_dir else None
-    return bool(models and models.is_file() and value in models.read_text())
+    return bool(models and models.is_file() and needle in models.read_text())
 
 
 def main() -> int:
@@ -165,8 +170,8 @@ def main() -> int:
         "cli": cli, "call": call_no, "argv": argv, "cwd": os.getcwd(), "pid": os.getpid(), "prompt": prompt,
         "output_path": output_path, "scenario": scenario, "resumed": resumed,
         "skill_path": str(skill) if skill else None, "skill_token": token,
-        "gateway_key_visible": _secret_visible(env.get("PRSEC_STUB_GATEWAY_KEY", ""), argv, env),
-        "gateway_url_visible": _secret_visible(env.get("PRSEC_STUB_GATEWAY_URL", ""), argv, env),
+        "gateway_key_visible": _visible_to_cli("PRSEC_STUB_GATEWAY_KEY", argv, env),
+        "gateway_url_visible": _visible_to_cli("PRSEC_STUB_GATEWAY_URL", argv, env),
         "parent_session_vars": [v for v in PARENT_SESSION_VARS if v in env],
         "home": env.get("HOME"),
         "project_files": project_files(cli, argv, env),

@@ -193,27 +193,35 @@ class OpenCodeAdapter:
         elif typ == "reasoning":
             yield Event(kind=EventKind.message, text=part.get("text", ""), data=meta | {"reasoning": True}, ts=ts)
         elif typ == "tool_use":
-            state = part.get("state") if isinstance(part.get("state"), dict) else {}
-            call_id = part.get("callID")
-            yield Event(kind=EventKind.tool_call, tool=part.get("tool"), data=meta | {"id": call_id, "input": state.get("input")}, ts=ts)
-            is_error = state.get("status") == "error"
-            yield Event(
-                kind=EventKind.tool_result,
-                tool=part.get("tool"),
-                text=_text(state.get("error") if is_error else state.get("output")),
-                data=meta | {"tool_use_id": call_id, "is_error": is_error},
-                ts=ts,
-            )
+            yield from self._tool_use(part, meta, ts)
         elif typ == "step_finish":
             usage = _step_usage(part)
             yield Event(kind=EventKind.usage, data=meta | {"reason": part.get("reason"), "usage": usage.model_dump()}, ts=ts)
         elif typ == "error":
-            err = obj.get("error") if isinstance(obj.get("error"), dict) else {"name": str(obj.get("error"))}
-            data = err.get("data") if isinstance(err.get("data"), dict) else {}
-            text = str(data.get("message") or err.get("name") or "error")
-            yield Event(kind=EventKind.error, text=text, data=meta | {"name": err.get("name"), "error": err}, ts=ts)
+            yield self._error(obj, meta, ts)
         else:
             yield Event(kind=EventKind.system, data=meta | {"type": typ}, ts=ts)
+
+    @staticmethod
+    def _tool_use(part: dict[str, Any], meta: dict[str, Any], ts: Any) -> Iterator[Event]:
+        state = part.get("state") if isinstance(part.get("state"), dict) else {}
+        call_id = part.get("callID")
+        yield Event(kind=EventKind.tool_call, tool=part.get("tool"), data=meta | {"id": call_id, "input": state.get("input")}, ts=ts)
+        is_error = state.get("status") == "error"
+        yield Event(
+            kind=EventKind.tool_result,
+            tool=part.get("tool"),
+            text=_text(state.get("error") if is_error else state.get("output")),
+            data=meta | {"tool_use_id": call_id, "is_error": is_error},
+            ts=ts,
+        )
+
+    @staticmethod
+    def _error(obj: dict[str, Any], meta: dict[str, Any], ts: Any) -> Event:
+        err = obj.get("error") if isinstance(obj.get("error"), dict) else {"name": str(obj.get("error"))}
+        data = err.get("data") if isinstance(err.get("data"), dict) else {}
+        text = str(data.get("message") or err.get("name") or "error")
+        return Event(kind=EventKind.error, text=text, data=meta | {"name": err.get("name"), "error": err}, ts=ts)
 
     def session_id(self, events: list[Event]) -> str | None:
         for e in events:

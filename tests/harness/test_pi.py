@@ -61,8 +61,11 @@ def test_registered_and_protocol() -> None:
     a = get_adapter("pi")
     assert isinstance(a, PiAdapter)
     assert isinstance(a, HarnessAdapter)
-    assert a.caps.native_skills and a.caps.resume and a.caps.json_events
-    assert not a.caps.mcp and not a.caps.max_turns
+    assert a.caps.native_skills
+    assert a.caps.resume
+    assert a.caps.json_events
+    assert not a.caps.mcp
+    assert not a.caps.max_turns
 
 
 def test_build_gateway(task: StageTask) -> None:
@@ -76,7 +79,8 @@ def test_build_gateway(task: StageTask) -> None:
         "--skill", str(root / "business-logic"),
         "--provider", "prsec", "--model", "agent-large",
     ]
-    assert inv.stdin == "THE PROMPT" and inv.cwd == task.out_dir  # context files are never read from the PR checkout
+    assert inv.stdin == "THE PROMPT"
+    assert inv.cwd == task.out_dir  # context files are never read from the PR checkout
     assert inv.env == {
         "PI_OFFLINE": "1",
         "PI_TELEMETRY": "0",
@@ -109,15 +113,17 @@ def test_build_dev_mode(task: StageTask, monkeypatch: pytest.MonkeyPatch) -> Non
 def test_dev_provider_without_model_is_rejected(task: StageTask, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PRSEC_PI_MODEL", raising=False)
     monkeypatch.setenv("PRSEC_PI_PROVIDER", "anthropic")
+    adapter = PiAdapter()
     with pytest.raises(ValueError, match="requires --model"):
-        PiAdapter().build(task, None, "p")
+        adapter.build(task, None, "p")
 
 
 def test_build_resume(task: StageTask) -> None:
     inv = PiAdapter().build_resume(task, GW, SID, "repair")
     assert inv is not None
     assert inv.argv[-2:] == ["--session", SID]
-    assert "--session-dir" in inv.argv and inv.stdin == "repair"
+    assert "--session-dir" in inv.argv
+    assert inv.stdin == "repair"
 
 
 def test_install_skills(task: StageTask) -> None:
@@ -129,27 +135,33 @@ def test_install_skills(task: StageTask) -> None:
 def test_parse_tool_write() -> None:
     a = PiAdapter()
     events = list(a.parse_events(lines("run_tool_write.jsonl")))
-    assert events[0].kind == EventKind.system and events[0].data["session_id"] == SID
+    assert events[0].kind == EventKind.system
+    assert events[0].data["session_id"] == SID
     assert a.session_id(events) == SID
     assert not any(e.data.get("type") == "message_update" for e in events)
     calls = [e for e in events if e.kind == EventKind.tool_call]
     results = [e for e in events if e.kind == EventKind.tool_result]
-    assert len(calls) == 1 and calls[0].tool == "write" and calls[0].data["id"] == "call_1"
+    assert len(calls) == 1
+    assert calls[0].tool == "write"
+    assert calls[0].data["id"] == "call_1"
     assert calls[0].data["input"]["path"] == "/work/out/output.json"
-    assert len(results) == 1 and results[0].text.startswith("Successfully wrote")
+    assert len(results) == 1
+    assert results[0].text.startswith("Successfully wrote")
     assert results[0].data == {"tool_use_id": "call_1", "is_error": False}
     msgs = [e.text for e in events if e.kind == EventKind.message]
     assert msgs == ["Writing output.", "Done. Output written."]
     assert not any(e.kind == EventKind.error for e in events)
     u = a.usage(events)
     assert u.turns == 2
-    assert u.tokens_in > 0 and u.tokens_out > 0
+    assert u.tokens_in > 0
+    assert u.tokens_out > 0
 
 
 def test_parse_tool_error() -> None:
     events = list(PiAdapter().parse_events(lines("run_tool_error.jsonl")))
     results = [e for e in events if e.kind == EventKind.tool_result]
-    assert len(results) == 1 and results[0].data["is_error"] is True
+    assert len(results) == 1
+    assert results[0].data["is_error"] is True
     assert "Validation failed" in results[0].text
 
 
@@ -167,7 +179,9 @@ def test_parse_error_retries() -> None:
     retries = [e for e in events if e.data.get("type") == "auto_retry_start"]
     assert [r.data["attempt"] for r in retries] == [1, 2, 3]
     end = [e for e in events if e.data.get("type") == "auto_retry_end"]
-    assert end and end[0].text == "Connection error." and end[0].data["success"] is False
+    assert end
+    assert end[0].text == "Connection error."
+    assert end[0].data["success"] is False
 
 
 def test_usage_mapping() -> None:
@@ -186,5 +200,6 @@ def test_usage_mapping() -> None:
 def test_parse_garbage_never_raises() -> None:
     a = PiAdapter()
     events = list(a.parse_events(lines("garbage.txt")))
-    assert events and events[0].data.get("unparsed") is True
+    assert events
+    assert events[0].data.get("unparsed") is True
     assert a.session_id(events) is None

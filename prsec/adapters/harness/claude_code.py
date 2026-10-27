@@ -190,63 +190,79 @@ class ClaudeCodeAdapter:
         sid = obj.get("session_id")
         ts = _ts(obj.get("timestamp"))
         if typ == "system":
-            data: dict[str, Any] = {"subtype": obj.get("subtype"), "session_id": sid}
-            if obj.get("subtype") == "init":
-                data |= {k: obj.get(k) for k in ("model", "tools", "skills", "claude_code_version", "permissionMode", "cwd")}
-            elif obj.get("subtype") == "api_retry":
-                data |= {k: obj.get(k) for k in ("attempt", "max_retries", "error_status", "error")}
-            yield Event(kind=EventKind.system, data=data, ts=ts)
+            yield self._system(obj, sid, ts)
         elif typ == "assistant":
-            msg = obj.get("message") or {}
-            meta = {"message_id": msg.get("id"), "session_id": sid}
-            if obj.get("parent_tool_use_id"):
-                meta["parent_tool_use_id"] = obj["parent_tool_use_id"]
-            if isinstance(msg.get("usage"), dict):
-                meta["usage"] = _usage_from(msg["usage"]).model_dump()
-            for block in msg.get("content") or []:
-                if not isinstance(block, dict):
-                    continue
-                bt = block.get("type")
-                if bt == "text":
-                    yield Event(kind=EventKind.message, text=block.get("text", ""), data=meta, ts=ts)
-                elif bt == "tool_use":
-                    yield Event(
-                        kind=EventKind.tool_call,
-                        tool=block.get("name"),
-                        data=meta | {"id": block.get("id"), "input": block.get("input")},
-                        ts=ts,
-                    )
-            if msg.get("type") == "error" or obj.get("error"):
-                yield Event(kind=EventKind.error, text=str(obj.get("error") or msg.get("error")), data=meta, ts=ts)
+            yield from self._assistant(obj, sid, ts)
         elif typ == "user":
-            msg = obj.get("message") or {}
-            content = msg.get("content")
-            if not isinstance(content, list):
-                return
-            for block in content:
-                if isinstance(block, dict) and block.get("type") == "tool_result":
-                    yield Event(
-                        kind=EventKind.tool_result,
-                        text=_result_text(block.get("content")),
-                        data={"tool_use_id": block.get("tool_use_id"), "is_error": bool(block.get("is_error")), "session_id": sid},
-                        ts=ts,
-                    )
+            yield from self._user(obj, sid, ts)
         elif typ == "result":
-            usage = _usage_from(obj.get("usage"), usd=obj.get("total_cost_usd") or 0.0, turns=obj.get("num_turns") or 0)
-            data = {
-                "session_id": sid,
-                "subtype": obj.get("subtype"),
-                "is_error": bool(obj.get("is_error")),
-                "terminal_reason": obj.get("terminal_reason"),
-                "duration_ms": obj.get("duration_ms"),
-                "usage": usage.model_dump(),
-            }
-            yield Event(kind=EventKind.usage, text=obj.get("result") if isinstance(obj.get("result"), str) else None, data=data, ts=ts)
-            if obj.get("is_error") or (obj.get("subtype") not in (None, "success")):
-                reason = obj.get("result") or obj.get("subtype") or "error"
-                yield Event(kind=EventKind.error, text=str(reason), data={"session_id": sid, "subtype": obj.get("subtype"), "terminal_reason": obj.get("terminal_reason")}, ts=ts)
+            yield from self._result(obj, sid, ts)
         else:
             yield Event(kind=EventKind.system, data={"type": typ, "session_id": sid}, ts=ts)
+
+    @staticmethod
+    def _system(obj: dict[str, Any], sid: Any, ts: Any) -> Event:
+        data: dict[str, Any] = {"subtype": obj.get("subtype"), "session_id": sid}
+        if obj.get("subtype") == "init":
+            data |= {k: obj.get(k) for k in ("model", "tools", "skills", "claude_code_version", "permissionMode", "cwd")}
+        elif obj.get("subtype") == "api_retry":
+            data |= {k: obj.get(k) for k in ("attempt", "max_retries", "error_status", "error")}
+        return Event(kind=EventKind.system, data=data, ts=ts)
+
+    @staticmethod
+    def _assistant(obj: dict[str, Any], sid: Any, ts: Any) -> Iterator[Event]:
+        msg = obj.get("message") or {}
+        meta = {"message_id": msg.get("id"), "session_id": sid}
+        if obj.get("parent_tool_use_id"):
+            meta["parent_tool_use_id"] = obj["parent_tool_use_id"]
+        if isinstance(msg.get("usage"), dict):
+            meta["usage"] = _usage_from(msg["usage"]).model_dump()
+        for block in msg.get("content") or []:
+            if not isinstance(block, dict):
+                continue
+            bt = block.get("type")
+            if bt == "text":
+                yield Event(kind=EventKind.message, text=block.get("text", ""), data=meta, ts=ts)
+            elif bt == "tool_use":
+                yield Event(
+                    kind=EventKind.tool_call,
+                    tool=block.get("name"),
+                    data=meta | {"id": block.get("id"), "input": block.get("input")},
+                    ts=ts,
+                )
+        if msg.get("type") == "error" or obj.get("error"):
+            yield Event(kind=EventKind.error, text=str(obj.get("error") or msg.get("error")), data=meta, ts=ts)
+
+    @staticmethod
+    def _user(obj: dict[str, Any], sid: Any, ts: Any) -> Iterator[Event]:
+        msg = obj.get("message") or {}
+        content = msg.get("content")
+        if not isinstance(content, list):
+            return
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                yield Event(
+                    kind=EventKind.tool_result,
+                    text=_result_text(block.get("content")),
+                    data={"tool_use_id": block.get("tool_use_id"), "is_error": bool(block.get("is_error")), "session_id": sid},
+                    ts=ts,
+                )
+
+    @staticmethod
+    def _result(obj: dict[str, Any], sid: Any, ts: Any) -> Iterator[Event]:
+        usage = _usage_from(obj.get("usage"), usd=obj.get("total_cost_usd") or 0.0, turns=obj.get("num_turns") or 0)
+        data = {
+            "session_id": sid,
+            "subtype": obj.get("subtype"),
+            "is_error": bool(obj.get("is_error")),
+            "terminal_reason": obj.get("terminal_reason"),
+            "duration_ms": obj.get("duration_ms"),
+            "usage": usage.model_dump(),
+        }
+        yield Event(kind=EventKind.usage, text=obj.get("result") if isinstance(obj.get("result"), str) else None, data=data, ts=ts)
+        if obj.get("is_error") or (obj.get("subtype") not in (None, "success")):
+            reason = obj.get("result") or obj.get("subtype") or "error"
+            yield Event(kind=EventKind.error, text=str(reason), data={"session_id": sid, "subtype": obj.get("subtype"), "terminal_reason": obj.get("terminal_reason")}, ts=ts)
 
     def session_id(self, events: list[Event]) -> str | None:
         for e in events:

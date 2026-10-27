@@ -49,12 +49,14 @@ def test_line_off_by_two_is_tolerated(root):
 
 def test_wrong_location_rejected(root):
     err = verify_citation(cit(line=11), root)
-    assert err and "does not match" in err
+    assert err
+    assert "does not match" in err
 
 
 def test_hallucinated_quote_rejected(root):
     err = verify_citation(cit(quote="cursor.execute('DELETE FROM users WHERE ' + name)"), root)
-    assert err and "does not match" in err
+    assert err
+    assert "does not match" in err
 
 
 def test_multiline_quote(root):
@@ -77,7 +79,8 @@ def test_out_of_range(root):
 @pytest.mark.parametrize("file", ["../secret.txt", "app/../../secret.txt", "/etc/passwd", "."])
 def test_traversal_rejected(root, file):
     err = verify_citation(cit(file=file, line=1, quote="top secret"), root)
-    assert err and ("escapes" in err or "does not exist" in err)
+    assert err
+    assert "escapes" in err or "does not exist" in err
 
 
 def test_symlink_escape_rejected(root):
@@ -109,7 +112,8 @@ def test_snippet(root):
 @pytest.mark.parametrize("quote", ["return", "return db", "self.", "if (", "{user_id}", "SELECT * FROM"])
 def test_generic_fragment_rejected(root, quote):
     err = verify_citation(cit(line=7, quote=quote), root)
-    assert err and ("full line" in err or "too short" in err or "does not match" in err)
+    assert err
+    assert "full line" in err or "too short" in err or "does not match" in err
 
 
 def test_short_full_line_accepted(root):

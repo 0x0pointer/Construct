@@ -17,7 +17,7 @@ import pytest
 from prsec.adapters.harness.base import HarnessAdapter
 from prsec.models import Event, EventKind, StageStatus
 
-from .conftest import GATEWAY_KEY, TOKEN, Bench, cli_name, wait_gone
+from .conftest import GATEWAY_KEY, TOKEN, Bench, _skill_body, cli_name, wait_gone
 
 # A container root at the start of a path. Host paths may legitimately contain "/work/"
 # (GitHub runners check out under /home/runner/work/...), so a plain substring check is wrong.
@@ -30,8 +30,10 @@ def _kinds(events: list[Event]) -> set[EventKind]:
 
 def _assert_transcript(bench: Bench, result, out_dir: Path) -> None:
     kinds = _kinds(result.transcript)
-    assert EventKind.message in kinds and EventKind.usage in kinds, kinds
-    assert result.usage.turns >= 1 and result.usage.tokens_in > 0
+    assert EventKind.message in kinds, kinds
+    assert EventKind.usage in kinds, kinds
+    assert result.usage.turns >= 1
+    assert result.usage.tokens_in > 0
     lines = (out_dir / "transcript.jsonl").read_text().splitlines()
     assert len(lines) == len(result.transcript)
     assert all(Event.model_validate_json(line).ts is not None for line in lines)
@@ -73,7 +75,8 @@ def test_skill_install_and_valid_output(bench: Bench, gateway: bool) -> None:
         # container paths in the prompt were rewritten to the host dirs by LocalRunner
         assert not CONTAINER_PATH.search(call["prompt"]), CONTAINER_PATH.findall(call["prompt"])
         assert call["output_path"] == str(spec.out_dir / "output.json")
-        assert call["gateway_key_visible"] is gateway and call["gateway_url_visible"] is gateway
+        assert call["gateway_key_visible"] is gateway
+        assert call["gateway_url_visible"] is gateway
         if gateway:
             assert Path(call["home"]).is_relative_to(spec.out_dir)
         if bench.adapter.name == "claude-code":
@@ -97,7 +100,8 @@ def test_repair_loop_recovers(bench: Bench) -> None:
         assert "skill_token" in calls[1]["prompt"]  # the validation errors are fed back
     else:
         second = calls[1].get("prompt") or calls[1].get("system")
-        assert "REPAIR" in second and '"skill_token": 42' in second
+        assert "REPAIR" in second
+        assert '"skill_token": 42' in second
 
 
 def test_wall_clock_kill(bench: Bench) -> None:
@@ -125,7 +129,8 @@ def test_budget_kill_via_per_task_gateway_key(bench: Bench) -> None:
     spec = bench.spec(task, gateway=True, extra_env={"PRSEC_GATEWAY_KEY_SCOPE": "task"})
     result = bench.runner.run_workbench(spec)
     assert result.status == StageStatus.budget_exceeded, result.errors
-    assert result.attempts == 1 and result.usage.usd >= 7.5
+    assert result.attempts == 1
+    assert result.usage.usd >= 7.5
     assert bench.gateway.key_info_auth == [f"Bearer {GATEWAY_KEY}"]
 
 
@@ -148,3 +153,13 @@ def test_missing_cli_is_harness_error(bench: Bench, tmp_path: Path) -> None:
     result = bench.runner.run_workbench(spec)
     assert result.status == StageStatus.harness_error
     assert "failed to start harness" in result.errors[0]
+
+
+@pytest.mark.parametrize(("system", "body"), [
+    ('<skill name="x">a\nb</skill></skill>', "a\nb"),  # shortest match, spans newlines
+    ('<skill name="y">no</skill><skill name="x"></skill>', ""),
+    ('<skill name="x">unterminated', None),
+    ('</skill><skill name="y">other</skill>', None),
+])
+def test_stub_gateway_skill_body(system: str, body: str | None) -> None:
+    assert _skill_body(system, "x") == body

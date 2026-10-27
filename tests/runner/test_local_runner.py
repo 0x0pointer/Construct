@@ -33,8 +33,10 @@ def test_get_runner():
 def test_host_task_rewrites_container_paths(tmp_path):
     spec = spec_for(tmp_path)
     t = host_task(spec)
-    assert t.workdir == str(tmp_path / "src") and t.in_dir == str(tmp_path / "in")
-    assert t.out_dir == str(tmp_path / "out") and t.skills_dir == str(tmp_path / "skills")
+    assert t.workdir == str(tmp_path / "src")
+    assert t.in_dir == str(tmp_path / "in")
+    assert t.out_dir == str(tmp_path / "out")
+    assert t.skills_dir == str(tmp_path / "skills")
     assert t.output_path == str(tmp_path / "out" / "triage.json")
     assert spec.task.workdir == "/work/src"  # original untouched
 
@@ -43,7 +45,8 @@ def test_end_to_end_ok(tmp_path):
     res = LocalRunner().run_workbench(spec_for(tmp_path))
     assert res.status == StageStatus.ok, res.errors
     assert res.output["decision"] == "light"
-    assert res.model == "agent-small" and res.harness == "fake"
+    assert res.model == "agent-small"
+    assert res.harness == "fake"
     written = json.loads((tmp_path / "in" / "task.json").read_text())
     assert written["workdir"] == str(tmp_path / "src")
     assert (tmp_path / "out" / "transcript.jsonl").stat().st_size > 0
@@ -53,7 +56,8 @@ def test_end_to_end_ok(tmp_path):
 
 def test_end_to_end_repair(tmp_path):
     res = LocalRunner().run_workbench(spec_for(tmp_path, mode="invalid_then_valid"))
-    assert res.status == StageStatus.ok and res.attempts == 2
+    assert res.status == StageStatus.ok
+    assert res.attempts == 2
 
 
 def test_end_to_end_entrypoint_timeout(tmp_path):
@@ -72,7 +76,8 @@ def test_missing_result_is_harness_error(tmp_path):
     runner = LocalRunner(python=_script(tmp_path, "echo entrypoint exploded >&2; exit 4"))
     res = runner.run_workbench(spec_for(tmp_path))
     assert res.status == StageStatus.harness_error
-    assert "exit code 4" in res.errors[0] and "exploded" in res.errors[1]
+    assert "exit code 4" in res.errors[0]
+    assert "exploded" in res.errors[1]
 
 
 def test_runaway_entrypoint_is_killed(tmp_path):

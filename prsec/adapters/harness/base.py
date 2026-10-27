@@ -26,6 +26,9 @@ from typing import Iterable, Iterator, Protocol, runtime_checkable
 
 from prsec.models import Event, StageTask, Usage
 
+# possessive quantifiers + a digit-run lookbehind keep the search linear (same leftmost match)
+_VERSION_RE = re.compile(r"(?<!\d)\d++\.\d++\.\d++[\w.+-]*+")
+
 
 @dataclass(frozen=True)
 class Caps:
@@ -105,7 +108,7 @@ def cli_version(cli: str) -> str | None:
     if cp.returncode != 0:
         return None
     out = cp.stdout.strip() or cp.stderr.strip()
-    m = re.search(r"\d+\.\d+\.\d+[\w.+-]*", out)
+    m = _VERSION_RE.search(out)
     return m.group(0) if m else (out or None)
 
 

@@ -18,13 +18,15 @@ def _dockerfile(name: str) -> str:
 def test_prsec_image_runs_non_root() -> None:
     text = _dockerfile("prsec")
     assert "FROM python:3.12-slim" in text
-    assert "USER prsec" in text and "--uid 10001" in text
+    assert "USER prsec" in text
+    assert "--uid 10001" in text
 
 
 def test_workbench_image() -> None:
     text = _dockerfile("workbench-base")
     assert "FROM ubuntu:24.04" in text
-    assert "--uid 10001" in text and "USER agent" in text
+    assert "--uid 10001" in text
+    assert "USER agent" in text
     assert 'ENTRYPOINT ["prsec-stage"]' in text
     for tool in ("git", "ripgrep", "jq", "curl", "python3"):
         assert tool in text

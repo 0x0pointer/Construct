@@ -6,7 +6,8 @@ BASE = fingerprint("sqli", "app/orders.py", "OrderRepo.find", "GET /orders/{id}"
 
 
 def test_shape():
-    assert len(BASE) == 32 and int(BASE, 16) >= 0
+    assert len(BASE) == 32
+    assert int(BASE, 16) >= 0
 
 
 @pytest.mark.parametrize(

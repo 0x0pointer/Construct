@@ -45,8 +45,12 @@ def fixed_cli(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_registered_and_protocol() -> None:
     a = get_adapter("codex")
-    assert isinstance(a, CodexAdapter) and isinstance(a, HarnessAdapter)
-    assert a.caps.native_skills and a.caps.resume and a.caps.json_events and not a.caps.max_turns
+    assert isinstance(a, CodexAdapter)
+    assert isinstance(a, HarnessAdapter)
+    assert a.caps.native_skills
+    assert a.caps.resume
+    assert a.caps.json_events
+    assert not a.caps.max_turns
 
 
 BASE_CFG = [
@@ -130,9 +134,11 @@ def test_parse_success() -> None:
     assert [c.tool for c in calls] == ["shell", "shell", "apply_patch", "mcp:docs/search"]
     assert calls[0].data == {"id": "item_1", "input": {"command": "bash -lc 'cat /work/in/diff.patch'"}}
     results = [e for e in ev if e.kind == EventKind.tool_result]
-    assert results[0].text.startswith("diff --git") and results[0].data["exit_code"] == 0
+    assert results[0].text.startswith("diff --git")
+    assert results[0].data["exit_code"] == 0
     assert results[0].data["is_error"] is False
-    assert results[1].data["is_error"] is True and results[1].data["status"] == "failed"
+    assert results[1].data["is_error"] is True
+    assert results[1].data["status"] == "failed"
     assert results[2].text == "add /work/out/output.json"
     assert "none" in results[3].text
     assert [e.text for e in ev if e.kind == EventKind.message] == ["Wrote /work/out/output.json."]
@@ -147,7 +153,9 @@ def test_usage() -> None:
     u = a.usage(list(a.parse_events(lines("exec_success.jsonl"))))
     assert u == Usage(tokens_in=24763 - 24448, tokens_out=122, tokens_cache_read=24448, usd=0.0, turns=1)
     both = a.usage(list(a.parse_events(lines("exec_success.jsonl") + lines("resume.jsonl"))))
-    assert both.turns == 2 and both.tokens_cache_read == 24448 + 25000 and both.tokens_in == 315 + 5000
+    assert both.turns == 2
+    assert both.tokens_cache_read == 24448 + 25000
+    assert both.tokens_in == 315 + 5000
 
 
 def test_parse_failed() -> None:
@@ -155,7 +163,9 @@ def test_parse_failed() -> None:
     ev = list(a.parse_events(lines("exec_failed.jsonl")))
     errs = [e.text for e in ev if e.kind == EventKind.error]
     assert len(errs) == 3
-    assert errs[0].startswith("Reconnecting") and "not allowed" in errs[1] and "401" in errs[2]
+    assert errs[0].startswith("Reconnecting")
+    assert "not allowed" in errs[1]
+    assert "401" in errs[2]
     assert a.usage(ev) == Usage()
     assert a.session_id(ev) == "0199a214-0000-7000-8000-000000000001"
 

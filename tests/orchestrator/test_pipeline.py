@@ -210,9 +210,12 @@ def test_rules_skip(env):
     s = env(diff=CSS_DIFF)
     pipeline.run_scan(ROW)
     f = only(s["q"])
-    assert f["status"] == ScanStatus.skipped and f["triage"]["source"] == "rules"
+    assert f["status"] == ScanStatus.skipped
+    assert f["triage"]["source"] == "rules"
     assert f["triage"]["reason"].startswith("noise_only:")
-    assert not s["minted"] and not s["runner"].specs and not s["runner"].destroyed
+    assert not s["minted"]
+    assert not s["runner"].specs
+    assert not s["runner"].destroyed
 
 
 def test_rules_skip_audit_sample_still_scans(env):
@@ -220,17 +223,22 @@ def test_rules_skip_audit_sample_still_scans(env):
     pipeline.run_scan(ROW)
     f = only(s["q"])
     assert f["status"] == ScanStatus.done
-    assert f["triage"]["would_skip"] and f["triage"]["audit_sample"] and f["triage"]["source"] == "rules"
+    assert f["triage"]["would_skip"]
+    assert f["triage"]["audit_sample"]
+    assert f["triage"]["source"] == "rules"
 
 
 def test_llm_triage_skip(env):
     s = env(script={"triage": lambda t: {"decision": "skip", "rationale": "copy change"}})
     pipeline.run_scan(ROW)
     f = only(s["q"])
-    assert f["status"] == ScanStatus.skipped and f["triage"]["source"] == "llm"
+    assert f["status"] == ScanStatus.skipped
+    assert f["triage"]["source"] == "llm"
     assert f["triage"]["rules"] == {"decision": "llm", "reason": None}
-    assert s["q"].stage_runs == ["101-triage"] and s["q"].cost == 0.5
-    assert s["runner"].destroyed == [101] and s["revoked"] == ["sk-scan"]
+    assert s["q"].stage_runs == ["101-triage"]
+    assert s["q"].cost == 0.5
+    assert s["runner"].destroyed == [101]
+    assert s["revoked"] == ["sk-scan"]
 
 
 def test_superseded_mid_scan(env):
@@ -240,7 +248,8 @@ def test_superseded_mid_scan(env):
     assert only(q)["status"] == ScanStatus.superseded
     assert q.stage_runs == ["101-triage"]
     assert not s["sink"].calls
-    assert s["runner"].destroyed == [101] and s["revoked"] == ["sk-scan"]
+    assert s["runner"].destroyed == [101]
+    assert s["revoked"] == ["sk-scan"]
 
 
 def test_hypothesis_dropped_by_citation_check(env):
@@ -248,7 +257,8 @@ def test_hypothesis_dropped_by_citation_check(env):
     s = env(script=full_script(hyps=[bad]))
     pipeline.run_scan(ROW)
     f = only(s["q"])
-    assert f["status"] == ScanStatus.done and f["sarif_uri"].startswith("s3://")
+    assert f["status"] == ScanStatus.done
+    assert f["sarif_uri"].startswith("s3://")
     _, _, findings, meta = s["sink"].calls[0]
     assert findings == []
     assert meta["dropped"][0]["reason"] == "hypothesis_citations_unverified"
@@ -260,7 +270,8 @@ def test_refuted_is_dropped(env):
     s = env(script=full_script(static_fn=lambda t: static(verdict="refuted", reachable="no")))
     pipeline.run_scan(ROW)
     _, _, findings, meta = s["sink"].calls[0]
-    assert findings == [] and meta["dropped"] == [{"id": "H1", "reason": "static_refuted", "errors": []}]
+    assert findings == []
+    assert meta["dropped"] == [{"id": "H1", "reason": "static_refuted", "errors": []}]
     assert "101-skeptic-H1" not in s["q"].stage_runs
 
 
@@ -269,19 +280,23 @@ def test_static_citation_failure_is_dropped(env):
     s = env(script=full_script(static_fn=lambda t: static(cits=bad_cit)))
     pipeline.run_scan(ROW)
     _, _, findings, meta = s["sink"].calls[0]
-    assert findings == [] and meta["dropped"][0]["reason"] == "static_citations_unverified"
+    assert findings == []
+    assert meta["dropped"][0]["reason"] == "static_citations_unverified"
 
 
 def test_likely(env):
     s = env(script=full_script())
     pipeline.run_scan(ROW)
     f = only(s["q"])
-    assert f["status"] == ScanStatus.done and f["triage"]["decision"] == "full"
+    assert f["status"] == ScanStatus.done
+    assert f["triage"]["decision"] == "full"
     _, pr, findings, meta = s["sink"].calls[0]
     assert pr.head_sha == "h" * 40
     [fd] = findings
-    assert fd.label == Label.likely and fd.label_reason == "confirmed_static_reachable_skeptic_upheld"
-    assert fd.severity == "critical" and fd.remediation == "use params"
+    assert fd.label == Label.likely
+    assert fd.label_reason == "confirmed_static_reachable_skeptic_upheld"
+    assert fd.severity == "critical"
+    assert fd.remediation == "use params"
     assert fd.fingerprint == fingerprint("sqli", "app/orders.py", "get_order", "GET /orders/123")
     assert fd.sink.snippet == "    return q('SELECT * FROM orders WHERE id=' + oid)"
     assert set(fd.provenance) >= {"hypothesise", "static_verify", "skeptic"}
@@ -290,13 +305,17 @@ def test_likely(env):
     assert s["q"].stage_runs == ["101-triage", "101-hypothesise", "101-static_verify-H1", "101-skeptic-H1"]
     assert s["q"].cost == pytest.approx(2.0)
     usd, ttl, models = s["minted"][0][1:]
-    assert s["minted"][0][0] == 101 and usd > 0 and ttl > 600 and "judge" in models
+    assert s["minted"][0][0] == 101
+    assert usd > 0
+    assert ttl > 600
+    assert "judge" in models
 
     # skeptic got trusted snapshot slices, not agent quotes
     sk_spec = next(sp for sp in s["runner"].specs if sp.task.stage == Stage.skeptic)
     sk_in = s["runner"].inputs[sk_spec.task.task_id]
     hyp_json = sk_in["hypothesis.json"]
-    assert "quote" not in hyp_json and "SELECT" not in hyp_json
+    assert "quote" not in hyp_json
+    assert "SELECT" not in hyp_json
     slices = sk_in["code_slices.md"]
     assert "return q('SELECT * FROM orders WHERE id=' + oid)" in slices
     assert set(sk_spec.task.context_files) == {"hypothesis.json", "static_verify.json", "code_slices.md", "output_schema.json"}
@@ -306,7 +325,8 @@ def test_likely(env):
         files = s["runner"].inputs[sp.task.task_id]
         assert json.loads(files["output_schema.json"]) == sp.task.output_schema
         assert "task.json" in files
-        assert sp.env["PRSEC_GATEWAY_KEY"] == "sk-scan" and sp.network == "prsec-scan-101"
+        assert sp.env["PRSEC_GATEWAY_KEY"] == "sk-scan"
+        assert sp.network == "prsec-scan-101"
         assert "PRSEC_GATEWAY_KEY_SCOPE" not in sp.env
     hyp_in = s["runner"].inputs["101-hypothesise"]
     assert json.loads(hyp_in["pr.json"])["title"] == "Add order lookup"
@@ -315,7 +335,10 @@ def test_likely(env):
     # evidence is stored outside the (deleted) work dir and linked from stage runs and the finding
     assert not (settings().work_root / "101").exists()
     tr = s["q"].transcripts["101-static_verify-H1"]
-    assert tr and tr.startswith("file://") and "evidence/acme/shop/7/" in tr and Path(tr[7:]).is_file()
+    assert tr
+    assert tr.startswith("file://")
+    assert "evidence/acme/shop/7/" in tr
+    assert Path(tr[7:]).is_file()
     assert fd.evidence_uri == tr
 
 
@@ -323,7 +346,8 @@ def test_skeptic_refuted_is_inconclusive(env):
     s = env(script=full_script(skeptic_refuted=True))
     pipeline.run_scan(ROW)
     [fd] = s["sink"].calls[0][2]
-    assert fd.label == Label.inconclusive and fd.label_reason == "skeptic_refuted"
+    assert fd.label == Label.inconclusive
+    assert fd.label_reason == "skeptic_refuted"
 
 
 def test_plausible_and_failed_static(env):
@@ -360,22 +384,26 @@ def test_triage_failure_fails_open(env):
     s = env(script=script)
     pipeline.run_scan(ROW)
     f = only(s["q"])
-    assert f["status"] == ScanStatus.done and f["triage"]["source"] == "fallback"
+    assert f["status"] == ScanStatus.done
+    assert f["triage"]["source"] == "fallback"
 
 
 def test_failure_path_cleans_up(env):
     s = env(script=full_script(), sink=FakeSink(fail=True))
     pipeline.run_scan(ROW)
     f = only(s["q"])
-    assert f["status"] == ScanStatus.failed and "minio down" in f["error"]
-    assert s["runner"].destroyed == [101] and s["revoked"] == ["sk-scan"]
+    assert f["status"] == ScanStatus.failed
+    assert "minio down" in f["error"]
+    assert s["runner"].destroyed == [101]
+    assert s["revoked"] == ["sk-scan"]
 
 
 def test_failure_before_network(env):
     s = env(script=full_script(), fail_network=True)
     pipeline.run_scan(ROW)
     assert only(s["q"])["status"] == ScanStatus.failed
-    assert s["runner"].destroyed == [101] and s["revoked"] == ["sk-scan"]
+    assert s["runner"].destroyed == [101]
+    assert s["revoked"] == ["sk-scan"]
 
 
 def test_runner_exception_becomes_stage_failure(env):
@@ -388,7 +416,8 @@ def test_runner_exception_becomes_stage_failure(env):
     s = env(script=script)
     pipeline.run_scan(ROW)
     [fd] = s["sink"].calls[0][2]
-    assert fd.label == Label.inconclusive and fd.label_reason == "static_verify_unavailable"
+    assert fd.label == Label.inconclusive
+    assert fd.label_reason == "static_verify_unavailable"
 
 
 def test_repo_disabled(env):
@@ -405,10 +434,13 @@ def test_failed_hypothesise_is_incomplete_not_clean(env):
     s = env(script=script)
     pipeline.run_scan(ROW)
     f = only(s["q"])
-    assert f["status"] == ScanStatus.failed and "hypothesise stage timeout" in f["error"]
+    assert f["status"] == ScanStatus.failed
+    assert "hypothesise stage timeout" in f["error"]
     assert f["sarif_uri"]  # the SARIF still records the run, marked unsuccessful
     _, _, findings, meta = s["sink"].calls[0]
-    assert findings == [] and meta["complete"] is False and meta["errors"]
+    assert findings == []
+    assert meta["complete"] is False
+    assert meta["errors"]
 
 
 def test_moved_head_supersedes_and_enqueues_current_head(env):
@@ -421,7 +453,8 @@ def test_moved_head_supersedes_and_enqueues_current_head(env):
     assert only(s["q"])["status"] == ScanStatus.superseded
     [(req, skills)] = s["q"].enqueued
     assert (req.head_sha, req.pr, req.repo, req.installation_id, skills) == ("n" * 40, 7, "acme/shop", 5, "sk-1")
-    assert not s["runner"].specs and not s["sink"].calls
+    assert not s["runner"].specs
+    assert not s["sink"].calls
 
 
 def test_per_task_gateway_keys_and_authoritative_cost(env, monkeypatch):
@@ -436,9 +469,11 @@ def test_per_task_gateway_keys_and_authoritative_cost(env, monkeypatch):
     tasks = ["101-triage", "101-hypothesise", "101-static_verify-H1", "101-skeptic-H1"]
     assert [m[0] for m in minted] == tasks
     policy = load_policy()
-    assert minted[1][1] == policy.defaults["hypothesise"].usd_budget and minted[1][2] == [policy.defaults["hypothesise"].model]
+    assert minted[1][1] == policy.defaults["hypothesise"].usd_budget
+    assert minted[1][2] == [policy.defaults["hypothesise"].model]
     for sp in s["runner"].specs:
-        assert sp.env["PRSEC_GATEWAY_KEY"] == f"sk-{sp.task.task_id}" and sp.env["PRSEC_GATEWAY_KEY_SCOPE"] == "task"
+        assert sp.env["PRSEC_GATEWAY_KEY"] == f"sk-{sp.task.task_id}"
+        assert sp.env["PRSEC_GATEWAY_KEY_SCOPE"] == "task"
     assert s["q"].cost == pytest.approx(1.25 * 4)  # gateway spend, not the harness-reported 0.5
     assert sorted(s["revoked"]) == sorted([f"sk-{t}" for t in tasks] + [""])
 
@@ -447,7 +482,8 @@ def test_lease_lost_stops_without_writing(env):
     q = FakeQueue(lease_lost_after=1)  # pre-triage check passes, pre-hypothesise check fails
     s = env(script=full_script(), q=q)
     pipeline.run_scan({**ROW, "lease_token": "tok-123456789abcdef"})
-    assert q.finished == [] and not s["sink"].calls
+    assert q.finished == []
+    assert not s["sink"].calls
     assert s["runner"].destroyed == []  # the new owner's containers/network are left alone
     assert q.stage_runs == ["101-triage"]
     assert not any(settings().work_root.glob("101*"))
@@ -458,7 +494,8 @@ def test_cleanup_precedes_lease_release_and_token_is_passed(env):
     s = env(script=full_script(), q=q)
     pipeline.run_scan({**ROW, "lease_token": "tok-123456789abcdef"})
     f = only(q)
-    assert f["status"] == ScanStatus.done and f["lease_token"] == "tok-123456789abcdef"
+    assert f["status"] == ScanStatus.done
+    assert f["lease_token"] == "tok-123456789abcdef"
     assert q.events[-2:] == ["destroy", "finish"]
     assert s["runner"].specs[0].src_dir == settings().work_root / "101-tok-12345678" / "src"
     assert not (settings().work_root / "101-tok-12345678").exists()
@@ -475,7 +512,8 @@ def test_prior_findings_are_given_to_hypothesise(env):
     pipeline.run_scan(ROW)
     hyp_in = s["runner"].inputs["101-hypothesise"]
     prior = json.loads(hyp_in["prior_findings.json"])["prior_findings"]
-    assert prior[0]["fingerprint"] == "fp1" and prior[0]["sink"]["snippet_at_previous_head"] == "return q(...)"
+    assert prior[0]["fingerprint"] == "fp1"
+    assert prior[0]["sink"]["snippet_at_previous_head"] == "return q(...)"
     assert "prior_findings.json" in s["runner"].specs[1].task.context_files
     assert "prior_findings.json" not in s["runner"].inputs["101-static_verify-H1"]
 
@@ -485,5 +523,6 @@ def test_container_paths_in_citations_are_relativised(env):
     s = env(script=full_script(hyps=[hyp(sink=abs_sink)]))
     pipeline.run_scan(ROW)
     [fd] = s["sink"].calls[0][2]
-    assert fd.sink.file == "app/orders.py" and fd.label == Label.likely
+    assert fd.sink.file == "app/orders.py"
+    assert fd.label == Label.likely
     assert fd.fingerprint == fingerprint("sqli", "app/orders.py", "get_order", "GET /orders/123")

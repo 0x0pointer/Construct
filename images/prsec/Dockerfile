@@ -12,9 +12,12 @@ RUN python -m venv /opt/prsec \
  && /opt/prsec/bin/pip install .
 
 FROM python:3.12-slim
+# The services bind loopback by default; inside the container they listen on the container network.
 ENV PATH=/opt/prsec/bin:$PATH \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    PRSEC_API_HOST=0.0.0.0 \
+    PRSEC_DASHBOARD_HOST=0.0.0.0
 # uid/gid 10001 matches the workbench 'agent' user so files in the shared host work dir
 # have one owner across worker and workbenches.
 RUN groupadd --system --gid 10001 prsec \

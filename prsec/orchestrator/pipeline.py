@@ -485,6 +485,57 @@ def _skeptic_one(ctx: Ctx, h: Hypothesis, sv: StaticVerifyOutput) -> Ran:
     return _run(ctx, Stage.skeptic, files, prompt_ctx={"pr_number": ctx.pr.number}, hyp_id=h.id)
 
 
+def _select_hypotheses(ctx: Ctx, raw: list[Hypothesis], limit: int, meta: dict[str, Any]) -> list[Hypothesis]:
+    """Hypotheses with verified citations, capped at `limit`, at or above the static-verify severity floor."""
+    kept: list[Hypothesis] = []
+    hyps = _relativise(_normalise_ids(raw), ctx.src)
+    for h in _canonical_bug_classes(hyps, _bug_class_aliases()):
+        errs = _verify_all(_hyp_citations(h), ctx.src)
+        if errs:
+            meta["dropped"].append({"id": h.id, "reason": "hypothesis_citations_unverified", "errors": errs[:5]})
+        else:
+            kept.append(h)
+    for h in kept[limit:]:
+        meta["dropped"].append({"id": h.id, "reason": "over_cap"})
+    kept = kept[:limit]
+
+    min_rank = _SEV_RANK[Severity(ctx.policy.static_verify_min_severity)]
+    to_verify = [h for h in kept if _SEV_RANK[h.severity_guess] >= min_rank]
+    for h in kept:
+        if h not in to_verify:
+            meta["dropped"].append({"id": h.id, "reason": "below_static_verify_min_severity"})
+    return to_verify
+
+
+def _static_survivors(
+    ctx: Ctx, to_verify: list[Hypothesis], hyp_files: dict[str, str], meta: dict[str, Any]
+) -> list[tuple[Hypothesis, Ran, list[str]]]:
+    """Run static_verify on every hypothesis; keep those `verdict.drop_reason` does not drop."""
+    with ThreadPoolExecutor(max_workers=min(VERIFY_CONCURRENCY, len(to_verify))) as pool:
+        verified = list(pool.map(lambda h: (h, *_verify_one(ctx, h, hyp_files)), to_verify))
+
+    survivors: list[tuple[Hypothesis, Ran, list[str]]] = []
+    for h, sv, errs in verified:
+        static = sv.output if isinstance(sv.output, StaticVerifyOutput) else None
+        reason = verdict.drop_reason(static, errs)
+        if reason:
+            meta["dropped"].append({"id": h.id, "reason": reason, "errors": errs[:5]})
+        else:
+            survivors.append((h, sv, errs))
+    return survivors
+
+
+def _skeptics(ctx: Ctx, survivors: list[tuple[Hypothesis, Ran, list[str]]]) -> dict[str, Ran]:
+    """Skeptic runs, by hypothesis id, for the survivors `verdict.needs_skeptic` selects."""
+    need = [(h, sv) for h, sv, errs in survivors if verdict.needs_skeptic(sv.output, errs, h)]  # type: ignore[arg-type]
+    skeptics: dict[str, Ran] = {}
+    if need:
+        with ThreadPoolExecutor(max_workers=min(VERIFY_CONCURRENCY, len(need))) as pool:
+            for h, ran in zip([h for h, _ in need], pool.map(lambda p: _skeptic_one(ctx, p[0], p[1].output), need)):
+                skeptics[h.id] = ran
+    return skeptics
+
+
 def _analyse(ctx: Ctx, triage: dict[str, Any], decision: str, meta: dict[str, Any]) -> list[Finding]:
     policy = ctx.policy
     limit = policy.max_hypotheses if decision == "full" else max(1, (policy.max_hypotheses + 1) // 2)
@@ -506,46 +557,15 @@ def _analyse(ctx: Ctx, triage: dict[str, Any], decision: str, meta: dict[str, An
         return []
     meta["summary"] = hyp_run.output.summary
 
-    kept: list[Hypothesis] = []
-    hyps = _relativise(_normalise_ids(hyp_run.output.hypotheses), ctx.src)
-    for h in _canonical_bug_classes(hyps, _bug_class_aliases()):
-        errs = _verify_all(_hyp_citations(h), ctx.src)
-        if errs:
-            meta["dropped"].append({"id": h.id, "reason": "hypothesis_citations_unverified", "errors": errs[:5]})
-        else:
-            kept.append(h)
-    for h in kept[limit:]:
-        meta["dropped"].append({"id": h.id, "reason": "over_cap"})
-    kept = kept[:limit]
-
-    min_rank = _SEV_RANK[Severity(policy.static_verify_min_severity)]
-    to_verify = [h for h in kept if _SEV_RANK[h.severity_guess] >= min_rank]
-    for h in kept:
-        if h not in to_verify:
-            meta["dropped"].append({"id": h.id, "reason": "below_static_verify_min_severity"})
+    to_verify = _select_hypotheses(ctx, hyp_run.output.hypotheses, limit, meta)
     if not to_verify:
         return []
 
     ctx.check()
-    with ThreadPoolExecutor(max_workers=min(VERIFY_CONCURRENCY, len(to_verify))) as pool:
-        verified = list(pool.map(lambda h: (h, *_verify_one(ctx, h, hyp_files)), to_verify))
-
-    survivors: list[tuple[Hypothesis, Ran, list[str]]] = []
-    for h, sv, errs in verified:
-        static = sv.output if isinstance(sv.output, StaticVerifyOutput) else None
-        reason = verdict.drop_reason(static, errs)
-        if reason:
-            meta["dropped"].append({"id": h.id, "reason": reason, "errors": errs[:5]})
-        else:
-            survivors.append((h, sv, errs))
+    survivors = _static_survivors(ctx, to_verify, hyp_files, meta)
 
     ctx.check()
-    need = [(h, sv) for h, sv, errs in survivors if verdict.needs_skeptic(sv.output, errs, h)]  # type: ignore[arg-type]
-    skeptics: dict[str, Ran] = {}
-    if need:
-        with ThreadPoolExecutor(max_workers=min(VERIFY_CONCURRENCY, len(need))) as pool:
-            for h, ran in zip([h for h, _ in need], pool.map(lambda p: _skeptic_one(ctx, p[0], p[1].output), need)):
-                skeptics[h.id] = ran
+    skeptics = _skeptics(ctx, survivors)
 
     findings = []
     for h, sv, errs in survivors:
@@ -560,99 +580,147 @@ def _analyse(ctx: Ctx, triage: dict[str, Any], decision: str, meta: dict[str, An
 # ------------------------------------------------------------------- entry
 
 
-def run_scan(scan_row: dict) -> None:
-    scan_id = int(scan_row["id"])
+@dataclass
+class _ScanResources:
+    """What a scan has allocated so far; released by `run_scan` however the scan ends."""
+
+    gw_key: str = ""
+    runner: Runner | None = None
+    root: Path | None = None
+
+
+def _current_pr(scm: Any, scan_row: dict, repo: str, number: int, inst: Any) -> PRInfo:
+    pr = scm.get_pr(repo, number, inst)
+    if pr.head_sha != scan_row["head_sha"]:
+        # The diff, commits and file list from the SCM describe the current head, not the queued
+        # one: scanning would mix two commits. The current head gets (or already has) its own scan.
+        log.info("scan %s: PR head moved %s -> %s; superseding", scan_row["id"], scan_row["head_sha"], pr.head_sha)
+        _enqueue_current_head(scan_row, pr)
+        raise Superseded()
+    return pr.model_copy(update={"base_sha": scan_row.get("base_sha") or pr.base_sha})
+
+
+def _fresh_src(root: Path) -> Path:
+    src = root / "src"
+    if src.exists():
+        shutil.rmtree(src)
+    src.mkdir(parents=True)
+    return src
+
+
+def _workbench_image(policy: Policy, repo: str) -> str:
+    override = next((ov.workbench_image for p, ov in policy.repos.items()
+                     if ov.workbench_image and fnmatch.fnmatch(repo, p)), None)
+    return override or policy.workbench_image
+
+
+def _shared_files(repo: str, pr: PRInfo, diff: str, changed: list[str]) -> dict[str, str]:
+    shared = {"pr.json": _pr_json(pr), "diff.patch": diff, "changed_files.txt": "\n".join(changed) + "\n"}
+    profile = settings().work_root / "profiles" / f"{repo.replace('/', '__')}.json"
+    if profile.is_file():
+        shared["repo_profile.json"] = profile.read_text()
+    return shared
+
+
+def _write_results(
+    ctx: Ctx, triage: dict[str, Any], changed: list[str], meta: dict[str, Any], findings: list[Finding]
+) -> dict[str, Any]:
+    """Write the scan's findings to the sink; returns the queue outcome."""
+    run_meta = {
+        **meta,
+        "triage": triage,
+        "skills_version": ctx.skills_version,
+        "image": ctx.image,
+        "scanned_files": changed,
+        "changed_files": changed,
+        "base_sha": ctx.pr.base_sha,
+    }
+    mounted = current_skills_version()
+    if mounted != ctx.skills_version:
+        run_meta["skills_version_mounted"] = mounted
+    uri = sinks_pkg.get_sink().write_scan(ctx.scan_id, ctx.pr, findings, run_meta)
+    if meta["complete"]:
+        return {"status": ScanStatus.done, "triage": triage, "sarif_uri": uri}
+    return {"status": ScanStatus.failed, "triage": triage, "sarif_uri": uri,
+            "error": ("incomplete: " + "; ".join(meta["errors"]))[:4000]}
+
+
+def _scan(scan_row: dict, scan_id: int, token: str | None, res: _ScanResources) -> dict[str, Any]:
+    """The scan itself; returns the queue outcome. Records what it allocates in `res`."""
     repo = scan_row["repo"]
     number = int(scan_row["pr"])
     inst = scan_row.get("installation_id")
+    policy = load_policy()
+    if not policy.repo_enabled(repo):
+        return {"status": ScanStatus.skipped, "triage": {"decision": "skip", "source": "policy", "reason": "repo_disabled"}}
+
+    scm = scm_pkg.get_scm(scan_row.get("scm") or "github")
+    pr = _current_pr(scm, scan_row, repo, number, inst)
+    diff = scm.get_diff(repo, number, inst)
+    changed = _changed_files(pr, diff)
+
+    rule, rule_reason = triage_rules.classify(changed, diff)
+    rules = {"decision": rule, "reason": rule_reason}
+    audited = stages.bucket(scan_id, "skip_audit") < policy.skip_audit_sample
+    if rule == "skip" and not audited:
+        return {"status": ScanStatus.skipped, "triage": {"decision": "skip", "source": "rules", "reason": rule_reason, "rules": rules}}
+    if queue.is_superseded(scan_id):
+        raise Superseded()
+
+    res.root = root = _work_dir(scan_id, token)
+    src = _fresh_src(root)
+    scm.fetch_source(repo, pr.head_sha, src, inst)
+
+    per_task = gateway.per_task_keys()
+    usd, wall, models = stages.scan_budget(policy, repo, policy.max_hypotheses)
+    if not per_task:  # dev: one shared (passthrough) key; with a master key every task gets its own
+        res.gw_key = gateway.mint_key(scan_id, usd, wall + KEY_GRACE_S, models)
+    res.runner = runner = runner_pkg.get_runner(settings().runner)
+    network = runner.create_scan_network(scan_id)
+
+    skills_version = scan_row.get("skills_version") or settings().skills_version
+    ctx = Ctx(
+        scan_id=scan_id, repo=repo, pr=pr, policy=policy, root=root, src=src, runner=runner, network=network,
+        gw_key=res.gw_key, image=_workbench_image(policy, repo), skills_version=skills_version,
+        lease_token=token, per_task_keys=per_task,
+    )
+    ctx.shared = _shared_files(repo, pr, diff, changed)
+
+    ctx.check()
+    triage, decision = _triage(ctx, rules, audited)
+    if decision == "skip":
+        return {"status": ScanStatus.skipped, "triage": triage}
+
+    meta: dict[str, Any] = {"dropped": [], "complete": True, "errors": []}
+    findings = _analyse(ctx, triage, decision, meta)
+    ctx.check()
+    return _write_results(ctx, triage, changed, meta, findings)
+
+
+def _release(scan_id: int, res: _ScanResources, lease_lost: bool) -> None:
+    # Runs BEFORE the lease is released: once finish() clears it, the same scan id may be
+    # revived and leased again, and must not lose its containers/network to our cleanup.
+    if res.runner is not None and not lease_lost:
+        try:
+            res.runner.destroy_scan(scan_id)
+        except Exception:
+            log.exception("scan %s: destroy_scan failed", scan_id)
+    try:
+        gateway.revoke_key(res.gw_key)
+    except Exception:
+        log.exception("scan %s: revoke_key failed", scan_id)
+    if res.root is not None:
+        shutil.rmtree(res.root, ignore_errors=True)
+
+
+def run_scan(scan_row: dict) -> None:
+    scan_id = int(scan_row["id"])
     token = scan_row.get("lease_token")
-    gw_key = ""
-    runner: Runner | None = None
-    root: Path | None = None
+    res = _ScanResources()
     outcome: dict[str, Any] = {"status": ScanStatus.failed}
     lease_lost = False
     try:
-        policy = load_policy()
-        if not policy.repo_enabled(repo):
-            outcome = {"status": ScanStatus.skipped, "triage": {"decision": "skip", "source": "policy", "reason": "repo_disabled"}}
-            return
-
-        scm = scm_pkg.get_scm(scan_row.get("scm") or "github")
-        pr = scm.get_pr(repo, number, inst)
-        if pr.head_sha != scan_row["head_sha"]:
-            # The diff, commits and file list from the SCM describe the current head, not the queued
-            # one: scanning would mix two commits. The current head gets (or already has) its own scan.
-            log.info("scan %s: PR head moved %s -> %s; superseding", scan_id, scan_row["head_sha"], pr.head_sha)
-            _enqueue_current_head(scan_row, pr)
-            raise Superseded()
-        pr = pr.model_copy(update={"base_sha": scan_row.get("base_sha") or pr.base_sha})
-        diff = scm.get_diff(repo, number, inst)
-        changed = _changed_files(pr, diff)
-
-        rule, rule_reason = triage_rules.classify(changed, diff)
-        rules = {"decision": rule, "reason": rule_reason}
-        audited = stages.bucket(scan_id, "skip_audit") < policy.skip_audit_sample
-        if rule == "skip" and not audited:
-            outcome = {"status": ScanStatus.skipped, "triage": {"decision": "skip", "source": "rules", "reason": rule_reason, "rules": rules}}
-            return
-        if queue.is_superseded(scan_id):
-            raise Superseded()
-
-        root = _work_dir(scan_id, token)
-        src = root / "src"
-        if src.exists():
-            shutil.rmtree(src)
-        src.mkdir(parents=True)
-        scm.fetch_source(repo, pr.head_sha, src, inst)
-
-        per_task = gateway.per_task_keys()
-        usd, wall, models = stages.scan_budget(policy, repo, policy.max_hypotheses)
-        if not per_task:  # dev: one shared (passthrough) key; with a master key every task gets its own
-            gw_key = gateway.mint_key(scan_id, usd, wall + KEY_GRACE_S, models)
-        runner = runner_pkg.get_runner(settings().runner)
-        network = runner.create_scan_network(scan_id)
-
-        override = next((ov.workbench_image for p, ov in policy.repos.items()
-                         if ov.workbench_image and fnmatch.fnmatch(repo, p)), None)
-        skills_version = scan_row.get("skills_version") or settings().skills_version
-        ctx = Ctx(
-            scan_id=scan_id, repo=repo, pr=pr, policy=policy, root=root, src=src, runner=runner, network=network,
-            gw_key=gw_key, image=override or policy.workbench_image, skills_version=skills_version,
-            lease_token=token, per_task_keys=per_task,
-        )
-        ctx.shared = {"pr.json": _pr_json(pr), "diff.patch": diff, "changed_files.txt": "\n".join(changed) + "\n"}
-        profile = settings().work_root / "profiles" / f"{repo.replace('/', '__')}.json"
-        if profile.is_file():
-            ctx.shared["repo_profile.json"] = profile.read_text()
-
-        ctx.check()
-        triage, decision = _triage(ctx, rules, audited)
-        if decision == "skip":
-            outcome = {"status": ScanStatus.skipped, "triage": triage}
-            return
-
-        meta: dict[str, Any] = {"dropped": [], "complete": True, "errors": []}
-        findings = _analyse(ctx, triage, decision, meta)
-        ctx.check()
-
-        run_meta = {
-            **meta,
-            "triage": triage,
-            "skills_version": ctx.skills_version,
-            "image": ctx.image,
-            "scanned_files": changed,
-            "changed_files": changed,
-            "base_sha": pr.base_sha,
-        }
-        mounted = current_skills_version()
-        if mounted != ctx.skills_version:
-            run_meta["skills_version_mounted"] = mounted
-        uri = sinks_pkg.get_sink().write_scan(scan_id, pr, findings, run_meta)
-        if meta["complete"]:
-            outcome = {"status": ScanStatus.done, "triage": triage, "sarif_uri": uri}
-        else:
-            outcome = {"status": ScanStatus.failed, "triage": triage, "sarif_uri": uri,
-                       "error": ("incomplete: " + "; ".join(meta["errors"]))[:4000]}
+        outcome = _scan(scan_row, scan_id, token, res)
     except Superseded:
         log.info("scan %s superseded; aborting", scan_id)
         outcome = {"status": ScanStatus.superseded}
@@ -663,18 +731,7 @@ def run_scan(scan_row: dict) -> None:
         log.exception("scan %s failed", scan_id)
         outcome = {"status": ScanStatus.failed, "error": f"{type(e).__name__}: {e}"[:4000]}
     finally:
-        # Clean up BEFORE releasing the lease: once finish() clears it, the same scan id may be
-        # revived and leased again, and must not lose its containers/network to our cleanup.
-        if runner is not None and not lease_lost:
-            try:
-                runner.destroy_scan(scan_id)
-            except Exception:
-                log.exception("scan %s: destroy_scan failed", scan_id)
-        try:
-            gateway.revoke_key(gw_key)
-        except Exception:
-            log.exception("scan %s: revoke_key failed", scan_id)
-        if root is not None:
-            shutil.rmtree(root, ignore_errors=True)
+        # Clean up BEFORE releasing the lease (see _release).
+        _release(scan_id, res, lease_lost)
         if not lease_lost:
             queue.finish(scan_id, lease_token=token, **outcome)

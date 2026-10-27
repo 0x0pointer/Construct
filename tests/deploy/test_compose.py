@@ -145,7 +145,9 @@ def test_compose_config_validates() -> None:
 
 def test_dashboard_sso_restricted_to_appsec(services: dict) -> None:
     text = COMPOSE_FILE.read_text()
-    assert "${OIDC_ALLOWED_GROUPS:?" in text and "${OIDC_EMAIL_DOMAINS:?" in text
+    assert "${OIDC_ALLOWED_GROUPS:?" in text
+    assert "${OIDC_EMAIL_DOMAINS:?" in text
     assert "OIDC_EMAIL_DOMAINS:-*" not in text
     # no fallback credentials or placeholder IdP
-    assert "${OIDC_CLIENT_SECRET:?" in text and "${OIDC_ISSUER_URL:?" in text
+    assert "${OIDC_CLIENT_SECRET:?" in text
+    assert "${OIDC_ISSUER_URL:?" in text

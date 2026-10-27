@@ -26,7 +26,9 @@ def _env() -> jinja2.Environment:
     return jinja2.Environment(
         loader=jinja2.FileSystemLoader(Path(__file__).parent),
         undefined=jinja2.StrictUndefined,
-        autoescape=False,
+        # Templates are Markdown prompts rendered to plain text for an LLM, never served as HTML, so
+        # escaping stays off for them (it would mangle diffs and code); it turns on for any HTML/XML template.
+        autoescape=jinja2.select_autoescape(enabled_extensions=("html", "htm", "xml"), default_for_string=False),
         keep_trailing_newline=True,
         trim_blocks=False,
     )

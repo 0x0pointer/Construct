@@ -56,8 +56,11 @@ def chat_reply(content: str, **usage: int) -> dict:
 
 def test_registered_and_caps() -> None:
     a = get_adapter("raw")
-    assert isinstance(a, RawAdapter) and isinstance(a, HarnessAdapter)
-    assert a.caps.subprocess is False and not a.caps.resume and not a.caps.native_skills
+    assert isinstance(a, RawAdapter)
+    assert isinstance(a, HarnessAdapter)
+    assert a.caps.subprocess is False
+    assert not a.caps.resume
+    assert not a.caps.native_skills
 
 
 def test_build_not_supported(task: StageTask) -> None:
@@ -71,19 +74,24 @@ def test_build_not_supported(task: StageTask) -> None:
 def test_truncate() -> None:
     assert truncate("abc", 5) == "abc"
     out = truncate("x" * 20, 5)
-    assert out.startswith("xxxxx\n") and "showing 5 of 20 chars" in out
+    assert out.startswith("xxxxx\n")
+    assert "showing 5 of 20 chars" in out
 
 
 def test_system_prompt_inlines_and_truncates(task: StageTask) -> None:
     sp = RawAdapter(max_file_chars=100).system_prompt(task, "STAGE PROMPT")
     assert sp.startswith("STAGE PROMPT")
-    assert "You have NO tools" in sp and task.output_path in sp
+    assert "You have NO tools" in sp
+    assert task.output_path in sp
     assert '"required": [\n    "decision"\n  ]' in sp
     assert '{"title": "Add login"}' in sp
-    assert "showing 100 of 501 chars" in sp and "a" * 101 not in sp
-    assert "OUTSIDE" not in sp and "refused: path outside the input directory" in sp
+    assert "showing 100 of 501 chars" in sp
+    assert "a" * 101 not in sp
+    assert "OUTSIDE" not in sp
+    assert "refused: path outside the input directory" in sp
     assert "(missing)" in sp
-    assert '<skill name="triage-rules">' in sp and "SKIP docs-only PRs." in sp
+    assert '<skill name="triage-rules">' in sp
+    assert "SKIP docs-only PRs." in sp
     assert 'name="missing"' not in sp
 
 
@@ -107,7 +115,8 @@ def test_gateway_json_schema(task: StageTask) -> None:
     assert body["model"] == "agent-small"
     assert body["response_format"]["type"] == "json_schema"
     assert body["response_format"]["json_schema"]["schema"] == SCHEMA
-    assert body["messages"][0]["role"] == "system" and body["messages"][0]["content"].startswith("STAGE PROMPT")
+    assert body["messages"][0]["role"] == "system"
+    assert body["messages"][0]["content"].startswith("STAGE PROMPT")
     assert (usage.tokens_in, usage.tokens_out, usage.tokens_cache_read, usage.usd, usage.turns) == (800, 50, 200, 0.0031, 1)
     assert a.usage(events) == usage
     assert [e.kind for e in events] == [EventKind.system, EventKind.message, EventKind.usage]
@@ -140,8 +149,10 @@ def test_invalid_json_reply_written_for_repair(task: StageTask) -> None:
 def test_gateway_error(task: StageTask) -> None:
     respx.post(CHAT).mock(return_value=httpx.Response(500, text="boom"))
     output, events, usage = RawAdapter().run_inprocess(task, GW, "p")
-    assert output is None and usage.turns == 0
-    assert events[-1].kind == EventKind.error and "HTTPStatusError" in events[-1].text
+    assert output is None
+    assert usage.turns == 0
+    assert events[-1].kind == EventKind.error
+    assert "HTTPStatusError" in events[-1].text
 
 
 @respx.mock
@@ -168,18 +179,22 @@ def test_dev_mode_anthropic(task: StageTask, monkeypatch: pytest.MonkeyPatch) ->
     output, _, usage = RawAdapter().run_inprocess(task, None, "p")
     assert output == {"decision": "scan"}
     req = route.calls.last.request
-    assert req.headers["x-api-key"] == "sk-ant-test" and "anthropic-version" in req.headers
+    assert req.headers["x-api-key"] == "sk-ant-test"
+    assert "anthropic-version" in req.headers
     body = json.loads(req.content)
-    assert body["system"].startswith("p") and body["max_tokens"] > 0
+    assert body["system"].startswith("p")
+    assert body["max_tokens"] > 0
     assert (usage.tokens_in, usage.tokens_out, usage.tokens_cache_read) == (307, 40, 5)
 
 
 def test_dev_mode_without_credentials(task: StageTask) -> None:
     output, events, _ = RawAdapter().run_inprocess(task, None, "p")
     assert output is None
-    assert events[-1].kind == EventKind.error and "PRSEC_RAW_BASE_URL" in events[-1].text
+    assert events[-1].kind == EventKind.error
+    assert "PRSEC_RAW_BASE_URL" in events[-1].text
 
 
 def test_parse_events_never_raises() -> None:
     events = list(RawAdapter().parse_events(["garbage", "", "{}"]))
-    assert len(events) == 2 and all(e.kind == EventKind.system for e in events)
+    assert len(events) == 2
+    assert all(e.kind == EventKind.system for e in events)

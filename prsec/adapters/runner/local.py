@@ -63,7 +63,7 @@ class LocalRunner:
         return "host"
 
     def destroy_scan(self, scan_id: int) -> None:
-        return None
+        log.debug("LocalRunner has nothing to tear down (scan %s)", scan_id)
 
     def _env(self, spec: WorkbenchSpec) -> dict[str, str]:
         env = dict(os.environ)

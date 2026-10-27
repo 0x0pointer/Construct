@@ -90,52 +90,71 @@ class FileDiff:
     hunks: list[tuple[list[str], list[str]]] = field(default_factory=list)
 
 
+_GIT_HEADER = "diff --git a/"
+
+
+def _git_header_paths(line: str) -> tuple[str | None, str | None]:
+    """(old, new) from `diff --git a/<old> b/<new>`: the first ` b/` after a non-empty old path that
+    leaves a non-empty new path (what `diff --git a/(.+?) b/(.+)$` matched)."""
+    if not line.startswith(_GIT_HEADER):
+        return None, None
+    rest = line[len(_GIT_HEADER):]
+    i = rest.find(" b/", 1)
+    if i == -1 or i + 3 >= len(rest):
+        return None, None
+    return rest[:i], rest[i + 3:]
+
+
+def _add_hunk_line(cur: FileDiff, line: str) -> None:
+    old_side, new_side = cur.hunks[-1]
+    if line.startswith("+"):
+        cur.added.append(line[1:])
+        new_side.append(line[1:])
+    elif line.startswith("-"):
+        cur.removed.append(line[1:])
+        old_side.append(line[1:])
+    elif line.startswith(" ") or line == "":
+        old_side.append(line[1:])
+        new_side.append(line[1:])
+
+
+def _feed(files: dict[str, FileDiff], cur: FileDiff, old_path: str | None, line: str, in_hunk: bool) -> bool:
+    """Apply one line of the current file's diff; returns whether a hunk is open afterwards."""
+    if not in_hunk and line.startswith("+++ "):
+        if line[4:].strip() == "/dev/null" and old_path:  # deletion: key by the old path
+            files.pop(cur.path, None)
+            cur.path = old_path
+            files[cur.path] = cur
+        return in_hunk
+    if not in_hunk and line.startswith("--- "):
+        return in_hunk
+    if line.startswith(("Binary files ", "GIT binary patch")):
+        cur.binary = True
+        return in_hunk
+    if line.startswith("@@"):
+        cur.has_hunks = True
+        cur.hunks.append(([], []))
+        return True
+    if in_hunk:
+        _add_hunk_line(cur, line)
+    return in_hunk
+
+
 def parse_diff(diff: str) -> dict[str, FileDiff]:
     """Split a unified diff into per-file added/removed lines (keyed by new path, old path for deletions)."""
     files: dict[str, FileDiff] = {}
     cur: FileDiff | None = None
-    old_path = new_path = None
+    old_path: str | None = None
     in_hunk = False
     for line in diff.splitlines():
         if line.startswith("diff --git "):
-            m = re.match(r"diff --git a/(.+?) b/(.+)$", line)
-            old_path, new_path = (m.group(1), m.group(2)) if m else (None, None)
-            cur = FileDiff(new_path or "") if new_path else None
+            old_path, new_path = _git_header_paths(line)
+            cur = FileDiff(new_path) if new_path else None
             if cur:
                 files[cur.path] = cur
             in_hunk = False
-            continue
-        if cur is None:
-            continue
-        if not in_hunk and line.startswith("+++ "):
-            target = line[4:].strip()
-            if target == "/dev/null" and old_path:
-                files.pop(cur.path, None)
-                cur.path = old_path
-                files[cur.path] = cur
-            continue
-        if not in_hunk and (line.startswith("--- ")):
-            continue
-        if line.startswith("Binary files ") or line.startswith("GIT binary patch"):
-            cur.binary = True
-            continue
-        if line.startswith("@@"):
-            in_hunk = True
-            cur.has_hunks = True
-            cur.hunks.append(([], []))
-            continue
-        if not in_hunk:
-            continue
-        old_side, new_side = cur.hunks[-1]
-        if line.startswith("+"):
-            cur.added.append(line[1:])
-            new_side.append(line[1:])
-        elif line.startswith("-"):
-            cur.removed.append(line[1:])
-            old_side.append(line[1:])
-        elif line.startswith(" ") or line == "":
-            old_side.append(line[1:])
-            new_side.append(line[1:])
+        elif cur is not None:
+            in_hunk = _feed(files, cur, old_path, line, in_hunk)
     return files
 
 

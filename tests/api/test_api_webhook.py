@@ -67,7 +67,8 @@ def test_verify_signature():
 
 def test_valid_signature_enqueues(client, calls):
     r = post(client, pr_payload(action="synchronize"))
-    assert r.status_code == 202 and r.json() == {"scan_id": 42}
+    assert r.status_code == 202
+    assert r.json() == {"scan_id": 42}
     req, skills, debounce, max_sup = calls[0]
     assert (req.repo, req.pr, req.reason, skills, debounce, max_sup) == ("acme/api", 7, "synchronize", "sk-1", 120, 5)
 
@@ -95,7 +96,8 @@ def test_missing_secret_fails_closed(pol, calls):
 
 def test_ping(client, calls):
     r = post(client, {"zen": "Keep it logically awesome.", "hook_id": 1}, event="ping")
-    assert r.status_code == 200 and r.json()["pong"] is True
+    assert r.status_code == 200
+    assert r.json()["pong"] is True
     assert calls == []
 
 
@@ -111,13 +113,15 @@ def test_ping(client, calls):
 )
 def test_ignored(client, calls, payload, event, reason):
     r = post(client, payload, event=event)
-    assert r.status_code == 200 and r.json() == {"ignored": reason}
+    assert r.status_code == 200
+    assert r.json() == {"ignored": reason}
     assert calls == []
 
 
 def test_duplicate_is_200(client, calls):
     r = post(client, pr_payload(pull_request__head={"sha": "d" * 40, "repo": {"full_name": "acme/api"}}))
-    assert r.status_code == 200 and r.json() == {"ignored": "duplicate"}
+    assert r.status_code == 200
+    assert r.json() == {"ignored": "duplicate"}
 
 
 def test_healthz(client):
@@ -133,9 +137,12 @@ def test_manual_scan_requires_admin_token(client, calls, monkeypatch):
     assert client.post("/scans", json=body, headers={"X-PRSec-Admin": "nope"}).status_code == 403
     assert calls == []
     r = client.post("/scans", json=body, headers={"X-PRSec-Admin": "tok"})
-    assert r.status_code == 202 and r.json() == {"scan_id": 42}
+    assert r.status_code == 202
+    assert r.json() == {"scan_id": 42}
     req, _, debounce, _ = calls[0]
-    assert req.reason == "manual" and req.pr == 3 and debounce == 0
+    assert req.reason == "manual"
+    assert req.pr == 3
+    assert debounce == 0
 
 
 def test_manual_scan_validates_body(client, monkeypatch):

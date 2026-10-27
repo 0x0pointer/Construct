@@ -15,8 +15,11 @@ def test_task_shape_from_policy():
                                      prompt_ctx={"pr_number": 3})
     sp = p.defaults["triage"]
     assert task.task_id == "42-triage"
-    assert task.harness == sp.harness and task.model_alias == sp.model and task.skills == sp.skills
-    assert task.limits.wall_clock_s == sp.wall_clock_s and task.limits.usd_budget == sp.usd_budget
+    assert task.harness == sp.harness
+    assert task.model_alias == sp.model
+    assert task.skills == sp.skills
+    assert task.limits.wall_clock_s == sp.wall_clock_s
+    assert task.limits.usd_budget == sp.usd_budget
     assert task.output_schema == schema_for(Stage.triage)
     assert task.context_files == ["pr.json", "diff.patch", "output_schema.json"]
     assert task.output_path == "/work/out/output.json"
@@ -29,19 +32,22 @@ def test_task_id_with_hypothesis():
     task, _ = stages.build_task(p, "static_verify", 7, "a/b", context_files=["hypothesis.json"], hyp_id="H3",
                                 prompt_ctx={"bug_class": "sqli"})
     assert task.task_id == "7-static_verify-H3"
-    assert "H3" in task.prompt_md and "sqli" in task.prompt_md
+    assert "H3" in task.prompt_md
+    assert "sqli" in task.prompt_md
 
 
 def test_raw_harness_prompt_has_no_paths():
     p = _policy(experiments=[])
     task, _ = stages.build_task(p, "skeptic", 1, "a/b", context_files=["code_slices.md"])
     assert task.harness == "raw"
-    assert "cannot run commands" in task.prompt_md and "/work/out" not in task.prompt_md
+    assert "cannot run commands" in task.prompt_md
+    assert "/work/out" not in task.prompt_md
 
 
 def test_bucket_deterministic_and_spread():
-    assert stages.bucket(5, "x") == stages.bucket(5, "x")
-    assert stages.bucket(5, "x") != stages.bucket(5, "y")
+    first = stages.bucket(5, "x")
+    assert stages.bucket(5, "x") == first
+    assert first != stages.bucket(5, "y")
     vals = [stages.bucket(i, "experiment:hypothesise") for i in range(2000)]
     assert all(0 <= v < 1 for v in vals)
     assert 0.07 < sum(v < 0.1 for v in vals) / len(vals) < 0.13
@@ -69,10 +75,13 @@ def test_repo_override_wins_and_disables_experiment():
         experiments=[Experiment(stage="hypothesise", harnesses=["codex"], sample=1.0)],
     )
     task, choice = stages.build_task(p, "hypothesise", 9, "acme/pay-api", context_files=[])
-    assert task.harness == "claude-code" and task.limits.usd_budget == 9.0 and choice.experiment is None
+    assert task.harness == "claude-code"
+    assert task.limits.usd_budget == 9.0
+    assert choice.experiment is None
     assert task.skills == p.defaults["hypothesise"].skills  # unset fields inherit defaults
     task2, choice2 = stages.build_task(p, "hypothesise", 9, "acme/other", context_files=[])
-    assert task2.harness == "codex" and choice2.experiment == "hypothesise:codex"
+    assert task2.harness == "codex"
+    assert choice2.experiment == "hypothesise:codex"
 
 
 def test_scan_budget():
@@ -80,4 +89,5 @@ def test_scan_budget():
     usd, wall, models = stages.scan_budget(p, "a/b", 2)
     d = p.defaults
     assert usd == d["triage"].usd_budget + d["hypothesise"].usd_budget + 2 * d["static_verify"].usd_budget + 2 * d["skeptic"].usd_budget
-    assert wall > 0 and set(models) == {sp.model for sp in d.values()}
+    assert wall > 0
+    assert set(models) == {sp.model for sp in d.values()}
