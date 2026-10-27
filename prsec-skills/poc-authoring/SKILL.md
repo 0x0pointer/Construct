@@ -67,9 +67,9 @@ Fields (YAML or JSON):
 | `hypothesis_id` | the hypothesis id (`H1`) |
 | `description` | one or two sentences: who does what, and what proves it |
 | `users.<name>` | `vars` (credentials, known ids), `headers` sent on every request as that user, `login` steps run before `steps`; cookies are kept per user |
-| `steps[]` | `name` (unique across `steps` and every user's `login`, `[A-Za-z][A-Za-z0-9_-]*`, not `script`), `as` (user), `method`, `path` (a path on the app; absolute URLs are refused, and redirects are not followed: a `302` is the step's response, add a step for the target if you need it), `headers`, `query`, at most one of `json` / `form` / `body`, `expect_status` (abort the run, not fired, if the status differs), `extract` |
+| `steps[]` | `name` (unique across `steps` and every user's `login`, `[A-Za-z][A-Za-z0-9_-]*`, not `script`), `as` (user), `method`, `path` (a path on the app, or an absolute `http://<service>:<port>/...` URL to one of the EnvSpec's services, e.g. the oauth2 mock for a token or mailpit's API for a reset mail; every other absolute URL is refused. Redirects are not followed: a `302` is the step's response, so its `Location` can be checked), `parallel` (send the request N times at the same moment, 2-50, for race conditions; no `extract`; its oracles pass if any response matches), `headers`, `query`, at most one of `json` / `form` / `body`, `expect_status` (abort the run, not fired, if the status differs), `extract` |
 | `extract.<var>` | exactly one of `json` (dotted path `items.0.id`), `header`, `regex` (group 1); sets `${USER.<var>}` for the step's user, `${USERS.<user>.<var>}` and `${VARS.<var>}` |
-| `oracles[]` | 1-10 of `response_contains`, `response_status`, `json_compare`, `canary_hit`, `command` |
+| `oracles[]` | 1-10 of `response_contains`, `response_regex`, `response_status`, `response_header`, `json_compare`, `canary_hit`, `command` (see the oracles skill) |
 | `fires_when` | `all` (default, prefer it) or `any` |
 
 Placeholders, substituted at run time in every string (not in `method`):
@@ -97,6 +97,9 @@ Quote placeholders inside YAML flow mappings: `{username: "${USER.username}"}`.
   one, describe it in `reasoning` and keep the outcome about this hypothesis.
 
 ## Per bug class
+
+References: `references/<class>.md` for sqli, idor, bfla, ssrf, path-traversal, cmdi, xss,
+open-redirect, cors, cookie-flags, race-condition and business-logic.
 
 | bug_class | Reference |
 |---|---|

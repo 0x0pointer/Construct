@@ -30,6 +30,11 @@ oracles:
   - type: response_status
     step: reflect
     status: [200]
+  - type: response_header
+    step: reflect
+    name: Content-Type
+    op: contains
+    value: text/html
   - type: response_contains
     step: reflect
     value: <prsec${CANARY.token}>
@@ -41,8 +46,8 @@ renders it; the oracle runs on the viewer's step.
 
 ## Pitfalls
 - A JSON API echoing the marker is not XSS by itself (`application/json` is not rendered).
-  Target the route that renders HTML, check its `Content-Type` with `prsec-http` while authoring
-  and state it in `reasoning`; no oracle checks headers.
+  Target the route that renders HTML and keep the `response_header` `Content-Type` `contains`
+  `text/html` oracle: without it the PoC also fires on a JSON echo.
 - Never use script payloads that call out, read cookies or do anything; the marker is enough.
 - DOM-based XSS lives in client JavaScript and cannot be proven without a browser: report
   `blocked` unless the server reflects the payload.

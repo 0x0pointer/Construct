@@ -82,7 +82,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"prsec-poc: cannot load EnvSpec: {e}", file=sys.stderr)
         return 2
     engine = PocEngine(poc.users, runner.base_url, load_or_create_canaries(runner.app_root), runner.workdir,
-                       env=runner.app_env(), sink_url=sink_url_default())
+                       env=runner.app_env(), sink_url=sink_url_default(),
+                       services=[sv.name for sv in runner.spec.services])
     try:
         run = run_poc(poc, engine)
     finally:

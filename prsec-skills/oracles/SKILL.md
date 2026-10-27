@@ -30,11 +30,17 @@ If you cannot get all three to "no", the outcome is `not_reproduced`, with what 
 |---|---|---|---|
 | `response_contains` | the step's response body contains `value` | a value the vulnerable code **computes** or **leaks**: `${CANARY.file_content}`, a DB-concatenated marker, another user's seeded or canary note | any string that is in the request (`${CANARY.token}` alone when the input is echoed) |
 | `response_status` | the status is in `status` | a supporting condition next to a content oracle; the privileged call returned success | the only oracle (`500` happens for many reasons; `200` is returned for "nothing happened") |
+| `response_regex` | the step's body matches `pattern` (Python regex, as written; a match that is in the request does not count) | a server-built shape: `prsec42[0-9a-f]{12}` from a concatenation, a stack trace line, an unescaped tag | broad patterns (`.*`, `error`) that match ordinary pages |
+| `response_header` | header `name` (case-insensitive; every value checked, e.g. each `Set-Cookie`) is `present` / `absent` or `equals` / `contains` / `starts_with` / `regex` `value` | open redirect (`Location` `starts_with` `http://${CANARY.host}`), CORS (`Access-Control-Allow-Origin` `equals` the attacker origin you sent, plus `Allow-Credentials` `equals` `true`), cookie flags (`Set-Cookie` `regex` `^session=(?!.*HttpOnly)`), XSS content type (`Content-Type` `contains` `text/html`) | a header every response carries anyway, or a redirect to a URL you did not inject |
 | `json_compare` | the value at `path` compares to `value` with `op` | an invariant on persisted, server-computed state read back in a later step (`total lt 0`, `role eq admin`) | fields copied from the request into the response without being stored |
 | `canary_hit` | the sink recorded a request containing `value` | SSRF / outbound fetch to `${CANARY.url}` or `${CANARY.host}` | apps that already forward request bodies to outside hosts (check `prsec-canary hits` first) |
 | `command` | stdout of `run` (in the app dir, after the steps) contains `expect` | inspecting state the app wrote (`cat /tmp/prsec-<token>`, a DB query through the app's tooling) | commands that create the expected output themselves |
 
-`negate: true` on `response_contains` / `command` inverts the check: use it for **controls**.
+`negate: true` on `response_contains` / `response_regex` / `command` inverts the check: use it for **controls**.
+
+On a `parallel` step an oracle passes if **any** of its responses matches (a negated one: if
+**none** does). For races, put the invariant on a later, single read step instead (`json_compare`
+on the redeemed count or balance): that is what the race actually broke.
 
 ## Make values unique
 

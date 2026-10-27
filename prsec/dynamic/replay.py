@@ -13,7 +13,10 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
+from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -24,7 +27,8 @@ from pydantic import BaseModel
 
 from prsec.dynamic.app import AppRunner, EnvError, new_canaries
 from prsec.dynamic.poc import (
-    SCRIPT_STEP, CanaryHit, Command, JsonCompare, Oracle, PoC, ResponseContains, ResponseStatus, Step, User,
+    SCRIPT_STEP, CanaryHit, Command, JsonCompare, Oracle, PoC, ResponseContains, ResponseHeader, ResponseRegex,
+    ResponseStatus, Step, User,
 )
 from prsec.dynamic.results import (
     REPLAY_REQUEST, REPLAY_RESULT, SINK_HTTP, Canaries, OracleResult, ReplayRequest, ReplayResult, StepRecord,
@@ -82,13 +86,17 @@ def as_text(value: Any) -> str:
     return value if isinstance(value, str) else json.dumps(value)
 
 
-def resolve_url(path: str, base_url: str) -> str:
-    """Steps only reach the app: a relative path. An absolute URL (even to a canary host) is refused,
-    since a request the PoC client sends itself would land at the sink and satisfy canary_hit."""
+def resolve_url(path: str, base_url: str, services: Iterable[str] = ()) -> str:
+    """A relative path goes to the app. An absolute URL may only name one of the EnvSpec's services
+    (oauth2 mock, mailpit, ...). Anything else, canary hosts included, is refused: a request the PoC
+    client sends itself would land at the sink and satisfy canary_hit."""
     parts = urlsplit(path)
-    if parts.scheme or parts.netloc:
-        raise StepError(f"absolute URL {path!r} not allowed: steps take a path on the app")
-    return base_url.rstrip("/") + "/" + path.lstrip("/")
+    if not (parts.scheme or parts.netloc):
+        return base_url.rstrip("/") + "/" + path.lstrip("/")
+    host = (parts.hostname or "").lower()
+    if parts.scheme in ("http", "https") and host in set(services) and not (parts.username or parts.password):
+        return path
+    raise StepError(f"absolute URL {path!r} not allowed: steps take a path on the app or a service URL")
 
 
 def _number(v: Any) -> float | None:
@@ -122,6 +130,21 @@ def compare(actual: Any, op: str, expected: Any) -> bool:
         return _OPS[op](actual, expected)
     except TypeError:
         return False
+
+
+def header_matches(values: list[str], op: str, value: str) -> bool:
+    """`present`/`absent` look at the header itself; the rest pass if one of its values matches."""
+    if op == "present":
+        return bool(values)
+    if op == "absent":
+        return not values
+    tests: dict[str, Callable[[str], bool]] = {
+        "equals": lambda v: v.strip() == value,
+        "contains": lambda v: value in v,
+        "starts_with": lambda v: v.strip().startswith(value),
+        "regex": lambda v: re.search(value, v) is not None,
+    }
+    return any(tests[op](v) for v in values)
 
 
 def _sent_text(url: str, kwargs: dict[str, Any]) -> str:
@@ -160,8 +183,9 @@ class PocEngine:
 
     def __init__(self, users: dict[str, User], base_url: str, canaries: Canaries | None, workdir: Path,
                  env: dict[str, str] | None = None, sink_url: str | None = None,
-                 deadline: float | None = None) -> None:
+                 deadline: float | None = None, services: Iterable[str] = ()) -> None:
         self.users = users
+        self.services = frozenset(s.lower() for s in services)
         self.workdir = workdir
         self.env = env if env is not None else dict(os.environ)
         self.sink_url = sink_url
@@ -169,6 +193,7 @@ class PocEngine:
         self.ctx = TemplateContext(base_url=base_url, canaries=canaries)
         self.sessions: dict[str, Session] = {}
         self.responses: dict[str, httpx.Response] = {}
+        self.all_responses: dict[str, list[httpx.Response]] = {}  # every response of a parallel step
         self.sent: dict[str, str] = {}  # step -> its rendered request (url, headers, body): echo check
         self.records: list[StepRecord] = []
         for name, user in users.items():
@@ -226,6 +251,8 @@ class PocEngine:
     def execute(self, step: Step, user: str | None = None, login: bool = False) -> httpx.Response:
         """Send one step as `user` (default: the step's own user). Raises StepError (recorded) on failure."""
         user = user if user is not None else step.as_user
+        if step.parallel > 1:
+            return self._execute_parallel(step, user, login)
         record = StepRecord(name=step.name, user=user, method=step.method.upper(), url=step.path)
         self.records.append(record)
         try:
@@ -234,20 +261,54 @@ class PocEngine:
             record.error = str(e)
             raise
         self.responses[step.name] = resp
+        self.all_responses[step.name] = [resp]
         self._check_status(step, resp)
         self._extract(step, user, resp)
         return resp
 
-    def _send(self, step: Step, user: str | None, record: StepRecord, login: bool) -> httpx.Response:
+    def _execute_parallel(self, step: Step, user: str | None, login: bool) -> httpx.Response:
+        """`step.parallel` copies released together by a barrier (race conditions). All must get a
+        response; expect_status must hold for each."""
+        n = step.parallel
+        records = [StepRecord(name=f"{step.name}#{i + 1}", user=user, method=step.method.upper(), url=step.path)
+                   for i in range(n)]
+        self.records.extend(records)
+        self.session(user)  # created once here, not concurrently by the threads
+        barrier = threading.Barrier(n, timeout=30)
+
+        def one(record: StepRecord) -> httpx.Response:
+            return self._send(step, user, record, login, before_send=barrier.wait)
+
+        with ThreadPoolExecutor(max_workers=n) as pool:
+            futures = [pool.submit(one, r) for r in records]
+        responses, errors = [], []
+        for record, fut in zip(records, futures):
+            try:
+                responses.append(fut.result())
+            except (StepError, threading.BrokenBarrierError) as e:
+                record.error = record.error or str(e)
+                errors.append(str(e))
+        if errors:
+            raise StepError(f"{len(errors)}/{n} parallel requests failed: {errors[0]}")
+        self.responses[step.name] = responses[-1]
+        self.all_responses[step.name] = responses
+        for resp in responses:
+            self._check_status(step, resp)
+        return responses[-1]
+
+    def _send(self, step: Step, user: str | None, record: StepRecord, login: bool,
+              before_send: Callable[[], object] | None = None) -> httpx.Response:
         ctx = self.ctx.for_user(user)
         session = self.session(user)
         try:
-            url = resolve_url(render_str(step.path, ctx), self.ctx.base_url)
+            url = resolve_url(render_str(step.path, ctx), self.ctx.base_url, self.services)
             record.url = url
             kwargs = self._request_kwargs(step, ctx, session, login)
         except TemplateError as e:
             raise StepError(f"template: {e}") from None
         self.sent[step.name] = _sent_text(url, kwargs)
+        if before_send is not None:
+            before_send()
         try:
             resp = session.client.request(step.method.upper(), url, timeout=self._remaining(30.0), **kwargs)
         except httpx.HTTPError as e:
@@ -259,7 +320,7 @@ class PocEngine:
     def _check_status(self, step: Step, resp: httpx.Response) -> None:
         if step.expect_status is not None and resp.status_code not in step.expect_status:
             msg = f"expected status {step.expect_status}, got {resp.status_code}"
-            self.records[-1].error = msg
+            self._record_error(step.name, msg)
             raise StepError(msg, clean=True)
 
     def _extract(self, step: Step, user: str | None, resp: httpx.Response) -> None:
@@ -268,11 +329,17 @@ class PocEngine:
                 value = self._extract_one(ex, resp)
             except (KeyError, IndexError, ValueError, re.error) as e:
                 msg = f"extract {var}: {e}"
-                self.records[-1].error = msg
+                self._record_error(step.name, msg)
                 raise StepError(msg, clean=True) from None
             self.ctx.vars[var] = value
             if user is not None:
                 self.ctx.users.setdefault(user, {})[var] = value
+
+    def _record_error(self, step: str, msg: str) -> None:
+        for record in reversed(self.records):
+            if record.name == step or record.name.startswith(f"{step}#"):
+                record.error = record.error or msg
+                return
 
     @staticmethod
     def _extract_one(ex: Any, resp: httpx.Response) -> str:
@@ -321,6 +388,7 @@ class PocEngine:
         record.status = proc.returncode
         record.response_excerpt = (proc.stdout + proc.stderr)[:EXCERPT_BYTES].decode(errors="replace")
         self.responses[SCRIPT_STEP] = httpx.Response(200 if proc.returncode == 0 else 500, content=proc.stdout)
+        self.all_responses[SCRIPT_STEP] = [self.responses[SCRIPT_STEP]]
 
     # ---------------------------------------------------------------- oracles
 
@@ -341,35 +409,78 @@ class PocEngine:
             return self._response_contains(oracle)
         if isinstance(oracle, ResponseStatus):
             return self._response_status(oracle)
+        if isinstance(oracle, ResponseHeader):
+            return self._response_header(oracle)
+        if isinstance(oracle, ResponseRegex):
+            return self._response_regex(oracle)
         if isinstance(oracle, JsonCompare):
             return self._json_compare(oracle)
         if isinstance(oracle, CanaryHit):
             return self._canary_hit(oracle)
         return self._command(oracle)
 
-    def _response(self, step: str) -> httpx.Response:
-        if step not in self.responses:
+    def _responses(self, step: str) -> list[httpx.Response]:
+        if step not in self.all_responses:
             raise LookupError(f"step {step!r} has no response (did not run)")
-        return self.responses[step]
+        return self.all_responses[step]
+
+    def _over(self, step: str, check: Callable[[httpx.Response], tuple[bool, str]], every: bool = False) -> tuple[bool, str]:
+        """Apply `check` to each response of the step (one, or N for a parallel step): passes if any does,
+        or if every one does when `every` (negated checks: "none of the responses shows it")."""
+        results = [check(r) for r in self._responses(step)]
+        passed = [ok for ok, _ in results]
+        ok = all(passed) if every else any(passed)
+        detail = next((d for p, d in results if p == ok), results[0][1])
+        if len(results) > 1:
+            detail = f"{sum(passed)}/{len(results)} responses: {detail}"
+        return ok, detail
 
     def _response_contains(self, o: ResponseContains) -> tuple[bool, str]:
         value = render_str(o.value, self.ctx)
         if not value.strip():
             return False, "empty value: every response contains it"
-        found = value in self._response(o.step).text
-        if found and not o.negate and _echo_proves_nothing(value, self.sent.get(o.step, "")):
+        if not o.negate and _echo_proves_nothing(value, self.sent.get(o.step, "")):
             return False, f"{value!r} is in the request of {o.step} itself (an echo proves nothing)"
-        verb = "found" if found else "not found"
-        return found != o.negate, f"{value!r} {verb} in response of {o.step}"
+
+        def check(resp: httpx.Response) -> tuple[bool, str]:
+            found = value in resp.text
+            return found != o.negate, f"{value!r} {'found' if found else 'not found'} in response of {o.step}"
+
+        return self._over(o.step, check, every=o.negate)
 
     def _response_status(self, o: ResponseStatus) -> tuple[bool, str]:
-        status = self._response(o.step).status_code
-        return status in o.status, f"{o.step} returned {status}"
+        return self._over(o.step, lambda r: (r.status_code in o.status, f"{o.step} returned {r.status_code}"))
+
+    def _response_header(self, o: ResponseHeader) -> tuple[bool, str]:
+        value = render_str(o.value, self.ctx) if o.value is not None else None
+        if o.op not in ("present", "absent") and not (value or "").strip():
+            return False, "empty value: every header contains it"
+
+        def check(resp: httpx.Response) -> tuple[bool, str]:
+            values = resp.headers.get_list(o.name)
+            return header_matches(values, o.op, value or ""), f"{o.name}: {values!r} {o.op} {value!r}"
+
+        return self._over(o.step, check, every=o.op == "absent")
+
+    def _response_regex(self, o: ResponseRegex) -> tuple[bool, str]:
+        sent = self.sent.get(o.step, "")
+
+        def check(resp: httpx.Response) -> tuple[bool, str]:
+            hit = next((m.group(0) for m in re.finditer(o.pattern, resp.text)
+                        if m.group(0).strip() and not _echo_proves_nothing(m.group(0), sent)), None)
+            found = hit is not None
+            return found != o.negate, f"/{o.pattern}/ {'matched ' + repr(hit[:200]) if found else 'no match'} in {o.step}"
+
+        return self._over(o.step, check, every=o.negate)
 
     def _json_compare(self, o: JsonCompare) -> tuple[bool, str]:
-        actual = json_path(self._response(o.step).json(), o.path)
         expected = render_str(o.value, self.ctx) if isinstance(o.value, str) else o.value
-        return compare(actual, o.op, expected), f"{o.path} = {actual!r} {o.op} {expected!r}"
+
+        def check(resp: httpx.Response) -> tuple[bool, str]:
+            actual = json_path(resp.json(), o.path)
+            return compare(actual, o.op, expected), f"{o.path} = {actual!r} {o.op} {expected!r}"
+
+        return self._over(o.step, check)
 
     def _canary_hit(self, o: CanaryHit) -> tuple[bool, str]:
         value = render_str(o.value, self.ctx)
@@ -462,7 +573,8 @@ def _replay_poc(req: ReplayRequest, runner: AppRunner, canaries: Canaries, sink_
                 result: ReplayResult) -> None:
     """The PoC's own deadline starts once the app is up: install and health have their own (EnvSpec)."""
     engine = PocEngine(req.poc.users, runner.base_url, canaries, runner.workdir, env=runner.app_env(),
-                       sink_url=sink_url, deadline=time.monotonic() + req.timeout_s)
+                       sink_url=sink_url, deadline=time.monotonic() + req.timeout_s,
+                       services=[s.name for s in req.envspec.services])
     try:
         run = run_poc(req.poc, engine)
     finally:

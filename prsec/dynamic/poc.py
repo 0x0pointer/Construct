@@ -12,6 +12,10 @@ Template placeholders, substituted in every string field (method excluded) at ru
     ${VARS.<var>}           global var set by an `extract` on any step
     ${BASE_URL}             http://127.0.0.1:<envspec.port>
 
+Steps go to the app (a relative path) or to one of the EnvSpec's services (an absolute URL whose
+host is a service name, e.g. to get a token from the oauth2 mock or read mail from mailpit).
+Redirects are never followed: a 3xx is the step's own response, so its Location can be checked.
+
 Canaries must be benign: echo/print a canary token, request a canary URL, read the sentinel file.
 Never destructive payloads, never anything that opens a shell or a connection back to a listener.
 """
@@ -25,6 +29,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 NAME = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,31}")
 # A script PoC's output is the response of this step: status 200 (exit 0) or 500, body = stdout.
 SCRIPT_STEP = "script"
+MAX_PARALLEL = 50
 PLACEHOLDER = re.compile(r"\$\{(CANARY|USER|USERS|VARS|BASE_URL)(?:\.([A-Za-z0-9_.-]+))?\}")
 
 
@@ -48,7 +53,9 @@ class Step(BaseModel):
     name: str
     as_user: str | None = Field(default=None, alias="as", description="User whose cookies/headers/vars apply")
     method: str = "GET"
-    path: str = Field(description="Path on the app ('/api/x?y=1'); absolute URLs are refused")
+    path: str = Field(description=(
+        "Path on the app ('/api/x?y=1'), or an absolute http URL to one of the EnvSpec's services "
+        "('http://mail:8025/api/v1/messages'); any other absolute URL is refused"))
     headers: dict[str, str] = Field(default_factory=dict)
     query: dict[str, str] = Field(default_factory=dict)
     json_body: object | None = Field(default=None, alias="json")
@@ -56,6 +63,9 @@ class Step(BaseModel):
     body: str | None = None
     expect_status: list[int] | None = Field(default=None, description="Abort the run (fired=false) if the status differs")
     extract: dict[str, Extract] = Field(default_factory=dict)
+    parallel: int = Field(default=1, ge=1, le=MAX_PARALLEL, description=(
+        "Send this request N times at the same moment (race conditions). Its oracles pass if any "
+        "response matches (negate: if none does); expect_status must hold for every response"))
 
     model_config = {"populate_by_name": True}
 
@@ -70,6 +80,8 @@ class Step(BaseModel):
     def _one_body(self) -> "Step":
         if sum(x is not None for x in (self.json_body, self.form, self.body)) > 1:
             raise ValueError("a step takes at most one of json, form, body")
+        if self.parallel > 1 and self.extract:
+            raise ValueError("a parallel step cannot extract (which of its responses would it use?)")
         return self
 
 
@@ -95,6 +107,54 @@ class ResponseStatus(BaseModel):
     type: Literal["response_status"]
     step: str
     status: list[int]
+
+
+def _compiles(pattern: str) -> str:
+    try:
+        re.compile(pattern)
+    except re.error as e:
+        raise ValueError(f"invalid regex {pattern!r}: {e}") from None
+    return pattern
+
+
+class ResponseHeader(BaseModel):
+    """A response header proves it: Location of an open redirect, Access-Control-Allow-Origin echoing
+    an attacker origin, a session Set-Cookie without HttpOnly, Content-Type of a reflected XSS.
+
+    Every value of the header is checked (Set-Cookie repeats); the oracle passes if one matches.
+    `value` is rendered (placeholders allowed); `regex` is matched as written, case-sensitive."""
+
+    type: Literal["response_header"]
+    step: str
+    name: str = Field(min_length=1, description="Header name, case-insensitive")
+    op: Literal["present", "absent", "equals", "contains", "starts_with", "regex"]
+    value: str | None = Field(default=None, description="Required for every op except present/absent")
+
+    @model_validator(mode="after")
+    def _value(self) -> "ResponseHeader":
+        needs = self.op not in ("present", "absent")
+        if needs and not (self.value or "").strip():
+            raise ValueError(f"response_header op {self.op!r} needs a non-empty value")
+        if not needs and self.value is not None:
+            raise ValueError(f"response_header op {self.op!r} takes no value")
+        if self.op == "regex":
+            _compiles(self.value or "")
+        return self
+
+
+class ResponseRegex(BaseModel):
+    """The step's response body matches `pattern` (Python re, as written). A match that is in the
+    step's own request does not count, as for response_contains (markup excepted)."""
+
+    type: Literal["response_regex"]
+    step: str
+    pattern: str = Field(min_length=1)
+    negate: bool = False
+
+    @field_validator("pattern")
+    @classmethod
+    def _pattern(cls, v: str) -> str:
+        return _compiles(v)
 
 
 class JsonCompare(BaseModel):
@@ -123,7 +183,10 @@ class Command(BaseModel):
     negate: bool = False
 
 
-Oracle = Annotated[ResponseContains | ResponseStatus | JsonCompare | CanaryHit | Command, Field(discriminator="type")]
+Oracle = Annotated[
+    ResponseContains | ResponseStatus | ResponseHeader | ResponseRegex | JsonCompare | CanaryHit | Command,
+    Field(discriminator="type"),
+]
 
 
 class PoC(BaseModel):

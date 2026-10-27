@@ -199,9 +199,18 @@ Points the contracts above leave open, and how the modules agree on them:
 - **Prompts.** `_io.md` keeps static stages read-only; when `app_dir` is set (dynamic stage) it
   allows installing and running the app through the listed tools in the writable copy only.
 
-Known gaps (not yet expressible): no oracle on response headers (XSS `Content-Type`, open redirect
-`Location`); steps only reach the app, so a PoC cannot fetch a token from the `oauth2` mock or read
-`mailpit`'s API; steps run sequentially, so race conditions cannot be proven.
+Headers, services and races:
+
+- `response_header` checks a response header (every value, case-insensitive name): `present`,
+  `absent`, `equals`, `contains`, `starts_with`, `regex`. With redirects never followed this proves
+  open redirects (`Location` to the canary host), credentialed CORS reflection, session cookies
+  without `HttpOnly`, and the `text/html` content type of a reflected XSS. `response_regex` matches
+  the body; a match that is in the step's own request does not count.
+- A step may use an absolute `http(s)` URL whose host is one of the EnvSpec's services (oauth2
+  token, mailpit API). Canary hosts, the sink, the gateway and the proxy stay refused.
+- `parallel: N` (2-50) sends N copies of a step released together by a barrier; `expect_status`
+  must hold for each, `extract` is not allowed, and an oracle on it passes if any response
+  matches (negated: if none does). Prove a race with an invariant on a later read step.
 The skills tell the agent to report `blocked` / `not_reproduced` for these.
 
 ## Rules for every change

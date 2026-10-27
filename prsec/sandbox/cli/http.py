@@ -102,7 +102,8 @@ def _send(args: argparse.Namespace) -> int:
     step = build_step(args)
     runner = runner_from(args.spec or default_spec_path())
     engine = PocEngine(_users(args), runner.base_url, load_or_create_canaries(runner.app_root), runner.workdir,
-                       env=runner.app_env(), sink_url=sink_url_default())
+                       env=runner.app_env(), sink_url=sink_url_default(),
+                       services=[sv.name for sv in runner.spec.services])
     jar = jar_path(runner.app_root, args.user)
     try:
         had_jar = load_jar(engine, jar, args.user)
