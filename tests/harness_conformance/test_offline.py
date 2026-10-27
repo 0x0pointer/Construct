@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,10 @@ from prsec.adapters.harness.base import HarnessAdapter
 from prsec.models import Event, EventKind, StageStatus
 
 from .conftest import GATEWAY_KEY, TOKEN, Bench, cli_name, wait_gone
+
+# A container root at the start of a path. Host paths may legitimately contain "/work/"
+# (GitHub runners check out under /home/runner/work/...), so a plain substring check is wrong.
+CONTAINER_PATH = re.compile(r"(?<![\w./-])/(?:work/(?:src|in|out)|skills)(?![\w-]|\.\w)")
 
 
 def _kinds(events: list[Event]) -> set[EventKind]:
@@ -66,7 +71,7 @@ def test_skill_install_and_valid_output(bench: Bench, gateway: bool) -> None:
         # the PR checkout's CLAUDE.md / AGENTS.md / settings / skills (canaries) are never loaded
         assert call["project_files"] == []
         # container paths in the prompt were rewritten to the host dirs by LocalRunner
-        assert "/work/" not in call["prompt"] and "`/skills/" not in call["prompt"]
+        assert not CONTAINER_PATH.search(call["prompt"]), CONTAINER_PATH.findall(call["prompt"])
         assert call["output_path"] == str(spec.out_dir / "output.json")
         assert call["gateway_key_visible"] is gateway and call["gateway_url_visible"] is gateway
         if gateway:
