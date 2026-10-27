@@ -1,0 +1,46 @@
+# Central scan policy. Owned by AppSec; repos cannot override from their own branches.
+version: "1"
+workbench_image: prsec/workbench-base:latest
+max_hypotheses: 8
+static_verify_min_severity: medium
+skip_audit_sample: 0.03
+scan_drafts: true
+scan_forks: false
+
+defaults:
+  triage:
+    harness: raw
+    model: agent-small
+    skills: [triage]
+    wall_clock_s: 180
+    usd_budget: 0.25
+  hypothesise:
+    harness: opencode
+    model: agent-large
+    skills: [taint-analysis, business-logic, org]
+    wall_clock_s: 1200
+    usd_budget: 3.0
+  static_verify:
+    harness: codex
+    model: agent-large
+    skills: [static-validation, org]
+    wall_clock_s: 900
+    usd_budget: 1.5
+  skeptic:
+    harness: raw
+    model: judge
+    skills: []
+    wall_clock_s: 180
+    usd_budget: 0.3
+
+experiments:
+  - stage: hypothesise
+    harnesses: [claude-code, codex, opencode, pi]
+    sample: 0.10
+
+repos: {}
+#  "acme/legacy-*":
+#    enabled: false
+#  "acme/payments-api":
+#    stages:
+#      hypothesise: { harness: claude-code, model: agent-large }

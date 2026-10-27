@@ -1,0 +1,94 @@
+# LiteLLM gateway for PRSec (image pinned in docker-compose.yml: ghcr.io/berriai/litellm:v1.105.5).
+#
+# Harnesses only ever see these aliases plus a per-scan virtual key (minted by
+# prsec.gateway.mint_key with budget + TTL + allowed models). Provider keys stay here.
+#
+# Routes served by the proxy (all on :4000):
+#   /v1/chat/completions   OpenAI chat         -> raw adapter, OpenCode, pi
+#   /v1/responses          OpenAI Responses    -> Codex (wire_api = "responses"); non-OpenAI
+#                                                 aliases are bridged to chat completions
+#   /v1/messages           Anthropic Messages  -> Claude Code (ANTHROPIC_BASE_URL=<gateway>);
+#                                                 non-Anthropic aliases are translated
+#
+# Aliases:
+#   agent-large  main agent model (Anthropic), falls back to the OpenAI flagship
+#   agent-small  triage / cheap stages
+#   judge        skeptic; deliberately a different model family than agent-large
+#   *-anthropic / *-openai  explicit family pins for the harness x model eval matrix
+
+model_list:
+  - model_name: agent-large
+    litellm_params:
+      model: anthropic/claude-opus-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      timeout: 600
+    model_info: { family: anthropic }
+
+  - model_name: agent-small
+    litellm_params:
+      model: anthropic/claude-haiku-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      timeout: 300
+    model_info: { family: anthropic }
+
+  - model_name: judge
+    litellm_params:
+      model: openai/gpt-6-astra
+      api_key: os.environ/OPENAI_API_KEY
+      timeout: 600
+    model_info: { family: openai }
+
+  # Fallback target for agent-large (see router_settings.fallbacks).
+  - model_name: agent-large-openai
+    litellm_params:
+      model: openai/gpt-6-astra
+      api_key: os.environ/OPENAI_API_KEY
+      timeout: 600
+    model_info: { family: openai }
+
+  - model_name: agent-large-anthropic
+    litellm_params:
+      model: anthropic/claude-opus-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      timeout: 600
+    model_info: { family: anthropic }
+
+  - model_name: agent-small-openai
+    litellm_params:
+      model: openai/gpt-6-luna
+      api_key: os.environ/OPENAI_API_KEY
+      timeout: 300
+    model_info: { family: openai }
+
+  - model_name: judge-anthropic
+    litellm_params:
+      model: anthropic/claude-sonnet-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      timeout: 600
+    model_info: { family: anthropic }
+
+litellm_settings:
+  drop_params: true            # harnesses send provider-specific params; drop what the target can't take
+  request_timeout: 600         # seconds; the sandbox entrypoint enforces the stage wall clock on top
+  num_retries: 2
+  turn_off_message_logging: true   # PR source code must not reach logging callbacks
+  callbacks: prsec_hooks.strip_server_tools   # strips provider-executed tools (web search, hosted code exec, remote MCP)
+
+router_settings:
+  num_retries: 2
+  retry_after: 5
+  allowed_fails: 3
+  cooldown_time: 60
+  fallbacks:
+    - agent-large: [agent-large-openai]
+    - agent-small: [agent-small-openai]
+    - judge: [judge-anthropic]
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL       # the gateway's OWN Postgres (llm-gateway-db), not the prsec DB
+  store_model_in_db: false                    # this file is the source of truth for models
+  store_prompts_in_spend_logs: false          # keep source code out of the gateway DB
+  disable_spend_logs: false                   # spend per virtual key = per-scan cost tracking
+  ui_access_mode: admin_only
+  proxy_batch_write_at: 10

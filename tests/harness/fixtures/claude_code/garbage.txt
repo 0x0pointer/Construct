@@ -1,0 +1,12 @@
+Reading prompt from stdin...
+not json {
+[1, 2, 3]
+"just a string"
+{"type":"assistant","message":"not-a-dict"}
+{"type":"user","message":{"content":"plain"}}
+{"type":"item.completed","item":"weird"}
+{"type":"item.completed","item":{"id":"x","type":"command_execution","changes":42}}
+{"type":"turn.completed","usage":"bogus"}
+{"type":"result","usage":null,"num_turns":"three","total_cost_usd":null}
+{"type":"unknown_future_event","foo":1}
+

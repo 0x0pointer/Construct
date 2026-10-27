@@ -1,0 +1,83 @@
+from prsec.config import Experiment, Policy, RepoOverride, StagePolicy, load_policy
+from prsec.models import Stage
+from prsec.orchestrator import stages
+from prsec.stages.outputs import schema_for
+
+
+def _policy(**kw) -> Policy:
+    p = load_policy()
+    return p.model_copy(update=kw)
+
+
+def test_task_shape_from_policy():
+    p = _policy(experiments=[])
+    task, choice = stages.build_task(p, Stage.triage, 42, "acme/shop", context_files=["pr.json", "diff.patch"],
+                                     prompt_ctx={"pr_number": 3})
+    sp = p.defaults["triage"]
+    assert task.task_id == "42-triage"
+    assert task.harness == sp.harness and task.model_alias == sp.model and task.skills == sp.skills
+    assert task.limits.wall_clock_s == sp.wall_clock_s and task.limits.usd_budget == sp.usd_budget
+    assert task.output_schema == schema_for(Stage.triage)
+    assert task.context_files == ["pr.json", "diff.patch", "output_schema.json"]
+    assert task.output_path == "/work/out/output.json"
+    assert "acme/shop#3" in task.prompt_md
+    assert choice.experiment is None
+
+
+def test_task_id_with_hypothesis():
+    p = _policy(experiments=[])
+    task, _ = stages.build_task(p, "static_verify", 7, "a/b", context_files=["hypothesis.json"], hyp_id="H3",
+                                prompt_ctx={"bug_class": "sqli"})
+    assert task.task_id == "7-static_verify-H3"
+    assert "H3" in task.prompt_md and "sqli" in task.prompt_md
+
+
+def test_raw_harness_prompt_has_no_paths():
+    p = _policy(experiments=[])
+    task, _ = stages.build_task(p, "skeptic", 1, "a/b", context_files=["code_slices.md"])
+    assert task.harness == "raw"
+    assert "cannot run commands" in task.prompt_md and "/work/out" not in task.prompt_md
+
+
+def test_bucket_deterministic_and_spread():
+    assert stages.bucket(5, "x") == stages.bucket(5, "x")
+    assert stages.bucket(5, "x") != stages.bucket(5, "y")
+    vals = [stages.bucket(i, "experiment:hypothesise") for i in range(2000)]
+    assert all(0 <= v < 1 for v in vals)
+    assert 0.07 < sum(v < 0.1 for v in vals) / len(vals) < 0.13
+
+
+def test_experiment_sampling_is_deterministic():
+    arms = ["claude-code", "codex", "opencode", "pi"]
+    p = _policy(experiments=[Experiment(stage="hypothesise", harnesses=arms, sample=0.5)])
+    picks = {sid: stages.choose(p, "hypothesise", "a/b", sid) for sid in range(200)}
+    again = {sid: stages.choose(p, "hypothesise", "a/b", sid) for sid in range(200)}
+    assert picks == again
+    sampled = [c for c in picks.values() if c.experiment]
+    assert 60 < len(sampled) < 140
+    assert {c.policy.harness for c in sampled} == set(arms)
+    assert all(c.experiment == f"hypothesise:{c.policy.harness}" for c in sampled)
+    assert all(c.policy.harness == p.defaults["hypothesise"].harness for c in picks.values() if not c.experiment)
+    # other stages untouched
+    assert all(stages.choose(p, "triage", "a/b", sid).experiment is None for sid in range(50))
+
+
+def test_repo_override_wins_and_disables_experiment():
+    over = RepoOverride(stages={"hypothesise": StagePolicy(harness="claude-code", model="agent-large", usd_budget=9.0)})
+    p = _policy(
+        repos={"acme/pay-*": over},
+        experiments=[Experiment(stage="hypothesise", harnesses=["codex"], sample=1.0)],
+    )
+    task, choice = stages.build_task(p, "hypothesise", 9, "acme/pay-api", context_files=[])
+    assert task.harness == "claude-code" and task.limits.usd_budget == 9.0 and choice.experiment is None
+    assert task.skills == p.defaults["hypothesise"].skills  # unset fields inherit defaults
+    task2, choice2 = stages.build_task(p, "hypothesise", 9, "acme/other", context_files=[])
+    assert task2.harness == "codex" and choice2.experiment == "hypothesise:codex"
+
+
+def test_scan_budget():
+    p = _policy()
+    usd, wall, models = stages.scan_budget(p, "a/b", 2)
+    d = p.defaults
+    assert usd == d["triage"].usd_budget + d["hypothesise"].usd_budget + 2 * d["static_verify"].usd_budget + 2 * d["skeptic"].usd_budget
+    assert wall > 0 and set(models) == {sp.model for sp in d.values()}

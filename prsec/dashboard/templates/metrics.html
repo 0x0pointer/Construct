@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Metrics{% endblock %}
+{% block content %}
+<h1>Metrics</h1>
+<div class="grid2">
+  <div>
+    <h2 style="margin-top:0">Scans by status</h2>
+    <table>
+      <thead><tr><th>Status</th><th class="num">7 days</th><th class="num">30 days</th></tr></thead>
+      <tbody>
+      {% for status, n in m.scans_by_status['30d'].items() %}
+        <tr><td><span class="badge st-{{ status }}">{{ status }}</span></td>
+            <td class="num">{{ m.scans_by_status['7d'].get(status, 0) }}</td><td class="num">{{ n }}</td></tr>
+      {% else %}<tr><td colspan="3" class="muted">No scans in the last 30 days.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0">Last 30 days</h2>
+    <dl class="kv">
+      <dt>Skip rate</dt><dd>{{ m.skip_rate | pct }}</dd>
+      <dt>Finished scans</dt><dd>{{ m.finished_scans }}</dd>
+      <dt>Avg cost / scan</dt><dd>{{ m.avg_cost_usd | usd }}</dd>
+      <dt>Total cost</dt><dd>{{ m.total_cost_usd | usd }}</dd>
+      <dt>Avg duration</dt><dd>{{ m.avg_duration_s | dur }}</dd>
+    </dl>
+  </div>
+</div>
+
+{% macro precision_table(rows, title) %}
+<table>
+  <thead><tr><th>{{ title }}</th><th class="num">Findings</th><th class="num">TP</th><th class="num">FP</th>
+    <th class="num">Accepted</th><th class="num">Untriaged</th><th class="num">Precision</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr><td><code>{{ r.key }}</code></td><td class="num">{{ r.total }}</td><td class="num">{{ r.tp }}</td>
+      <td class="num">{{ r.fp }}</td><td class="num">{{ r.accepted }}</td><td class="num">{{ r.untriaged }}</td>
+      <td class="num"><strong>{{ r.precision | pct }}</strong></td></tr>
+  {% else %}<tr><td colspan="7" class="muted">No findings.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+
+<h2>Precision by label</h2>
+{{ precision_table(m.precision_by_label, 'Label') }}
+<h2>Precision by bug class</h2>
+{{ precision_table(m.precision_by_bug_class, 'Bug class') }}
+<p class="muted">Precision = TP / (TP + FP) over triaged findings; accepted (real, risk-accepted) is excluded.</p>
+
+{% macro harness_row(r) %}
+  <td class="num">{{ r.runs }}</td><td class="num">{{ r.ok_rate | pct }}</td>
+  <td class="num">{{ r.avg_duration_s | dur }}</td><td class="num">{{ r.avg_cost | usd }}</td>
+  <td class="num">{{ r.total_cost | usd }}</td><td class="num">{{ r.avg_tokens | int }}</td>
+{% endmacro %}
+<h2>Harness comparison (30 days)</h2>
+<table>
+  <thead><tr><th>Harness</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Avg duration</th>
+    <th class="num">Avg cost</th><th class="num">Total cost</th><th class="num">Avg tokens</th></tr></thead>
+  <tbody>
+  {% for r in m.per_harness %}<tr><td>{{ r.harness }}</td>{{ harness_row(r) }}</tr>
+  {% else %}<tr><td colspan="7" class="muted">No stage runs.</td></tr>{% endfor %}
+  </tbody>
+</table>
+<h2>By stage, harness and model</h2>
+<table>
+  <thead><tr><th>Stage</th><th>Harness</th><th>Model</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Avg duration</th>
+    <th class="num">Avg cost</th><th class="num">Total cost</th><th class="num">Avg tokens</th></tr></thead>
+  <tbody>
+  {% for r in m.per_stage_harness %}<tr><td>{{ r.stage }}</td><td>{{ r.harness }}</td><td>{{ r.model }}</td>{{ harness_row(r) }}</tr>
+  {% else %}<tr><td colspan="9" class="muted">No stage runs.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,37 @@
+# Public entry point. Only two things are reachable from outside the VM:
+#   /webhooks/*  -> prsec-api (GitHub HMAC-verified webhooks; no SSO, GitHub can't log in)
+#   everything else -> oauth2-proxy (OIDC) -> dashboard
+# prsec-api's other routes (e.g. POST /scans) are internal-only and never routed here.
+{
+	email {$PRSEC_ACME_EMAIL:admin@example.invalid}
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+{$PRSEC_DOMAIN:localhost} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		-Server
+	}
+
+	handle /webhooks/* {
+		request_body {
+			max_size 25MB
+		}
+		reverse_proxy api:8080
+	}
+
+	handle /healthz {
+		respond "ok" 200
+	}
+
+	handle {
+		reverse_proxy oauth2-proxy:4180
+	}
+}

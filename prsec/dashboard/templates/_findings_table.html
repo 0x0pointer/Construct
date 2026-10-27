@@ -1,0 +1,28 @@
+<table>
+  <thead><tr><th>#</th><th>Severity</th><th>Label</th><th>Repo</th><th class="num">PR</th><th>Class</th><th>Title</th>
+    <th>Sink</th><th>Introduced</th><th>Status</th><th>Triage</th><th>Updated</th></tr></thead>
+  <tbody>
+  {% for f in findings %}
+    <tr>
+      <td><a href="/findings/{{ f.id }}">{{ f.id }}</a></td>
+      <td><span class="badge sev-{{ f.severity }}">{{ f.severity }}</span></td>
+      <td><span class="badge lb-{{ f.label }}">{{ f.label }}</span></td>
+      <td>{{ f.repo }}</td>
+      <td class="num">{{ f.last_pr }}</td>
+      <td><code>{{ f.bug_class }}</code></td>
+      <td><a href="/findings/{{ f.id }}">{{ f.title }}</a></td>
+      <td><code>{{ f.sink_file }}:{{ f.sink_line }}</code></td>
+      <td>{{ 'yes' if f.introduced else ('no' if f.introduced is sameas false else '?') }}</td>
+      <td><span class="badge st-{{ f.status }}">{{ f.status }}</span></td>
+      <td><span class="badge tr-{{ f.triage_state }}">{{ f.triage_state }}</span></td>
+      <td class="muted">{{ f.updated_at.strftime('%Y-%m-%d') }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="12" class="muted">No findings match.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+<div class="pager">
+  {% if page > 1 %}<a href="/findings?{{ filters | urlencode }}&page={{ page - 1 }}">&larr; prev</a>{% endif %}
+  {% if has_next %}<a href="/findings?{{ filters | urlencode }}&page={{ page + 1 }}">next &rarr;</a>{% endif %}
+</div>

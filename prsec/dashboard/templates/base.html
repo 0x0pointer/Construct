@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}PRSec{% endblock %} · PRSec</title>
+<script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"
+        integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+        crossorigin="anonymous"></script>
+<style>
+:root {
+  --bg: #f7f7f8; --panel: #fff; --fg: #1d1d1f; --muted: #6b6b73; --line: #e3e3e8;
+  --accent: #2f5bd3; --code: #f2f2f5;
+  --crit: #a1122b; --high: #d1361d; --med: #c98a00; --low: #3b7dd8; --info: #6b6b73;
+  --ok: #1e8a4a; --bad: #c0392b; --warn: #b7791f;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #141416; --panel: #1c1c1f; --fg: #e8e8ea; --muted: #9a9aa3; --line: #2e2e33;
+          --accent: #7b9cff; --code: #232327; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+       font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 0 24px;
+         display: flex; gap: 24px; align-items: center; height: 48px; }
+header .brand { font-weight: 700; letter-spacing: .02em; }
+header nav a { color: var(--muted); text-decoration: none; margin-right: 16px; }
+header nav a:hover { color: var(--fg); }
+header .user { margin-left: auto; color: var(--muted); font-size: 12px; }
+main { max-width: 1280px; margin: 0 auto; padding: 24px; }
+h1 { font-size: 20px; margin: 0 0 16px; }
+h2 { font-size: 15px; margin: 24px 0 8px; }
+a { color: var(--accent); }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--bg); }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+pre { background: var(--code); padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
+.muted { color: var(--muted); }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600;
+         border: 1px solid currentColor; white-space: nowrap; }
+.sev-critical { color: var(--crit); } .sev-high { color: var(--high); } .sev-medium { color: var(--med); }
+.sev-low { color: var(--low); } .sev-info { color: var(--info); }
+.st-done, .st-ok, .tr-tp { color: var(--ok); }
+.st-failed, .st-harness_error, .st-output_invalid, .st-timeout, .st-budget_exceeded, .tr-fp { color: var(--bad); }
+.st-running, .st-queued, .tr-accepted { color: var(--warn); }
+.st-skipped, .st-superseded, .st-stale, .tr-new { color: var(--muted); }
+.lb-reproduced { color: var(--crit); } .lb-likely { color: var(--high); } .lb-inconclusive { color: var(--muted); }
+form.filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; align-items: end; }
+form.filters label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; }
+select, input, textarea, button { font: inherit; color: var(--fg); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+button { cursor: pointer; background: var(--accent); color: #fff; border-color: var(--accent); }
+dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+dl.kv dt { color: var(--muted); }
+dl.kv dd { margin: 0; }
+.flow { list-style: none; padding: 0; margin: 0; }
+.flow li { border-left: 3px solid var(--line); padding: 4px 0 4px 12px; margin-bottom: 8px; }
+.flow li.sink { border-color: var(--high); }
+.flow li.source { border-color: var(--accent); }
+.grid2 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+.pager { margin-top: 12px; display: flex; gap: 12px; }
+.saved { color: var(--ok); font-size: 12px; }
+.err { color: var(--bad); }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">PRSec</span>
+  <nav><a href="/">Scans</a><a href="/findings">Findings</a><a href="/metrics">Metrics</a></nav>
+  {% if user %}<span class="user">{{ user }}</span>{% endif %}
+</header>
+<main>{% block content %}{% endblock %}</main>
+</body>
+</html>

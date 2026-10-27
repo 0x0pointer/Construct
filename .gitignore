@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+/work/
+.pytest_cache/
+.coverage
+coverage.xml
+*.egg-info/
+.scannerwork/

@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prsec"
+version = "0.1.0"
+description = "Agentic, harness-agnostic PR security scanner"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn>=0.30",
+  "pydantic>=2.8",
+  "pydantic-settings>=2.4",
+  "httpx>=0.27",
+  "pyjwt[crypto]>=2.9",
+  "psycopg[binary,pool]>=3.2",
+  "docker>=7.1",
+  "jsonschema>=4.23",
+  "pyyaml>=6.0",
+  "minio>=7.2",
+  "jinja2>=3.1",
+  "rapidfuzz>=3.9",
+  "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "pytest-cov>=7", "respx>=0.21"]
+
+[project.scripts]
+prsec-api = "prsec.api.main:run"
+prsec-worker = "prsec.orchestrator.worker:main"
+prsec-dashboard = "prsec.dashboard.main:run"
+prsec-stage = "prsec.sandbox.entrypoint.main:main"
+prsec-cite = "prsec.sandbox.cli.cite:main"
+prsec-skills-lint = "prsec.skills_lint:main"
+
+[tool.setuptools.packages.find]
+include = ["prsec*"]
+
+[tool.setuptools.package-data]
+"prsec" = ["prompts/*.md", "db/*.sql", "dashboard/templates/*.html", "policy/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "db: needs PRSEC_TEST_DATABASE_URL (Postgres)",
+  "docker: needs a Docker daemon",
+  "live_harness: invokes a real harness CLI + LLM (opt-in via PRSEC_LIVE_HARNESS=1)",
+]
+
+[tool.coverage.run]
+include = ["prsec/*"]
+relative_files = true  # SonarCloud resolves coverage.xml paths relative to the repo root
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+]

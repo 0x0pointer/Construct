@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Finding {{ f.id }}{% endblock %}
+{% block content %}
+<h1>{{ f.title }}</h1>
+<p>
+  <span class="badge sev-{{ f.severity }}">{{ f.severity }}</span>
+  <span class="badge lb-{{ f.label }}">{{ f.label }}</span>
+  <span class="badge st-{{ f.status }}">{{ f.status }}</span>
+  <code>{{ f.bug_class }}</code> · {{ f.vuln_class | replace('_', ' ') }} · {{ f.repo }}#{{ f.last_pr }}
+</p>
+<div class="grid2">
+  <div>
+    <div class="panel">
+      <h2 style="margin-top:0">Description</h2>
+      <p style="white-space: pre-wrap">{{ data.description }}</p>
+      <h2>Label reasoning</h2>
+      <p style="white-space: pre-wrap">{{ data.label_reason }}</p>
+      {% if data.remediation %}<h2>Remediation</h2><p style="white-space: pre-wrap">{{ data.remediation }}</p>{% endif %}
+    </div>
+    <div class="panel">
+      <h2 style="margin-top:0">Code flow{% if data.entry_point %} <span class="muted">from <code>{{ data.entry_point }}</code></span>{% endif %}</h2>
+      <ol class="flow">
+      {% for kind, loc in flow %}
+        <li class="{{ kind if kind in ('source', 'sink') else '' }}">
+          <strong>{{ kind }}</strong> <code>{{ loc.file }}:{{ loc.line }}{% if loc.end_line and loc.end_line != loc.line %}-{{ loc.end_line }}{% endif %}</code>
+          {% if loc.snippet %}<pre>{{ loc.snippet }}</pre>{% endif %}
+        </li>
+      {% endfor %}
+      </ol>
+    </div>
+    <div class="panel">
+      <h2 style="margin-top:0">Guards</h2>
+      {% if data.guards %}<ul>{% for g in data.guards %}<li>{{ g }}</li>{% endfor %}</ul>
+      {% else %}<p class="muted">No guards recorded.</p>{% endif %}
+    </div>
+  </div>
+  <div>
+    <div class="panel" id="triage-panel">{% include "_triage.html" %}</div>
+    <div class="panel">
+      <dl class="kv">
+        <dt>Fingerprint</dt><dd><code>{{ f.fingerprint }}</code></dd>
+        <dt>Hypothesis</dt><dd>{{ data.hypothesis_id or '-' }}</dd>
+        <dt>Introduced</dt><dd>{{ 'yes' if f.introduced else ('no' if f.introduced is sameas false else 'unknown') }}</dd>
+        <dt>First scan</dt><dd><a href="/scans/{{ f.first_scan_id }}">#{{ f.first_scan_id }}</a></dd>
+        <dt>Last scan</dt><dd><a href="/scans/{{ f.last_scan_id }}">#{{ f.last_scan_id }}</a></dd>
+        {% if data.evidence_uri %}<dt>Evidence</dt><dd><a href="/findings/{{ f.id }}/evidence">stage transcript</a></dd>{% endif %}
+      </dl>
+    </div>
+    <div class="panel">
+      <h2 style="margin-top:0">Provenance</h2>
+      <pre>{{ data.provenance | tojson_pretty }}</pre>
+    </div>
+  </div>
+</div>
+<h2>Occurrences</h2>
+<table>
+  <thead><tr><th>Scan</th><th class="num">PR</th><th>Head</th><th>Label</th><th>Scan status</th><th>When</th></tr></thead>
+  <tbody>
+  {% for o in f.occurrences %}
+    <tr>
+      <td><a href="/scans/{{ o.scan_id }}">#{{ o.scan_id }}</a></td>
+      <td class="num">{{ o.pr }}</td>
+      <td><code>{{ o.head_sha[:10] }}</code></td>
+      <td><span class="badge lb-{{ o.label }}">{{ o.label }}</span></td>
+      <td><span class="badge st-{{ o.scan_status }}">{{ o.scan_status }}</span></td>
+      <td class="muted">{{ o.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

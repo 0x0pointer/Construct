@@ -1,0 +1,330 @@
+# PRSec single-VM deployment.
+#
+#   make images harness-volumes && make up        (from the repo root; reads ./.env)
+#
+# Only caddy publishes ports. Everything else talks over the `control` network.
+# Per-scan workbench networks (prsec-scan-<id>, internal) are created at runtime by the
+# worker through the Docker API; the worker attaches `prsec-llm-gateway` to each one so
+# the gateway is the only thing a workbench can reach.
+
+name: prsec
+
+x-restart: &restart
+  restart: unless-stopped
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+x-prsec-image: &prsec-image
+  image: ${PRSEC_IMAGE:-prsec/prsec:latest}
+  build:
+    context: ../..
+    dockerfile: images/prsec/Dockerfile
+
+# Shared PRSEC_* settings (see prsec/config.py). Provider API keys are deliberately NOT
+# here: only llm-gateway holds them.
+x-prsec-env: &prsec-env
+  PRSEC_DATABASE_URL: postgresql://prsec:${PRSEC_DB_PASSWORD:?set PRSEC_DB_PASSWORD}@postgres:5432/prsec
+  PRSEC_S3_ENDPOINT: minio:9000
+  PRSEC_S3_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+  PRSEC_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+  PRSEC_S3_BUCKET: ${PRSEC_S3_BUCKET:-prsec}
+  PRSEC_S3_SECURE: "false"
+  PRSEC_SKILLS_VERSION: ${PRSEC_SKILLS_VERSION:-dev}  # fallback only: skills/current/VERSION wins
+  PRSEC_POLICY_PATH: /etc/prsec/policy.yaml
+  PRSEC_GITHUB_APP_ID: ${PRSEC_GITHUB_APP_ID:-}
+  PRSEC_GITHUB_PRIVATE_KEY_PATH: /run/secrets/github_app_key
+  PRSEC_GITHUB_API_URL: ${PRSEC_GITHUB_API_URL:-https://api.github.com}
+
+x-policy-mount: &policy-mount
+  type: bind
+  source: ${PRSEC_POLICY_FILE:-../../prsec/policy/policy.yaml}
+  target: /etc/prsec/policy.yaml
+  read_only: true
+
+x-http-healthcheck: &http-healthcheck
+  interval: 15s
+  timeout: 5s
+  retries: 5
+  start_period: 20s
+
+services:
+  # ------------------------------------------------------------------ edge
+  caddy:
+    <<: [*restart, *logging]
+    image: caddy:2.11.7-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      PRSEC_DOMAIN: ${PRSEC_DOMAIN:-localhost}
+      PRSEC_ACME_EMAIL: ${PRSEC_ACME_EMAIL:-}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [control]
+    depends_on:
+      api: { condition: service_healthy }
+      oauth2-proxy: { condition: service_started }
+    healthcheck:
+      <<: *http-healthcheck
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+
+  oauth2-proxy:
+    <<: [*restart, *logging]
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5
+    environment:
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-https://login.example.invalid}
+      OAUTH2_PROXY_CLIENT_ID: ${OIDC_CLIENT_ID:-prsec-dashboard}
+      OAUTH2_PROXY_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-change-me}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET:?set OAUTH2_PROXY_COOKIE_SECRET (32 random bytes, base64)}
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_COOKIE_NAME: _prsec_oauth2
+      # Dashboard = AppSec only (it can set tp/fp/accepted, which feeds the eval corpus):
+      # no "any authenticated identity" default; both must be set explicitly.
+      OAUTH2_PROXY_EMAIL_DOMAINS: ${OIDC_EMAIL_DOMAINS:?set OIDC_EMAIL_DOMAINS (your org's email domain)}
+      OAUTH2_PROXY_ALLOWED_GROUPS: ${OIDC_ALLOWED_GROUPS:?set OIDC_ALLOWED_GROUPS (the AppSec IdP group; only its members may use the dashboard)}
+      OAUTH2_PROXY_CODE_CHALLENGE_METHOD: S256
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_REDIRECT_URL: https://${PRSEC_DOMAIN:-localhost}/oauth2/callback
+      OAUTH2_PROXY_UPSTREAMS: http://dashboard:8081
+      OAUTH2_PROXY_PASS_USER_HEADERS: "true"
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+    networks: [control]
+    depends_on:
+      dashboard: { condition: service_healthy }
+    # distroless image: no shell for an in-container healthcheck; caddy's upstream checks cover it.
+
+  # ------------------------------------------------------------------ prsec
+  migrate:
+    <<: [*prsec-image, *logging]
+    restart: "no"
+    environment: *prsec-env
+    command:
+      - python
+      - -c
+      - |
+        from prsec.db.conn import get_pool, migrate
+        with get_pool().connection() as conn:
+            migrate(conn)
+    networks: [control]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: [*prsec-image, *restart, *logging]
+    command: ["prsec-api"]
+    environment:
+      <<: *prsec-env
+      PRSEC_API_HOST: 0.0.0.0
+      PRSEC_API_PORT: "8080"
+      PRSEC_GITHUB_WEBHOOK_SECRET: ${PRSEC_GITHUB_WEBHOOK_SECRET:?set PRSEC_GITHUB_WEBHOOK_SECRET}
+      PRSEC_DEBOUNCE_S: ${PRSEC_DEBOUNCE_S:-120}
+      PRSEC_MAX_SUPERSEDES: ${PRSEC_MAX_SUPERSEDES:-5}
+      # Enables POST /scans (manual scans; X-Prsec-Admin header). Not routed by caddy:
+      # reachable only from the control network, e.g. `docker compose exec api ...`.
+      PRSEC_ADMIN_TOKEN: ${PRSEC_ADMIN_TOKEN:-}
+      # The skills version in the idempotency key is read from the mounted skills/current
+      # (VERSION file written by `make skills`), like the worker does, so both always agree.
+      PRSEC_SKILLS_DIR: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/skills/current
+    secrets: [github_app_key]
+    volumes:
+      - *policy-mount
+      - type: bind
+        source: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/skills
+        target: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/skills
+        read_only: true
+    networks: [control]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      <<: *http-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+
+  worker:
+    <<: [*prsec-image, *restart, *logging]
+    command: ["prsec-worker"]
+    environment:
+      <<: *prsec-env
+      PRSEC_RUNNER: docker
+      PRSEC_GATEWAY_URL: http://llm-gateway:4000
+      PRSEC_GATEWAY_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY}
+      PRSEC_WORK_ROOT: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/work
+      PRSEC_SKILLS_DIR: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/skills/current
+      PRSEC_HARNESS_ROOT: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/harness
+      PRSEC_DEBOUNCE_S: ${PRSEC_DEBOUNCE_S:-120}
+      PRSEC_MAX_SUPERSEDES: ${PRSEC_MAX_SUPERSEDES:-5}
+      PRSEC_WORKER_CONCURRENCY: ${PRSEC_WORKER_CONCURRENCY:-4}
+      PRSEC_RECONCILE_INTERVAL_S: ${PRSEC_RECONCILE_INTERVAL_S:-900}
+    secrets: [github_app_key]
+    # Docker group of the host socket, so the non-root worker can use the Docker API.
+    group_add: ["${DOCKER_GID:-999}"]
+    volumes:
+      - *policy-mount
+      # RISK: the Docker socket is root-equivalent on this VM. Anyone who controls the
+      # worker process (or a dependency of it) controls the host. Accepted for the MVP
+      # because PR code never runs in this container (it runs in per-scan workbenches
+      # without the socket). Mitigations: keep the worker image minimal, never mount the
+      # socket anywhere else, consider a docker-socket-proxy limited to
+      # containers/networks/images, or rootless Docker. Goes away with K8sRunner.
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      # DockerRunner bind-mounts these dirs into workbenches by HOST path, through the
+      # host daemon, so they must appear at the SAME absolute path in here.
+      - type: bind
+        source: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/work
+        target: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/work
+      - type: bind
+        source: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/skills
+        target: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/skills
+        read_only: true
+      - type: bind
+        source: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/harness
+        target: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/harness
+        read_only: true
+    networks: [control]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      llm-gateway: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+    stop_grace_period: 60s  # let in-flight stages finish their heartbeat / lease release
+
+  dashboard:
+    <<: [*prsec-image, *restart, *logging]
+    command: ["prsec-dashboard"]
+    environment:
+      <<: *prsec-env
+      PRSEC_DASHBOARD_HOST: 0.0.0.0
+      PRSEC_DASHBOARD_PORT: "8081"
+    volumes:
+      - *policy-mount
+    networks: [control]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      <<: *http-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/healthz', timeout=3)"]
+
+  # ------------------------------------------------------------------ data
+  postgres:
+    <<: [*restart, *logging]
+    image: postgres:16.15-alpine
+    environment:
+      POSTGRES_DB: prsec
+      POSTGRES_USER: prsec
+      POSTGRES_PASSWORD: ${PRSEC_DB_PASSWORD:?set PRSEC_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [control]
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prsec -d prsec"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # MinIO stopped publishing community images in Oct 2025; Chainguard's free image is
+  # built from upstream source. Pinned by digest.
+  minio:
+    <<: [*restart, *logging]
+    image: cgr.dev/chainguard/minio:latest@sha256:a1d2b3516a41296510f7fb49184c18b88287fa8f35cf3ce5c047289053b94964
+    user: "65532:65532"
+    command: ["server", "/data", "--address", ":9000", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      MINIO_BROWSER: "off"
+      MC_HOST_local: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@127.0.0.1:9000
+    volumes:
+      - miniodata:/data
+    networks: [control]
+    healthcheck:
+      # image ships mc but no curl; `mc ready` polls /minio/health/ready on the local alias
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    <<: *logging
+    image: cgr.dev/chainguard/minio-client:latest@sha256:778b2dac231584d5d5749ab663f9f61979d60dd5c00abf682af888db6a9f46e4
+    restart: on-failure
+    environment:
+      MC_HOST_local: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000
+    command: ["mb", "--ignore-existing", "local/${PRSEC_S3_BUCKET:-prsec}"]
+    networks: [control]
+    depends_on:
+      minio: { condition: service_healthy }
+
+  # ------------------------------------------------------------------ LLM gateway
+  llm-gateway:
+    <<: [*restart, *logging]
+    image: ghcr.io/berriai/litellm:v1.105.5@sha256:f6f3e4b4ba4a50912740dd33ec332269428d0ced71920f617a96dd59282b378e
+    # Fixed name: DockerRunner attaches this container to every per-scan network and
+    # workbenches address it as http://prsec-llm-gateway:4000.
+    container_name: prsec-llm-gateway
+    command: ["--config", "/app/config/config.yaml", "--port", "4000", "--num_workers", "4"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY}
+      LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?set LITELLM_SALT_KEY}
+      DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD:?set LITELLM_DB_PASSWORD}@llm-gateway-db:5432/litellm
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?set OPENAI_API_KEY}
+      STORE_MODEL_IN_DB: "False"
+      LITELLM_LOG: ${LITELLM_LOG:-INFO}
+      LITELLM_TELEMETRY: "False"
+      DISABLE_ADMIN_UI: "True"
+      NO_DOCS: "True"
+    volumes:
+      - ./litellm:/app/config:ro
+    networks: [control, gateway-db]
+    depends_on:
+      llm-gateway-db: { condition: service_healthy }
+    healthcheck:
+      <<: *http-healthcheck
+      start_period: 60s  # prisma migrations on first boot
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=3)"]
+
+  # The gateway's OWN database (virtual keys, budgets, spend). Separate server, separate
+  # credentials, on a network only the gateway joins: prsec services cannot reach it.
+  llm-gateway-db:
+    <<: [*restart, *logging]
+    image: postgres:16.15-alpine
+    environment:
+      POSTGRES_DB: litellm
+      POSTGRES_USER: litellm
+      POSTGRES_PASSWORD: ${LITELLM_DB_PASSWORD:?set LITELLM_DB_PASSWORD}
+    volumes:
+      - gatewaydb:/var/lib/postgresql/data
+    networks: [gateway-db]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+networks:
+  control:
+    name: prsec-control
+  gateway-db:
+    name: prsec-gateway-db
+    internal: true
+
+volumes:
+  pgdata:
+  gatewaydb:
+  miniodata:
+  caddy_data:
+  caddy_config:
+
+secrets:
+  github_app_key:
+    file: ${PRSEC_GITHUB_PRIVATE_KEY_FILE:-./secrets/github-app.pem}

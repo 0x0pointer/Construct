@@ -1,0 +1,6 @@
+*
+!pyproject.toml
+!prsec/
+**/__pycache__
+**/*.pyc
+*.egg-info

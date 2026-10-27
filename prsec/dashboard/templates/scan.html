@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Scan {{ scan.id }}{% endblock %}
+{% block content %}
+<h1>Scan #{{ scan.id }} · {{ scan.repo }}#{{ scan.pr }} <span class="badge st-{{ scan.status }}">{{ scan.status }}</span></h1>
+<div class="grid2">
+  <div class="panel">
+    <h2 style="margin-top:0">Triage</h2>
+    {% if scan.triage %}
+      <dl class="kv">
+        <dt>Decision</dt><dd><strong>{{ scan.triage.decision }}</strong></dd>
+        <dt>Rationale</dt><dd>{{ scan.triage.rationale }}</dd>
+        {% if scan.triage.risk_tags %}<dt>Risk tags</dt><dd>{% for t in scan.triage.risk_tags %}<code>{{ t }}</code> {% endfor %}</dd>{% endif %}
+        {% if scan.triage.focus_files %}<dt>Focus files</dt><dd>{% for t in scan.triage.focus_files %}<code>{{ t }}</code><br>{% endfor %}</dd>{% endif %}
+        {% if scan.triage.business_flows_touched %}<dt>Business flows</dt><dd>{{ scan.triage.business_flows_touched | join(', ') }}</dd>{% endif %}
+      </dl>
+    {% else %}<p class="muted">No triage recorded.</p>{% endif %}
+    {% if scan.error %}<h2>Error</h2><pre class="err">{{ scan.error }}</pre>{% endif %}
+  </div>
+  <div class="panel">
+    <dl class="kv">
+      <dt>Head</dt><dd><code>{{ scan.head_sha }}</code></dd>
+      <dt>Base</dt><dd><code>{{ scan.base_sha or '-' }}</code></dd>
+      <dt>Skills</dt><dd>{{ scan.skills_version }}</dd>
+      <dt>Reason</dt><dd>{{ scan.reason }}</dd>
+      <dt>Attempts</dt><dd>{{ scan.attempts }}</dd>
+      <dt>Supersedes</dt><dd>{{ scan.supersede_count }}</dd>
+      <dt>Cost</dt><dd>{{ scan.cost_usd | usd }}</dd>
+      <dt>Duration</dt><dd>{{ scan.duration_s | dur }}</dd>
+      <dt>SARIF</dt><dd>{% if scan.sarif_uri %}<a href="/sarif/{{ scan.id }}">download</a>{% else %}-{% endif %}</dd>
+    </dl>
+  </div>
+</div>
+
+<h2>Stage runs</h2>
+<table>
+  <thead><tr><th>Stage</th><th>Task</th><th>Harness</th><th>Version</th><th>Model</th><th>Status</th>
+    <th class="num">Attempts</th><th class="num">Tokens in/out</th><th class="num">Cost</th><th class="num">Duration</th><th>Errors</th></tr></thead>
+  <tbody>
+  {% for r in scan.stage_runs %}
+    <tr>
+      <td>{{ r.stage }}</td>
+      <td><code>{{ r.task_id }}</code>{% if r.transcript_uri %}<br><a class="muted" href="/stage-runs/{{ r.id }}/transcript">transcript</a>{% endif %}</td>
+      <td>{{ r.harness }}</td>
+      <td>{{ r.harness_version or '-' }}</td>
+      <td>{{ r.model }}</td>
+      <td><span class="badge st-{{ r.status }}">{{ r.status }}</span></td>
+      <td class="num">{{ r.attempts }}</td>
+      <td class="num">{{ r.usage.tokens_in or 0 }} / {{ r.usage.tokens_out or 0 }}</td>
+      <td class="num">{{ r.usage.usd | usd }}</td>
+      <td class="num">{{ r.duration_s | dur }}</td>
+      <td>{% for e in r.errors %}<div class="err">{{ e }}</div>{% endfor %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="11" class="muted">No stage runs.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Findings</h2>
+<table>
+  <thead><tr><th>#</th><th>Severity</th><th>Label</th><th>Class</th><th>Title</th><th>Sink</th><th>Status</th><th>Triage</th></tr></thead>
+  <tbody>
+  {% for f in scan.findings %}
+    <tr>
+      <td><a href="/findings/{{ f.id }}">{{ f.id }}</a></td>
+      <td><span class="badge sev-{{ f.severity }}">{{ f.severity }}</span></td>
+      <td><span class="badge lb-{{ f.label }}">{{ f.label }}</span></td>
+      <td><code>{{ f.bug_class }}</code></td>
+      <td><a href="/findings/{{ f.id }}">{{ f.title }}</a></td>
+      <td><code>{{ f.sink_file }}:{{ f.sink_line }}</code></td>
+      <td><span class="badge st-{{ f.status }}">{{ f.status }}</span></td>
+      <td><span class="badge tr-{{ f.triage_state }}">{{ f.triage_state }}</span></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="8" class="muted">No findings.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

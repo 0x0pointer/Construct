@@ -1,0 +1,10 @@
+Warning: something odd happened
+
+{"type":
+[1, 2, 3]
+"just a string"
+null
+{"type":"unknown_future_event","foo":1}
+{"type":"text","part":"not-a-dict"}
+{"type":"message_end","message":{"role":"assistant","content":"weird","usage":"nope"}}
+{"type":"tool_use","part":{"state":"broken"}}
