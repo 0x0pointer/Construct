@@ -299,3 +299,78 @@ def test_failed_scan_retried_with_backoff_and_cap(sql):
     sql.execute("UPDATE scans SET finished_at = now() - interval '30 days' WHERE id = %s", (a,))
     assert queue.known_head("acme/api", 1, "h1", SK)  # cap reached
     assert queue.enqueue(req("h1"), SK, 0, 5) is None
+
+
+# ------------------------------------------------------------ debug + keep-for-debugging
+
+
+def test_enqueue_persists_debug(sql):
+    from prsec.models import ScanDebug
+
+    a = queue.enqueue(req("h1", debug=ScanDebug(log_level="debug", keep_minutes=15)), SK, 0, 5)
+    b = queue.enqueue(req("h2", pr=2), SK, 0, 5)
+    assert row(sql, a)["debug"] == {"log_level": "debug", "keep_minutes": 15}
+    assert row(sql, b)["debug"] is None
+
+
+def test_revive_takes_the_new_requests_debug(sql):
+    from prsec.models import ScanDebug
+
+    a = queue.enqueue(req("h1", debug=ScanDebug(keep_minutes=5)), SK, 0, 5)
+    queue.enqueue(req("h2"), SK, 0, 5)  # supersedes h1
+    assert queue.enqueue(req("h1"), SK, 0, 5) == a  # force-push back: revived without debug
+    assert row(sql, a)["debug"] is None
+
+
+def _leased(sql) -> dict:
+    queue.enqueue(req("h1"), SK, 0, 5)
+    return queue.lease_next(60)
+
+
+def test_keep_sets_keep_until_and_dir(sql):
+    r = _leased(sql)
+    assert queue.keep(r["id"], 30, "/work/1-abc", lease_token=r["lease_token"])
+    got = sql.execute("SELECT keep_until - now() AS left, kept_dir FROM scans WHERE id = %s", (r["id"],)).fetchone()
+    assert got["kept_dir"] == "/work/1-abc"
+    assert 29 * 60 < got["left"].total_seconds() <= 30 * 60
+
+
+def test_keep_requires_the_current_lease(sql):
+    r = _leased(sql)
+    assert not queue.keep(r["id"], 30, "/work/x", lease_token="not-mine")
+    assert row(sql, r["id"])["keep_until"] is None
+
+
+def test_claim_due_kept_only_takes_expired_finished_scans(sql):
+    r = _leased(sql)
+    queue.keep(r["id"], 30, "/work/1-abc", lease_token=r["lease_token"])
+    queue.finish(r["id"], ScanStatus.done, lease_token=r["lease_token"])
+    assert queue.claim_due_kept() == []  # not due yet
+    sql.execute("UPDATE scans SET keep_until = now() - interval '1 second' WHERE id = %s", (r["id"],))
+    assert queue.claim_due_kept() == [{"id": r["id"], "kept_dir": "/work/1-abc"}]
+    assert row(sql, r["id"])["keep_until"] is None
+    assert row(sql, r["id"])["kept_dir"] is None
+    assert queue.claim_due_kept() == []  # claimed once
+
+
+def test_claim_due_kept_skips_running_scans(sql):
+    r = _leased(sql)
+    queue.keep(r["id"], 0, "/work/1-abc", lease_token=r["lease_token"])  # due now, but still running
+    assert queue.claim_due_kept() == []
+    queue.finish(r["id"], ScanStatus.done, lease_token=r["lease_token"])
+    assert [k["id"] for k in queue.claim_due_kept()] == [r["id"]]
+
+
+def test_release_kept_returns_the_previous_keep_once(sql):
+    r = _leased(sql)
+    queue.keep(r["id"], 30, "/work/1-abc", lease_token=r["lease_token"])
+    assert queue.release_kept(r["id"], lease_token=r["lease_token"]) == {"id": r["id"], "kept_dir": "/work/1-abc"}
+    assert row(sql, r["id"])["keep_until"] is None
+    assert queue.release_kept(r["id"], lease_token=r["lease_token"]) is None
+
+
+def test_release_kept_requires_the_current_lease(sql):
+    r = _leased(sql)
+    queue.keep(r["id"], 30, "/work/1-abc", lease_token=r["lease_token"])
+    assert queue.release_kept(r["id"], lease_token="not-mine") is None
+    assert row(sql, r["id"])["kept_dir"] == "/work/1-abc"

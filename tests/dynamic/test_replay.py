@@ -198,6 +198,65 @@ def test_absolute_url_to_non_canary_host_is_refused(workbench: Workbench) -> Non
     assert "not allowed" in (result.steps[0].error or "")
 
 
+def test_redirects_are_not_followed(workbench: Workbench) -> None:  # noqa: F811
+    p = poc(steps=[{"name": "go", "path": "/go", "query": {"to": "/health"}}],
+            oracles=[{"type": "response_status", "step": "go", "status": [200]}])
+    result = replay(workbench, p)
+    assert not result.fired
+    assert result.steps[0].status == 302
+
+
+def test_canary_url_step_cannot_fire_canary_hit(workbench: Workbench, sink: SinkStub) -> None:  # noqa: F811
+    p = poc(steps=[{"name": "self", "path": "${CANARY.url}"}], oracles=[{"type": "canary_hit"}])
+    result = replay(workbench, p, sink_url=sink.url)
+    assert not result.fired
+    assert "not allowed" in (result.steps[0].error or "")
+
+
+def test_whitespace_needle_never_passes(workbench: Workbench) -> None:  # noqa: F811
+    p = poc(steps=[{"name": "h", "path": "/health"}],
+            oracles=[{"type": "response_contains", "step": "h", "value": " "}])
+    result = replay(workbench, p)
+    assert not result.fired
+    assert "empty" in result.oracle_results[0].detail
+
+
+def test_value_echoed_from_the_request_does_not_pass(workbench: Workbench) -> None:  # noqa: F811
+    p = poc(steps=[{"name": "s", "path": "/search", "query": {"q": "id-${CANARY.token}"}}],
+            oracles=[{"type": "response_contains", "step": "s", "value": "id-${CANARY.token}"}])
+    result = replay(workbench, p)
+    assert not result.fired
+    assert "request" in result.oracle_results[0].detail
+
+
+def test_empty_extracted_value_aborts(workbench: Workbench) -> None:  # noqa: F811
+    p = poc(steps=[{"name": "s", "path": "/search", "extract": {"x": {"regex": "results for (\\w*)<"}}},
+                   {"name": "h", "path": "/health"}],
+            oracles=[{"type": "response_contains", "step": "h", "value": "${VARS.x}"}])
+    result = replay(workbench, p)
+    assert not result.fired
+    assert "empty" in (result.steps[0].error or "")
+
+
+def test_unmatched_optional_group_aborts_and_keeps_steps(workbench: Workbench) -> None:  # noqa: F811
+    p = poc(steps=[{"name": "h", "path": "/health"},
+                   {"name": "s", "path": "/search", "extract": {"x": {"regex": "results for (zzz)?"}}}],
+            oracles=[{"type": "response_status", "step": "h", "status": [200]}])
+    result = replay(workbench, p)
+    assert not result.fired
+    assert [s.name for s in result.steps] == ["h", "s"]
+
+
+@pytest.mark.parametrize("doc", [{"x": None}, {"x": ""}, {"x": "  "}])
+def test_null_or_empty_json_extract_is_refused(doc: dict[str, Any]) -> None:
+    import httpx
+
+    from prsec.dynamic.poc import Extract
+    from prsec.dynamic.replay import PocEngine
+    with pytest.raises(ValueError, match="empty or null"):
+        PocEngine._extract_one(Extract(json="x"), httpx.Response(200, json=doc))
+
+
 def test_env_failure_is_reported(workbench: Workbench) -> None:  # noqa: F811
     p = poc(steps=[{"name": "h", "path": "/health"}],
             oracles=[{"type": "response_status", "step": "h", "status": [200]}])
@@ -257,7 +316,8 @@ def test_json_path_missing() -> None:
 
 @pytest.mark.parametrize(("actual", "op", "expected", "result"), [
     (-5, "lt", 0, True), ("10", "gt", 9, True), (3, "eq", "3", True), ("abc", "eq", "abc", True),
-    ("abc", "ne", "abd", True), (True, "eq", True, True), ("x", "lt", 3, False), (None, "eq", None, True),
+    ("abc", "ne", "abd", True), (True, "eq", True, True), ("x", "lt", 3, False), (None, "eq", None, False),
+    (None, "ne", 5, False), ("invalid", "ne", 5, False), ("nan", "ne", 5, False), ("inf", "gt", 5, False),
     (2, "ge", 2.0, True), (2, "le", 1, False),
 ])
 def test_compare(actual: Any, op: str, expected: Any, result: bool) -> None:
@@ -268,13 +328,40 @@ def test_resolve_url() -> None:
     assert resolve_url("api/x?y=1", "http://127.0.0.1:8000") == "http://127.0.0.1:8000/api/x?y=1"
 
 
-def test_resolve_url_allows_canary_hosts() -> None:
-    url = "http://abc.canary.invalid/abc"
-    assert resolve_url(url, "http://127.0.0.1:8000") == url
-
-
 @pytest.mark.parametrize("url", ["http://127.0.0.1:22/", "file:///etc/hosts", "//evil.example/x",
-                                 "http://canary.invalid.example.com/"])
+                                 "http://canary.invalid.example.com/", "http://abc.canary.invalid/abc",
+                                 "https://abc.canary.invalid/"])
 def test_resolve_url_refuses_other_hosts(url: str) -> None:
     with pytest.raises(StepError):
         resolve_url(url, "http://127.0.0.1:8000")
+
+
+# ------------------------------------------------------------------ PoC validation
+
+
+def test_login_step_names_must_be_unique_across_users() -> None:
+    with pytest.raises(ValueError, match="unique"):
+        poc(users={"alice": user("x"), "bob": user("x")}, steps=[{"name": "s", "path": "/"}],
+            oracles=[{"type": "response_status", "step": "s", "status": [200]}])
+
+
+def test_main_step_may_not_reuse_a_login_step_name() -> None:
+    with pytest.raises(ValueError, match="unique"):
+        poc(users={"alice": user("alice")}, steps=[{"name": "alice_login", "path": "/"}],
+            oracles=[{"type": "response_status", "step": "alice_login", "status": [200]}])
+
+
+def test_script_step_name_is_reserved() -> None:
+    with pytest.raises(ValueError, match="reserved"):
+        poc(steps=[{"name": "script", "path": "/"}],
+            oracles=[{"type": "response_status", "step": "script", "status": [200]}])
+
+
+@pytest.mark.parametrize("oracle", [
+    {"type": "response_contains", "step": "s", "value": ""},
+    {"type": "canary_hit", "value": ""},
+    {"type": "command", "run": "true", "expect": ""},
+])
+def test_empty_oracle_values_are_invalid(oracle: dict[str, Any]) -> None:
+    with pytest.raises(ValueError):
+        poc(steps=[{"name": "s", "path": "/"}], oracles=[oracle])

@@ -34,7 +34,7 @@ it. Fastify defaults to binding `127.0.0.1`, which is fine.
 | Sequelize | `dialect: 'sqlite'`, `storage: './app.sqlite'` when config is env-driven | `npx sequelize-cli db:migrate`, `db:seed:all` |
 | TypeORM | `type: 'better-sqlite3'` when the data source reads env | `npm run migration:run` or `synchronize` in development config |
 | Knex | `client: 'better-sqlite3'` when the knexfile has a development entry | `npx knex migrate:latest`, `npx knex seed:run` |
-| Mongoose | none: use the `mongo` catalog service | the app's seed script, or a `mongo` service seed `.js` file |
+| Mongoose | none: use the `mongo` catalog service | the app's seed script (mongo takes no seed files) |
 | `pg`, `mysql2` raw | none: use `postgres` / `mysql` | SQL files in the repo as service `seed`, or the migration script |
 
 Connection strings use the service name as host: `postgresql://app:app@db:5432/app`,

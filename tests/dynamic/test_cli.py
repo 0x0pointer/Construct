@@ -66,6 +66,13 @@ def test_env_reset(running: Workbench) -> None:
     assert not marker.exists()
 
 
+def test_env_reset_rotates_canaries(running: Workbench) -> None:
+    from prsec.dynamic.app import load_or_create_canaries
+    before = load_or_create_canaries(running.app_root).token
+    assert env.main(["reset"]) == 0
+    assert load_or_create_canaries(running.app_root).token != before
+
+
 def test_env_up_failure_exit_1(cli: Workbench, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     bad = tmp_path / "bad.json"
     bad.write_text(cli.spec(start="exit 4").model_dump_json())

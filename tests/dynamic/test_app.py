@@ -58,6 +58,23 @@ def test_app_env_has_no_proxy(workbench: Workbench, monkeypatch: pytest.MonkeyPa
     assert env["APP_MODE"] == "test"
 
 
+@pytest.mark.parametrize("name", ["PRSEC_GATEWAY_KEY", "PRSEC_GATEWAY_URL", "ANTHROPIC_AUTH_TOKEN",
+                                  "OPENAI_API_KEY", "SOME_SERVICE_TOKEN"])
+def test_app_env_drops_workbench_credentials(workbench: Workbench, monkeypatch: pytest.MonkeyPatch, name: str) -> None:  # noqa: F811
+    monkeypatch.setenv(name, "s3cret")
+    runner = AppRunner(workbench.spec(), app_root=workbench.app_root, src=workbench.src, proxy="http://egress-proxy:3128")
+    assert name not in runner.install_env()
+
+
+def test_app_env_keeps_toolchain_and_envspec_values(workbench: Workbench, monkeypatch: pytest.MonkeyPatch) -> None:  # noqa: F811
+    monkeypatch.setenv("JAVA_HOME", "/opt/java")
+    runner = AppRunner(workbench.spec(env={"API_KEY": "test-key"}), app_root=workbench.app_root,
+                       src=workbench.src, proxy=None)
+    env = runner.app_env()
+    assert env["JAVA_HOME"] == "/opt/java"
+    assert env["API_KEY"] == "test-key"
+
+
 def test_failing_install_raises_with_output(workbench: Workbench) -> None:  # noqa: F811
     runner = workbench.runner(install=["echo broken-dependency; exit 3"])
     with pytest.raises(EnvError, match="exit 3") as ei:
@@ -97,6 +114,25 @@ def test_sentinel_written_before_start(workbench: Workbench) -> None:  # noqa: F
     rel = Path(canaries.file).relative_to(runner.app_root)
     r = httpx.get(f"{runner.base_url}/file", params={"name": f"../{rel}"}, trust_env=False)
     assert canaries.file_content in r.text
+
+
+def test_stop_kills_a_backgrounded_app_whose_leader_exited(workbench: Workbench) -> None:  # noqa: F811
+    import sys
+    runner = workbench.runner(start=f"{sys.executable} server.py {workbench.port} & sleep 0.1")
+    runner.up()
+    assert runner.status().running
+    runner.stop(grace_s=2)
+    with pytest.raises(httpx.HTTPError):
+        httpx.get(f"{runner.base_url}/health", trust_env=False, timeout=1)
+
+
+def test_up_refuses_a_port_held_by_an_untracked_process(workbench: Workbench) -> None:  # noqa: F811
+    import socket
+    with socket.socket() as held:
+        held.bind(("127.0.0.1", workbench.port))
+        held.listen()
+        with pytest.raises(EnvError, match="already in use"):
+            workbench.runner().up()
 
 
 def test_reset_discards_app_copy(workbench: Workbench) -> None:  # noqa: F811

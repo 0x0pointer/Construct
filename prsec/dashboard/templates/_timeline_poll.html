@@ -1,0 +1,6 @@
+{% from "_timeline_macros.html" import item, agent_row %}
+{% include "_timeline_poller.html" %}
+{% if tl['items'] %}<p id="timeline-empty" hx-swap-oob="delete"></p>
+<ol hx-swap-oob="beforeend:#timeline-events">{% for it in tl['items'] %}{{ item(it, tl.live) }}{% endfor %}</ol>{% endif %}
+{% for dom_id, evs in tl.appended.items() %}<ol hx-swap-oob="beforeend:#{{ dom_id }}">{% for ev in evs %}{{ agent_row(ev) }}{% endfor %}</ol>
+{% endfor %}

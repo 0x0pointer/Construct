@@ -183,6 +183,15 @@ def test_recorder_writes_jsonl(tmp_path):
     assert [json.loads(line)["host"] for line in log_file.read_text().splitlines()] == ["a", "b"]
 
 
+def test_recorder_log_is_capped_but_memory_keeps_recording(tmp_path):
+    log_file = tmp_path / "requests.jsonl"
+    r = s.Recorder(log_file, max_log_bytes=1000)
+    for i in range(50):
+        r.add(s.make_record("ip", f"h{i}", body=b"x" * 100))
+    assert log_file.stat().st_size <= 1000
+    assert len(r.ring) == 50
+
+
 def test_recorder_survives_unwritable_log(tmp_path):
     r = s.Recorder(tmp_path / "missing-dir" / "requests.jsonl")
     r.add(s.make_record("ip", "a"))

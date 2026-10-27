@@ -95,12 +95,13 @@ class DynamicPolicy(BaseModel):
     """Phase 2. Dynamic validation runs for static survivors (plausible / confirmed_static)."""
 
     enabled: bool = True
-    max_hypotheses: int = 3  # per scan, highest severity first
+    max_hypotheses: int = Field(default=3, ge=1)  # per scan, highest severity first
     min_severity: str = "medium"
-    replay_runs: int = 2  # head replays; all must fire for 'reproduced'
+    # head replays; all must fire for 'reproduced', which needs at least two (DynamicEvidence.replay_confirmed)
+    replay_runs: int = Field(default=2, ge=2)
     base_replay: bool = True  # one replay on base_sha -> introduced true/false
-    replay_timeout_s: int = 900
-    concurrency: int = 2
+    replay_timeout_s: int = Field(default=900, ge=1)  # the PoC's budget, after install and health
+    concurrency: int = Field(default=2, ge=1)
 
 
 class Experiment(BaseModel):

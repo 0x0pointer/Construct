@@ -24,6 +24,7 @@ def _container(name: str, ip: str, status: str = "running") -> MagicMock:
     c.status = status
     c.attrs = {"NetworkSettings": {"Networks": {NET: {"IPAddress": ip}}}}
     c.exec_run.return_value = MagicMock(exit_code=0)
+    c.logs.return_value = b"prsec.sink INFO sink up on 0.0.0.0"
     return c
 
 
@@ -235,7 +236,10 @@ def test_healthy_services(client, work):
 # ------------------------------------------------------------------ workbench / replay in an env
 
 
-def _env_net(env_dir: Path, llm: str = "0") -> MagicMock:
+def _env_net(env_dir: Path, llm: str = "0", resolv: bool = True) -> MagicMock:
+    if resolv:
+        env_dir.mkdir(parents=True, exist_ok=True)
+        (env_dir / "resolv.conf").write_text("nameserver 10.0.0.2\n")
     net = MagicMock()
     net.attrs = {"Labels": {"prsec.env_dir": str(env_dir), "prsec.llm": llm}}
     return net
@@ -336,3 +340,150 @@ def test_destroy_scan_also_removes_env_networks(client, work):
     assert client.networks.list.call_args.kwargs["filters"] == {"label": ["prsec.scan_id=42", "prsec.env"]}
     assert [c.args[0] for c in env_net.disconnect.call_args_list] == ["gw", "proxy"]
     env_net.remove.assert_called_once()
+
+
+# ------------------------------------------------------------------ symlinks planted in shared dirs
+
+
+def test_symlinked_resolv_conf_is_never_mounted(client, env_spec, tmp_path):
+    env_dir = tmp_path / "envdir"
+    env_dir.mkdir()
+    (tmp_path / "host-secret").write_text("secret")
+    (env_dir / "resolv.conf").symlink_to(tmp_path / "host-secret")
+    client.networks.get.side_effect = None
+    client.networks.get.return_value = _env_net(env_dir, resolv=False)
+    with pytest.raises(EnvRefused, match="resolv.conf"):
+        DockerRunner(client).container_kwargs(env_spec, ["x"])
+
+
+def test_symlinked_sink_dir_is_refused(client, work):
+    env_dir = work / "scan-42" / "env" / "h1"
+    env_dir.mkdir(parents=True)
+    (work / "elsewhere").mkdir()
+    (env_dir / "sink").symlink_to(work / "elsewhere")
+    with pytest.raises(EnvRefused, match="sink dir"):
+        _runner(client).create_env(42, "h1", _req(work))
+    assert not (work / "elsewhere" / "stubs.json").exists()
+
+
+def test_replay_log_is_not_written_through_a_symlink(client, env_spec, tmp_path):
+    client.networks.get.side_effect = None
+    client.networks.get.return_value = _env_net(tmp_path / "envdir")
+    target = tmp_path / "victim.json"
+    target.write_text("keep")
+    container = MagicMock()
+    client.containers.run.side_effect = None
+    client.containers.run.return_value = container
+
+    def plant(timeout):
+        (env_spec.out_dir / "workbench.log").symlink_to(target)
+        return {"StatusCode": 0}
+
+    container.wait.side_effect = plant
+    container.logs.return_value = b"attacker controlled"
+    DockerRunner(client).run_replay(env_spec)
+    assert target.read_text() == "keep"
+    assert (env_spec.out_dir / "workbench.log").read_text() == "attacker controlled"
+
+
+def test_replay_result_symlink_is_not_read(client, env_spec, tmp_path):
+    client.networks.get.side_effect = None
+    client.networks.get.return_value = _env_net(tmp_path / "envdir")
+    secret = tmp_path / "key.pem"
+    secret.write_text("-----BEGIN PRIVATE KEY----- topsecretmaterial")
+    container = MagicMock()
+    client.containers.run.side_effect = None
+    client.containers.run.return_value = container
+
+    def plant(timeout):
+        (env_spec.out_dir / "replay_result.json").symlink_to(secret)
+        return {"StatusCode": 0}
+
+    container.wait.side_effect = plant
+    container.logs.return_value = b""
+    res = DockerRunner(client).run_replay(env_spec)
+    assert res.env_ok is False
+    assert "topsecret" not in (res.env_error or "")
+
+
+def test_sink_gets_runtime_and_cpu_limit(client, work, monkeypatch):
+    monkeypatch.setenv("PRSEC_DOCKER_RUNTIME", "runsc")
+    _runner(client).create_env(42, "h1", _req(work))
+    sink = _by_name(client, "prsec-sink-")
+    db = _by_name(client, "prsec-svc-42-h1-db")
+    assert sink.kw["runtime"] == "runsc"
+    assert sink.kw["nano_cpus"] > 0
+    assert db.kw["nano_cpus"] > 0
+
+
+# ------------------------------------------------------------------ reaper
+
+
+def _labelled(name: str, created: object) -> MagicMock:
+    c = MagicMock()
+    c.name = name
+    c.labels = {"prsec.env": "h1"}
+    c.attrs = {"Created": created}
+    return c
+
+
+def test_reaper_removes_only_old_env_objects(client):
+    import time as _time
+    old = _labelled("old", "2020-01-01T00:00:00.123456789Z")
+    fresh = _labelled("fresh", int(_time.time()))
+    odd = _labelled("odd", "not a date")
+    client.containers.list.return_value = [old, fresh, odd]
+    old_net = _labelled("old-net", "2020-01-01T00:00:00Z")
+    client.networks.list.return_value = [old_net]
+    removed = DockerRunner(client).reap_envs(3600)
+    assert removed == ["old"]
+    old.remove.assert_called_once_with(force=True, v=True)
+    fresh.remove.assert_not_called()
+    odd.remove.assert_not_called()
+    old_net.remove.assert_called_once()
+
+
+def test_reaper_loop_survives_errors_and_stops():
+    import threading
+
+    from prsec.launcher.main import reap_forever
+    runner = MagicMock()
+    runner.reap_envs.side_effect = RuntimeError("daemon down")
+    stop = threading.Event()
+    stop.set()
+    reap_forever(runner, 3600, 0.01, stop)
+    runner.reap_envs.assert_called_once_with(3600)
+
+
+def test_sink_that_exits_fails_create_env_and_cleans_up(client, work):
+    def run(**kw):
+        ct = _container(kw["name"], "10.0.0.2", status="exited")
+        ct.logs.return_value = b"Traceback: boom"
+        ct.kw = kw
+        client.started.append(ct)
+        return ct
+
+    client.containers.run.side_effect = run
+    with pytest.raises(RuntimeError, match="did not start"):
+        _runner(client).create_env(42, "h1", _req(work))
+    assert len(client.started) == 1
+
+
+@pytest.mark.parametrize("name", ["00-init.sh", "01-seed.js"])
+def test_script_seed_files_are_refused(client, work, name):
+    (work / "scan-42" / "seed" / name).write_text("x")
+    with pytest.raises(EnvRefused, match="not allowed"):
+        _runner(client).create_env(42, "h1", _req(work))
+    client.containers.run.assert_not_called()
+
+
+def test_sql_seed_files_are_accepted(client, work):
+    (work / "scan-42" / "seed" / "00-schema.sql").write_text("select 1;")
+    info = _runner(client).create_env(42, "h1", _req(work))
+    assert info.network == NET
+
+
+def test_mongo_takes_no_seed_files(client, work):
+    req = _req(work, services=[ServiceRequest(name="docs", kind="mongo", seed_dir=str(work / "scan-42" / "seed"))])
+    with pytest.raises(EnvRefused, match="takes no seed files"):
+        _runner(client).create_env(42, "h1", req)

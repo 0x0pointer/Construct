@@ -15,7 +15,7 @@ from typing import Any
 import httpx
 
 from prsec.adapters.protocols import WorkbenchSpec
-from prsec.adapters.runner.common import GRACE_S, RESULT_FILE, load_result, tail, write_task
+from prsec.adapters.runner.common import GRACE_S, RESULT_FILE, load_result, tail, write_nofollow, write_task
 from prsec.adapters.runner.docker import LOG_FILE
 from prsec.adapters.runner.env import load_replay_result, replay_result_path, replay_run_id
 from prsec.config import settings
@@ -78,7 +78,7 @@ class LauncherRunner:
         except Exception as e:
             code, logs, killed = None, f"failed to run workbench container: {type(e).__name__}: {e}", False
         Path(spec.out_dir).mkdir(parents=True, exist_ok=True)
-        (Path(spec.out_dir) / LOG_FILE).write_text(logs)
+        write_nofollow(Path(spec.out_dir) / LOG_FILE, logs)
         return load_result(
             t, Path(spec.out_dir), killed=killed, exit_code=code, log_tail=tail(logs),
             duration_s=time.monotonic() - started,
@@ -104,5 +104,5 @@ class LauncherRunner:
         except Exception as e:
             return ReplayResult(run_id=run_id, env_ok=False, env_error=f"failed to run replay: {type(e).__name__}: {e}")
         Path(spec.out_dir).mkdir(parents=True, exist_ok=True)
-        (Path(spec.out_dir) / LOG_FILE).write_text(logs)
+        write_nofollow(Path(spec.out_dir) / LOG_FILE, logs)
         return load_replay_result(spec.out_dir, run_id, exit_code=code, killed=killed, log_tail=tail(logs))

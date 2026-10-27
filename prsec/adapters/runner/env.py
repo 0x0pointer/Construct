@@ -6,9 +6,12 @@ config files (hosts.json, stubs.json, resolv.conf) and parsing replay results.
 from __future__ import annotations
 
 import json
+import os
+import stat
 from pathlib import Path
 
-from prsec.dynamic.catalog import Catalog
+from prsec.adapters.runner.common import describe_error, read_nofollow, write_nofollow
+from prsec.dynamic.catalog import Catalog, CatalogEntry, seed_allowed
 from prsec.dynamic.envspec import RESERVED_NAMES, SERVICE_NAME
 from prsec.dynamic.results import ENV_NAME, REPLAY_REQUEST, REPLAY_RESULT, EnvRequest, ReplayResult, ServiceRequest
 
@@ -64,7 +67,20 @@ def _check_service(s: ServiceRequest, catalog: Catalog, work_root: Path) -> Serv
         return s
     if not entry.seed_path:
         raise EnvRefused(f"service kind {s.kind!r} takes no seed files")
-    return s.model_copy(update={"seed_dir": str(under_root(s.seed_dir, work_root, f"seed_dir of {s.name}"))})
+    seed_dir = under_root(s.seed_dir, work_root, f"seed_dir of {s.name}")
+    _check_seed_files(seed_dir, entry, s.name)
+    return s.model_copy(update={"seed_dir": str(seed_dir)})
+
+
+def _check_seed_files(seed_dir: Path, entry: CatalogEntry, name: str) -> None:
+    """Plain data files with an allowed suffix only: the entrypoint would execute anything else."""
+    try:
+        entries = list(os.scandir(seed_dir))
+    except OSError as e:
+        raise EnvRefused(f"seed_dir of {name} is not readable: {e.strerror}") from None
+    for f in entries:
+        if not f.is_file(follow_symlinks=False) or not seed_allowed(entry, f.name):
+            raise EnvRefused(f"seed file {f.name!r} of {name} is not allowed (only {', '.join(entry.seed_suffixes)})")
 
 
 def _check_stubs(req: EnvRequest) -> None:
@@ -98,24 +114,55 @@ def sink_dir(env_dir: str | Path) -> Path:
     return Path(env_dir) / SINK_DIR
 
 
+def _require(path: Path, kind: int, what: str) -> Path:
+    """`path` must be a real `kind` (S_IFDIR / S_IFREG), not a symlink, directly where it is named."""
+    try:
+        mode = os.lstat(path).st_mode
+    except FileNotFoundError:
+        raise EnvRefused(f"{what} does not exist") from None
+    if stat.S_IFMT(mode) != kind:
+        raise EnvRefused(f"{what} is not a plain {'directory' if kind == stat.S_IFDIR else 'file'}")
+    return path
+
+
+def make_sink_dir(env_dir: str | Path) -> Path:
+    """Create <env_dir>/sink; refuse one that is a symlink (it is mounted rw into the sink)."""
+    Path(env_dir).mkdir(parents=True, exist_ok=True)
+    d = sink_dir(env_dir)
+    try:
+        d.mkdir()
+    except FileExistsError:
+        pass
+    return _require(d, stat.S_IFDIR, "sink dir")
+
+
+def checked_sink_dir(env_dir: str | Path) -> Path:
+    return _require(sink_dir(env_dir), stat.S_IFDIR, "sink dir")
+
+
+def checked_resolv(env_dir: str | Path) -> Path:
+    """<env_dir>/resolv.conf as a plain file; it is bind-mounted, and Docker would follow a symlink."""
+    return _require(Path(env_dir) / RESOLV_FILE, stat.S_IFREG, "resolv.conf")
+
+
 def write_hosts(env_dir: str | Path, hosts: dict[str, str]) -> Path:
     """hosts.json: name -> ip served by the sink's DNS; every other name resolves to the sink."""
-    path = sink_dir(env_dir) / HOSTS_FILE
+    path = checked_sink_dir(env_dir) / HOSTS_FILE
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(hosts, indent=2, sort_keys=True))
-    tmp.replace(path)  # atomic, the sink reloads on change
+    write_nofollow(tmp, json.dumps(hosts, indent=2, sort_keys=True))
+    tmp.replace(path)  # atomic (rename never follows a symlink), the sink reloads on change
     return path
 
 
 def write_stubs(env_dir: str | Path, req: EnvRequest) -> Path:
-    path = sink_dir(env_dir) / STUBS_FILE
-    path.write_text(stubs_json(req))
+    path = checked_sink_dir(env_dir) / STUBS_FILE
+    write_nofollow(path, stubs_json(req))
     return path
 
 
 def write_resolv(env_dir: str | Path, sink_ip: str) -> Path:
     path = Path(env_dir) / RESOLV_FILE
-    path.write_text(f"nameserver {sink_ip}\noptions ndots:0 timeout:2 attempts:2\n")
+    write_nofollow(path, f"nameserver {sink_ip}\noptions ndots:0 timeout:2 attempts:2\n")
     return path
 
 
@@ -125,7 +172,7 @@ def write_resolv(env_dir: str | Path, sink_ip: str) -> Path:
 def replay_run_id(in_dir: str | Path, fallback: str) -> str:
     """run_id from <in_dir>/replay.json (written by the orchestrator), else `fallback`."""
     try:
-        return str(json.loads((Path(in_dir) / Path(REPLAY_REQUEST).name).read_text())["run_id"])
+        return str(json.loads(read_nofollow(Path(in_dir) / Path(REPLAY_REQUEST).name))["run_id"])
     except (OSError, ValueError, KeyError, TypeError):
         return fallback
 
@@ -139,10 +186,10 @@ def load_replay_result(out_dir: str | Path, run_id: str, *, exit_code: int | Non
     """Parse <out_dir>/replay_result.json; a missing or unreadable file becomes env_ok=False."""
     path = replay_result_path(out_dir)
     try:
-        return ReplayResult.model_validate_json(path.read_text())
+        return ReplayResult.model_validate_json(read_nofollow(path))
     except FileNotFoundError:
         reason = "replay produced no replay_result.json"
     except (OSError, ValueError) as e:
-        reason = f"unreadable replay_result.json: {e}"
+        reason = f"unreadable replay_result.json: {describe_error(e)}"
     reason = f"replay killed after its wall clock; {reason}" if killed else f"{reason} (exit code {exit_code})"
     return ReplayResult(run_id=run_id, env_ok=False, env_error=reason, app_log_tail=log_tail)

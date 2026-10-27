@@ -2,6 +2,9 @@
 
 install_skills -> compose prompt -> run harness (subprocess or in-process) -> validate output
 -> repair loop (resume if supported, else fresh call) -> StageResult. Never raises for harness failures.
+
+Every transcript event is also appended, as it happens, to <out_dir>/events.jsonl (one JSON line
+each), which the worker tails to show the agent's progress live.
 """
 from __future__ import annotations
 
@@ -24,6 +27,39 @@ from prsec.sandbox.entrypoint import contract
 
 STDERR_TAIL_BYTES = 4000
 KILL_GRACE_S = 5.0
+EVENTS_FILE = "events.jsonl"  # = prsec.adapters.runner.common.EVENTS_FILE (the worker tails it)
+
+
+class EventLog:
+    """Appends events to <out_dir>/events.jsonl as they happen. Never raises: a live stream that
+    cannot be written (disk full, out_dir gone) only stops streaming."""
+
+    def __init__(self, path: Path | None):
+        self.path = path
+        self._lock = threading.Lock()
+        self._f: Any = None
+        self._broken = path is None
+
+    def write(self, ev: Event) -> None:
+        if self._broken:
+            return
+        with self._lock:
+            try:
+                if self._f is None:
+                    self._f = self.path.open("a", encoding="utf-8")  # type: ignore[union-attr]
+                self._f.write(ev.model_dump_json() + "\n")
+                self._f.flush()
+            except (OSError, ValueError):
+                self._broken = True
+
+    def close(self) -> None:
+        with self._lock:
+            if self._f is not None:
+                try:
+                    self._f.close()
+                except OSError:
+                    pass
+                self._f = None
 
 
 @dataclass
@@ -108,12 +144,14 @@ def _tee_lines(proc: subprocess.Popen, stdout_log: Path) -> Iterator[str]:
             yield line.rstrip("\r\n")
 
 
-def _pump(adapter: HarnessAdapter, lines: Iterator[str], att: Attempt) -> None:
+def _pump(adapter: HarnessAdapter, lines: Iterator[str], att: Attempt, live: EventLog | None = None) -> None:
     try:
         for ev in adapter.parse_events(lines):
             if ev.ts is None:
                 ev = ev.model_copy(update={"ts": _now()})
             att.events.append(ev)
+            if live is not None:
+                live.write(ev)
     except Exception as e:  # adapters must not raise, but a buggy one must not hang the pipe
         att.events.append(_err_event(f"parse_events raised: {e!r}"))
         deque(lines, maxlen=0)  # drain the rest so the harness never blocks on a full stdout pipe
@@ -128,7 +166,9 @@ def _feed_stdin(proc: subprocess.Popen, data: str) -> None:
         return
 
 
-def _run_subprocess(adapter: HarnessAdapter, task: StageTask, inv: Invocation, deadline: float, n: int) -> Attempt:
+def _run_subprocess(
+    adapter: HarnessAdapter, task: StageTask, inv: Invocation, deadline: float, n: int, live: EventLog | None = None
+) -> Attempt:
     att = Attempt()
     out_dir = Path(task.out_dir)
     stdout_log = out_dir / f"harness.attempt{n}.stdout"
@@ -140,7 +180,7 @@ def _run_subprocess(adapter: HarnessAdapter, task: StageTask, inv: Invocation, d
         return att
 
     reader = threading.Thread(
-        target=_pump, args=(adapter, _tee_lines(proc, stdout_log), att), name="harness-stdout", daemon=True
+        target=_pump, args=(adapter, _tee_lines(proc, stdout_log), att, live), name="harness-stdout", daemon=True
     )
     reader.start()
     if inv.stdin is not None:
@@ -244,6 +284,13 @@ class _Run:
     session: str | None = None
     resume_prompt: str = ""
     prev_raw: str | None = None
+    live: EventLog = field(default_factory=lambda: EventLog(None))
+
+    def record(self, *events: Event) -> None:
+        """Add events to the transcript and stream them (subprocess events are streamed by _pump)."""
+        for ev in events:
+            self.transcript.append(ev)
+            self.live.write(ev)
 
     def result(self) -> StageResult:
         task = self.task
@@ -256,7 +303,7 @@ class _Run:
 
     def fail(self, status: StageStatus, errors: list[str], **data: Any) -> StageResult:
         self.status, self.errors = status, errors
-        self.transcript.append(_err_event(errors[0], **data))
+        self.record(_err_event(errors[0], **data))
         return self.result()
 
     def setup(self) -> None:
@@ -264,6 +311,8 @@ class _Run:
         Path(task.out_dir).mkdir(parents=True, exist_ok=True)
         Path(task.output_path).parent.mkdir(parents=True, exist_ok=True)
         Path(task.output_path).unlink(missing_ok=True)
+        (Path(task.out_dir) / EVENTS_FILE).unlink(missing_ok=True)
+        self.live = EventLog(Path(task.out_dir) / EVENTS_FILE)
         contract.write_schema(task)
         self.adapter.install_skills(task)
 
@@ -282,12 +331,15 @@ class _Run:
         task, adapter = self.task, self.adapter
         if not adapter.caps.subprocess:
             prompt = self.prompt or contract.repair_prompt_fresh(task, self.errors, self.prev_raw)
-            return _run_inprocess(adapter, task, self.gw, prompt, self.deadline)
+            att = _run_inprocess(adapter, task, self.gw, prompt, self.deadline)
+            for ev in att.events:  # in-process adapters hand over their events at the end
+                self.live.write(ev)
+            return att
         try:
             inv = self._build_invocation()
         except Exception as e:
             return Attempt(spawn_error=f"adapter failed to build invocation: {type(e).__name__}: {e}")
-        return _run_subprocess(adapter, task, inv, self.deadline, self.attempts)
+        return _run_subprocess(adapter, task, inv, self.deadline, self.attempts, self.live)
 
     def add_usage(self, events: list[Event]) -> None:
         self.usage = self.usage + _safe(self.adapter.usage, Usage(), events)
@@ -331,6 +383,14 @@ def run_task(task: StageTask, adapter: HarnessAdapter, gw: GatewayConfig | None)
     started = time.monotonic()
     run = _Run(task, adapter, gw, deadline=started + task.limits.wall_clock_s, started=started)
     run.version = _safe(adapter.version, None)
+    try:
+        return _run_loop(run)
+    finally:
+        run.live.close()
+
+
+def _run_loop(run: _Run) -> StageResult:
+    task = run.task
 
     try:
         run.setup()
@@ -343,7 +403,7 @@ def run_task(task: StageTask, adapter: HarnessAdapter, gw: GatewayConfig | None)
     while True:
         run.attempts += 1
         mode = _attempt_mode(run.attempts, run.prompt)
-        run.transcript.append(_sys_event(f"attempt {run.attempts} ({mode})", attempt=run.attempts, mode=mode))
+        run.record(_sys_event(f"attempt {run.attempts} ({mode})", attempt=run.attempts, mode=mode))
 
         att = run.run_attempt()
         run.transcript.extend(att.events)
@@ -356,7 +416,7 @@ def run_task(task: StageTask, adapter: HarnessAdapter, gw: GatewayConfig | None)
             run.status, run.errors = StageStatus.ok, []
             return run.result()
         run.errors = errs
-        run.transcript.append(_sys_event("output invalid", attempt=run.attempts, errors=errs))
+        run.record(_sys_event("output invalid", attempt=run.attempts, errors=errs))
 
         final = run.stop(att, errs, max_attempts)
         if final is not None:

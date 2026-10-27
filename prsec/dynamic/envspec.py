@@ -21,8 +21,8 @@ class ServiceSpec(BaseModel):
     name: str = Field(description="Hostname the app uses for it, e.g. 'db'. Lowercase, [a-z][a-z0-9-]*")
     kind: str = Field(description="Catalog key, e.g. postgres, mysql, redis, mongo, mailpit, oauth2")
     seed: list[str] = Field(default_factory=list, description=(
-        "Repo-relative files loaded into the service at start (e.g. schema.sql, seed.sql), "
-        "only for kinds whose catalog entry has a seed_path"))
+        "Repo-relative .sql / .sql.gz files loaded into the service at start (e.g. schema.sql, seed.sql), "
+        "only for kinds whose catalog entry has a seed_path; other files are skipped"))
 
     @field_validator("name")
     @classmethod
@@ -43,11 +43,15 @@ class StubSpec(BaseModel):
     body: str = "{}"
 
 
+MAX_HEALTH_S = 900
+MAX_INSTALL_S = 3600
+
+
 class HealthCheck(BaseModel):
     path: str = "/"
     expect_status: list[int] = Field(default_factory=lambda: list(range(200, 500)),
                                       description="Any of these means the app is up (4xx counts: auth-protected roots)")
-    timeout_s: int = Field(default=120, ge=5, le=900)
+    timeout_s: int = Field(default=120, ge=5, le=MAX_HEALTH_S)
 
 
 class EnvSpec(BaseModel):
@@ -61,7 +65,7 @@ class EnvSpec(BaseModel):
     env: dict[str, str] = Field(default_factory=dict, description="App environment (DB URLs use service names as hosts)")
     services: list[ServiceSpec] = Field(default_factory=list, max_length=6)
     stubs: list[StubSpec] = Field(default_factory=list, max_length=50)
-    install_timeout_s: int = Field(default=900, ge=30, le=3600)
+    install_timeout_s: int = Field(default=900, ge=30, le=MAX_INSTALL_S)
 
     @field_validator("env")
     @classmethod

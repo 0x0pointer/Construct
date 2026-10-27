@@ -3,7 +3,7 @@
     prsec-env up      [--spec /work/in/envspec.json]   copy src, install, build, start, wait for health
     prsec-env status  [--spec ...]                     running / healthy / pid / url (JSON)
     prsec-env logs    [-n 100] [--spec ...]            tail of the app log
-    prsec-env reset   [--spec ...]                     stop, throw away the app copy, up again
+    prsec-env reset   [--spec ...]                     stop, throw away the app copy, new canaries, up again
     prsec-env down    [--spec ...]                     stop the app
 
 Exit 0 = ok, 1 = the app failed (message + log tail on stderr), 2 = usage / unreadable spec.

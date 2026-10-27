@@ -105,7 +105,8 @@ def test_scan_budget_caps_dynamic_and_covers_replays():
     d = p.defaults
     usd, wall, _ = stages.scan_budget(p, "a/b", 4)
     assert usd == pytest.approx(_static_usd(d, 4) + d["env"].usd_budget + d["dynamic"].usd_budget)
-    replays = (p.dynamic.replay_runs + 1) * p.dynamic.replay_timeout_s
+    from prsec.dynamic.envspec import MAX_HEALTH_S, MAX_INSTALL_S
+    replays = (2 * p.dynamic.replay_runs + 1) * (MAX_INSTALL_S + MAX_HEALTH_S + p.dynamic.replay_timeout_s)
     static_wall = d["triage"].wall_clock_s + d["hypothesise"].wall_clock_s + 4 * (d["static_verify"].wall_clock_s + d["skeptic"].wall_clock_s)
     assert wall == static_wall + d["env"].wall_clock_s + d["dynamic"].wall_clock_s + replays
 
@@ -115,3 +116,10 @@ def test_scan_budget_without_dynamic():
     p = p.model_copy(update={"dynamic": p.dynamic.model_copy(update={"enabled": False})})
     usd, _, _ = stages.scan_budget(p, "a/b", 2)
     assert usd == pytest.approx(_static_usd(p.defaults, 2))
+
+
+@pytest.mark.parametrize("bad", [{"replay_runs": 1}, {"replay_runs": 0}, {"concurrency": 0}, {"max_hypotheses": 0}])
+def test_dynamic_policy_rejects_counts_that_cannot_work(bad):
+    from prsec.config import DynamicPolicy
+    with pytest.raises(ValueError):
+        DynamicPolicy(**bad)

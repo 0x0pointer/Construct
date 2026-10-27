@@ -1,0 +1,42 @@
+{# Timeline rows. Everything goes through autoescaping: messages and data come from agents and PRs. #}
+{% macro kv_list(ev) -%}
+  {% if ev.kv %}<dl class="kv tl-data">{% for k, v in ev.kv %}<dt>{{ k }}</dt><dd><code>{{ v }}</code></dd>{% endfor %}</dl>{% endif %}
+{%- endmacro %}
+
+{% macro links(ev) -%}
+  {%- if ev.transcript_id and ev.kind in ('stage_finished', 'error') %} <a class="muted" href="/stage-runs/{{ ev.transcript_id }}/transcript">transcript</a>{% endif -%}
+  {%- if ev.finding_id %} <a class="muted" href="/findings/{{ ev.finding_id }}">finding #{{ ev.finding_id }}</a>
+    {%- if ev.kind in ('replay', 'dynamic_outcome') %} <a class="muted" href="/findings/{{ ev.finding_id }}/dynamic-evidence">replay evidence</a>{% endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro event_row(ev) -%}
+<li class="tl-ev lv-{{ ev.level }}" data-id="{{ ev.id }}">
+  <time datetime="{{ ev.iso }}" title="{{ ev.iso }}">{{ ev.clock }}</time>
+  <span class="tl-kind">{{ ev.kind }}</span>
+  <span class="tl-where">{{ ev.stage or '' }}{% if ev.hypothesis_id %}{% if ev.stage %}/{% endif %}{{ ev.hypothesis_id }}{% endif %}</span>
+  <span class="tl-msg">{{ ev.message }}{{ links(ev) }}</span>
+  {{ kv_list(ev) }}
+</li>
+{%- endmacro %}
+
+{% macro agent_row(ev) -%}
+<li class="tl-agent-ev lv-{{ ev.level }}" data-id="{{ ev.id }}">
+  <time datetime="{{ ev.iso }}" title="{{ ev.iso }}">{{ ev.clock }}</time>
+  <span class="tl-msg">{{ ev.message }}</span>
+  {{ kv_list(ev) }}
+</li>
+{%- endmacro %}
+
+{# Agent groups start open while the scan runs, so the agent can be followed live. #}
+{% macro item(it, live=False) -%}
+{% if it.type == 'group' %}
+<li class="tl-group">
+  <details{% if live %} open{% endif %}>
+    <summary>agent activity · {{ it.stage or 'stage' }}{% if it.task_id %} <code>{{ it.task_id }}</code>{% endif %}
+      {% if it.transcript_id %}<a class="muted" href="/stage-runs/{{ it.transcript_id }}/transcript">transcript</a>{% endif %}</summary>
+    <ol class="tl-agent" id="{{ it.dom_id }}">{% for ev in it.events %}{{ agent_row(ev) }}{% endfor %}</ol>
+  </details>
+</li>
+{% else %}{{ event_row(it.ev) }}{% endif %}
+{%- endmacro %}

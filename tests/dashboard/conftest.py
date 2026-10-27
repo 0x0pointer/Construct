@@ -5,6 +5,7 @@ from pathlib import Path
 
 import psycopg
 import pytest
+from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
@@ -24,12 +25,18 @@ def pg_pool(monkeypatch):
         c.execute(f'SET search_path TO "{schema}"')
         c.execute(SCHEMA_SQL)
     pool = ConnectionPool(url, kwargs={"options": f"-c search_path={schema}"}, min_size=1, max_size=4, open=True)
+    # prsec.obs.events (the timeline) uses prsec.db.conn's pool, whose rows are dicts
+    events_pool = ConnectionPool(url, kwargs={"options": f"-c search_path={schema}", "row_factory": dict_row},
+                                 min_size=1, max_size=2, open=True)
+    from prsec.db import conn as db_conn
     from prsec.db import findings
 
     monkeypatch.setattr(findings, "_pool", lambda: pool)
+    monkeypatch.setattr(db_conn, "get_pool", lambda: events_pool)
     try:
         yield pool
     finally:
+        events_pool.close()
         pool.close()
         with psycopg.connect(url, autocommit=True) as c:
             c.execute(f'DROP SCHEMA "{schema}" CASCADE')

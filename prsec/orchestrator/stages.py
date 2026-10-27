@@ -138,6 +138,10 @@ def scan_budget(policy: Policy, repo: str, n_hypotheses: int) -> tuple[float, in
         wall += sp.wall_clock_s * mult
         models.add(sp.model)
     if n_dyn and "dynamic" in policy.defaults:
-        replays = policy.dynamic.replay_runs + (1 if policy.dynamic.base_replay else 0)
-        wall += policy.dynamic.replay_timeout_s * replays * n_dyn
+        from prsec.dynamic.envspec import MAX_HEALTH_S, MAX_INSTALL_S
+
+        # each replay installs and starts the app from scratch before the PoC runs (worst case per EnvSpec),
+        # and an env failure on head is retried once
+        replays = 2 * policy.dynamic.replay_runs + (1 if policy.dynamic.base_replay else 0)
+        wall += (MAX_INSTALL_S + MAX_HEALTH_S + policy.dynamic.replay_timeout_s) * replays * n_dyn
     return usd, wall, sorted(models)

@@ -1,0 +1,5 @@
+<div id="timeline-poller" class="muted tl-poller"
+  {%- if tl.live %} hx-get="{{ tl.poll_url }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  {% if tl.live %}<span class="badge st-running">live</span> following new events every 2 s
+  {% else %}Scan {{ scan.status }}: timeline complete.{% if scan.status not in ('queued', 'running') %} <a href="/scans/{{ scan.id }}">Reload</a> for findings and stage runs.{% endif %}{% endif %}
+</div>

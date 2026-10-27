@@ -10,6 +10,7 @@ import hmac
 import logging
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -256,8 +257,33 @@ def create_app(runner: Any = None) -> FastAPI:
 app = create_app()
 
 
+def reap_forever(runner: Any, max_age_s: float, interval_s: float, stop: threading.Event) -> None:
+    """Background reaper for orphaned dynamic-env containers (see DockerRunner.reap_envs)."""
+    while True:
+        try:
+            runner.reap_envs(max_age_s)
+        except Exception:
+            log.warning("env reaper failed", exc_info=True)
+        if stop.wait(interval_s):
+            return
+
+
+def start_reaper(runner: Any) -> threading.Event:
+    max_age = float(os.environ.get("PRSEC_ENV_MAX_AGE_S", str(4 * 3600)))
+    interval = float(os.environ.get("PRSEC_ENV_REAP_INTERVAL_S", "600"))
+    stop = threading.Event()
+    threading.Thread(target=reap_forever, args=(runner, max_age, interval, stop), name="env-reaper", daemon=True).start()
+    return stop
+
+
 def run() -> None:
     import uvicorn
+
+    from prsec.obs.logging import setup_logging
+
+    setup_logging("launcher")
+    app.state.runner = app.state.runner or DockerRunner()
+    start_reaper(app.state.runner)
 
     # Loopback by default; the service image sets PRSEC_LAUNCHER_HOST=0.0.0.0 inside the container,
     # where only the worker shares its network.
@@ -265,4 +291,5 @@ def run() -> None:
         "prsec.launcher.main:app",
         host=os.environ.get("PRSEC_LAUNCHER_HOST", "127.0.0.1"),
         port=int(os.environ.get("PRSEC_LAUNCHER_PORT", "8090")),
+        log_config=None,  # keep setup_logging's handler; uvicorn's loggers propagate to it
     )

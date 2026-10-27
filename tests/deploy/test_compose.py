@@ -219,3 +219,27 @@ def test_catalog_images_are_pinned_by_digest() -> None:
     catalog = Catalog.model_validate(yaml.safe_load(CATALOG_FILE.read_text()))
     unpinned = [k for k, e in catalog.services.items() if not re.search(r":[^@/]+@sha256:[0-9a-f]{64}$", e.image)]
     assert not unpinned
+
+
+# ------------------------------------------------------------------ observability: structured logs
+
+
+PRSEC_SERVICES = ("migrate", "api", "worker", "launcher", "dashboard", "egress-proxy")
+
+
+@pytest.mark.parametrize("name", PRSEC_SERVICES)
+def test_prsec_services_log_json(services: dict, name: str) -> None:
+    env = services[name]["environment"]
+    assert env["PRSEC_LOG_FORMAT"] == "json"
+    assert env["PRSEC_LOG_LEVEL"] == "${PRSEC_LOG_LEVEL:-INFO}"
+
+
+def test_every_prsec_image_service_is_covered(services: dict) -> None:
+    using_image = {n for n, s in services.items() if str(s.get("image", "")).startswith("${PRSEC_IMAGE")}
+    assert using_image == set(PRSEC_SERVICES)
+
+
+def test_env_example_documents_logging() -> None:
+    keys = _env_example_keys()
+    assert "PRSEC_LOG_LEVEL" in keys
+    assert "PRSEC_LOG_FORMAT" in keys

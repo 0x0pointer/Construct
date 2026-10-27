@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from prsec.config import settings
 from prsec.db import queue
+from prsec.obs.logging import setup_logging
 from prsec.orchestrator import pipeline, reconciler
 
 log = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ def _slot(stop: threading.Event, poll_s: float) -> None:
     while not stop.is_set():
         try:
             queue.requeue_expired_leases()
+            pipeline.reap_kept()  # kept-for-debugging scans whose keep expired
             ran = run_one()
         except Exception:
             log.exception("worker slot error")
@@ -74,7 +76,7 @@ def serve(stop: threading.Event, concurrency: int | None = None, poll_s: float =
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(threadName)s %(name)s %(message)s")
+    setup_logging("worker")
     stop = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())

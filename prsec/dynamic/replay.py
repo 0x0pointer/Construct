@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import subprocess
@@ -16,7 +17,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote_plus, urlsplit
 
 import httpx
 from pydantic import BaseModel
@@ -31,7 +32,6 @@ from prsec.dynamic.results import (
 from prsec.dynamic.template import TemplateContext, TemplateError, render, render_str
 
 EXCERPT_BYTES = 4096
-MAX_REDIRECTS = 5
 HTTP_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 COMMAND_TIMEOUT_S = 60
 MAX_SINK_HITS = 50
@@ -39,7 +39,14 @@ ANON = "_anonymous"
 
 
 class StepError(RuntimeError):
-    """A step could not be sent or its expectations failed: the run is aborted (fired=false)."""
+    """A step could not be sent or its expectations failed: the run is aborted (fired=false).
+
+    `clean`: the app answered, just not as the PoC expects (expect_status, extract). Otherwise
+    (transport error, timeout, template) the run says nothing about the bug."""
+
+    def __init__(self, msg: str, clean: bool = False) -> None:
+        super().__init__(msg)
+        self.clean = clean
 
 
 def sink_url_default() -> str:
@@ -76,14 +83,12 @@ def as_text(value: Any) -> str:
 
 
 def resolve_url(path: str, base_url: str) -> str:
-    """Relative paths go to the app; absolute URLs only to canary hosts (they land at the sink)."""
+    """Steps only reach the app: a relative path. An absolute URL (even to a canary host) is refused,
+    since a request the PoC client sends itself would land at the sink and satisfy canary_hit."""
     parts = urlsplit(path)
-    if not parts.scheme and not parts.netloc:
-        return base_url.rstrip("/") + "/" + path.lstrip("/")
-    host = (parts.hostname or "").lower()
-    if parts.scheme not in ("http", "https") or not host.endswith(".canary.invalid"):
-        raise StepError(f"absolute URL {path!r} not allowed: use a path on the app or a canary URL")
-    return path
+    if parts.scheme or parts.netloc:
+        raise StepError(f"absolute URL {path!r} not allowed: steps take a path on the app")
+    return base_url.rstrip("/") + "/" + path.lstrip("/")
 
 
 def _number(v: Any) -> float | None:
@@ -102,14 +107,39 @@ _OPS = {
 
 
 def compare(actual: Any, op: str, expected: Any) -> bool:
-    """Numbers compare numerically (also when one side is a numeric string); otherwise as-is."""
+    """Numbers compare numerically (also when one side is a numeric string); otherwise as-is.
+
+    A missing (null) actual value never passes, and a numeric expected value needs a finite
+    numeric actual value: `ne 5` must not fire on `null`, "invalid" or NaN."""
+    if actual is None:
+        return False
     a, b = _number(actual), _number(expected)
+    if b is not None and (a is None or not math.isfinite(a)):
+        return False
     if a is not None and b is not None:
         return _OPS[op](a, b)
     try:
         return _OPS[op](actual, expected)
     except TypeError:
         return False
+
+
+def _sent_text(url: str, kwargs: dict[str, Any]) -> str:
+    """Everything a step sends, as text, so an oracle can tell a server-built value from an echo."""
+    dump = lambda v: json.dumps(v, ensure_ascii=False)  # noqa: E731
+    parts = [unquote_plus(url), dump(kwargs.get("headers") or {}), dump(kwargs.get("params") or {})]
+    for key in ("json", "data"):
+        if kwargs.get(key) is not None:
+            parts.append(dump(kwargs[key]))
+    if kwargs.get("content") is not None:
+        parts.append(kwargs["content"].decode(errors="replace"))
+    return "\n".join(parts)
+
+
+def _echo_proves_nothing(value: str, sent: str) -> bool:
+    """The value is in the step's own request. Markup (`<>&"'`) is exempt: an unescaped reflection of
+    it is the proof of a reflected XSS, and escaping would have changed it."""
+    return value in sent and not any(c in value for c in "<>&\"'")
 
 
 def _excerpt(resp: httpx.Response) -> str:
@@ -139,6 +169,7 @@ class PocEngine:
         self.ctx = TemplateContext(base_url=base_url, canaries=canaries)
         self.sessions: dict[str, Session] = {}
         self.responses: dict[str, httpx.Response] = {}
+        self.sent: dict[str, str] = {}  # step -> its rendered request (url, headers, body): echo check
         self.records: list[StepRecord] = []
         for name, user in users.items():
             self.ctx.users[name] = {k: render_str(v, self.ctx) for k, v in user.vars.items()}
@@ -148,8 +179,9 @@ class PocEngine:
     def session(self, user: str | None) -> Session:
         key = user or ANON
         if key not in self.sessions:
-            client = httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=True, max_redirects=MAX_REDIRECTS,
-                                  trust_env=False)
+            # Redirects are not followed: the client must not make the sink request an open redirect
+            # points at, and a 302 to /login must not turn into the login page's 200.
+            client = httpx.Client(timeout=HTTP_TIMEOUT, follow_redirects=False, trust_env=False)
             headers = dict(self.users[user].headers) if user in self.users else {}
             self.sessions[key] = Session(client=client, headers=headers)
         return self.sessions[key]
@@ -215,6 +247,7 @@ class PocEngine:
             kwargs = self._request_kwargs(step, ctx, session, login)
         except TemplateError as e:
             raise StepError(f"template: {e}") from None
+        self.sent[step.name] = _sent_text(url, kwargs)
         try:
             resp = session.client.request(step.method.upper(), url, timeout=self._remaining(30.0), **kwargs)
         except httpx.HTTPError as e:
@@ -227,7 +260,7 @@ class PocEngine:
         if step.expect_status is not None and resp.status_code not in step.expect_status:
             msg = f"expected status {step.expect_status}, got {resp.status_code}"
             self.records[-1].error = msg
-            raise StepError(msg)
+            raise StepError(msg, clean=True)
 
     def _extract(self, step: Step, user: str | None, resp: httpx.Response) -> None:
         for var, ex in step.extract.items():
@@ -236,23 +269,29 @@ class PocEngine:
             except (KeyError, IndexError, ValueError, re.error) as e:
                 msg = f"extract {var}: {e}"
                 self.records[-1].error = msg
-                raise StepError(msg) from None
+                raise StepError(msg, clean=True) from None
             self.ctx.vars[var] = value
             if user is not None:
                 self.ctx.users.setdefault(user, {})[var] = value
 
     @staticmethod
     def _extract_one(ex: Any, resp: httpx.Response) -> str:
+        """The extracted value; a missing, null or empty one aborts the run (it would match anything)."""
         if ex.json_path is not None:
-            return as_text(json_path(resp.json(), ex.json_path))
-        if ex.header is not None:
+            raw = json_path(resp.json(), ex.json_path)
+            value = None if raw is None else as_text(raw)
+        elif ex.header is not None:
             if ex.header not in resp.headers:
                 raise KeyError(f"no header {ex.header!r}")
-            return resp.headers[ex.header]
-        m = re.search(ex.regex, resp.text)
-        if m is None:
-            raise ValueError(f"regex {ex.regex!r} did not match")
-        return m.group(1) if m.re.groups else m.group(0)
+            value = resp.headers[ex.header]
+        else:
+            m = re.search(ex.regex, resp.text)
+            if m is None:
+                raise ValueError(f"regex {ex.regex!r} did not match")
+            value = m.group(1) if m.re.groups else m.group(0)
+        if value is None or not value.strip():
+            raise ValueError("extracted value is empty or null")
+        return value
 
     def login(self, user: str) -> None:
         for step in self.users[user].login:
@@ -315,7 +354,11 @@ class PocEngine:
 
     def _response_contains(self, o: ResponseContains) -> tuple[bool, str]:
         value = render_str(o.value, self.ctx)
+        if not value.strip():
+            return False, "empty value: every response contains it"
         found = value in self._response(o.step).text
+        if found and not o.negate and _echo_proves_nothing(value, self.sent.get(o.step, "")):
+            return False, f"{value!r} is in the request of {o.step} itself (an echo proves nothing)"
         verb = "found" if found else "not found"
         return found != o.negate, f"{value!r} {verb} in response of {o.step}"
 
@@ -330,11 +373,15 @@ class PocEngine:
 
     def _canary_hit(self, o: CanaryHit) -> tuple[bool, str]:
         value = render_str(o.value, self.ctx)
+        if not value.strip():
+            return False, "empty value: every sink record contains it"
         hits = fetch_sink_hits(value, self.sink_url)
         return bool(hits), f"{len(hits)} sink hit(s) containing {value!r}"
 
     def _command(self, o: Command) -> tuple[bool, str]:
         cmd, expect = render_str(o.run, self.ctx), render_str(o.expect, self.ctx)
+        if not expect.strip():
+            return False, "empty expect: every output contains it"
         proc = subprocess.run(["bash", "-c", cmd], cwd=self.workdir, env=self.env, capture_output=True,
                               stdin=subprocess.DEVNULL, timeout=COMMAND_TIMEOUT_S)
         out = proc.stdout.decode(errors="replace")
@@ -356,21 +403,26 @@ class PocRun:
     oracle_results: list[OracleResult]
     steps: list[StepRecord]
     aborted: str | None = None
+    incomplete: bool = False  # aborted for a reason that says nothing about the bug (see StepError)
 
 
 def run_poc(poc: PoC, engine: PocEngine) -> PocRun:
     """Steps (or script), then oracles. An aborted run (failed step/expect_status) never fires."""
-    aborted = None
+    aborted, incomplete = None, False
     try:
         if poc.kind == "script":
             engine.run_script(poc.script or "")
         else:
             engine.run_http(poc.steps)
     except StepError as e:
-        aborted = str(e)
+        aborted, incomplete = str(e), not e.clean
+    except Exception as e:  # keep the steps that ran; the run itself is just not evidence
+        aborted, incomplete = f"{type(e).__name__}: {e}", True
+        if engine.records:
+            engine.records[-1].error = engine.records[-1].error or aborted
     results = engine.evaluate(poc.oracles)
     return PocRun(fired=aborted is None and fired(poc, results), oracle_results=results,
-                  steps=list(engine.records), aborted=aborted)
+                  steps=list(engine.records), aborted=aborted, incomplete=incomplete)
 
 
 # ------------------------------------------------------------------ replay
@@ -393,11 +445,12 @@ def run_replay(req: ReplayRequest, app_root: Path | None = None, src: Path | Non
     try:
         runner.up(canaries)
         result.env_ok = True
-        _replay_poc(req, runner, canaries, sink_url, started, result)
+        _replay_poc(req, runner, canaries, sink_url, result)
     except EnvError as e:
         result.env_error = str(e)[:4000]
     except Exception as e:  # never raise out of a replay
-        result.steps.append(StepRecord(name="replay", method="-", url="", error=f"{type(e).__name__}: {e}"))
+        result.aborted, result.incomplete = f"{type(e).__name__}: {e}"[:4000], True
+        result.steps.append(StepRecord(name="replay", method="-", url="", error=result.aborted))
     finally:
         result.app_log_tail = runner.logs(200)
         _safe_stop(runner)
@@ -406,14 +459,16 @@ def run_replay(req: ReplayRequest, app_root: Path | None = None, src: Path | Non
 
 
 def _replay_poc(req: ReplayRequest, runner: AppRunner, canaries: Canaries, sink_url: str | None,
-                started: float, result: ReplayResult) -> None:
+                result: ReplayResult) -> None:
+    """The PoC's own deadline starts once the app is up: install and health have their own (EnvSpec)."""
     engine = PocEngine(req.poc.users, runner.base_url, canaries, runner.workdir, env=runner.app_env(),
-                       sink_url=sink_url, deadline=started + req.timeout_s)
+                       sink_url=sink_url, deadline=time.monotonic() + req.timeout_s)
     try:
         run = run_poc(req.poc, engine)
     finally:
         engine.close()
     result.fired = run.fired
+    result.aborted, result.incomplete = run.aborted, run.incomplete
     result.oracle_results = run.oracle_results
     result.steps = run.steps
     result.sink_hits = _sink_hits(canaries.token, sink_url)

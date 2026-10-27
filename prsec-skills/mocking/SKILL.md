@@ -21,7 +21,7 @@ Only these kinds exist; the launcher starts nothing else. Credentials are fixed 
 | `postgres` | 5432 | yes | `postgresql://app:app@{name}:5432/app` |
 | `mysql` | 3306 | yes | `mysql://app:app@{name}:3306/app` |
 | `redis` | 6379 | no | `redis://{name}:6379/0` |
-| `mongo` | 27017 | yes | `mongodb://app:app@{name}:27017/app?authSource=admin` |
+| `mongo` | 27017 | no | `mongodb://app:app@{name}:27017/app?authSource=admin` |
 | `mailpit` | 1025 | no | `smtp://{name}:1025  (web API for sent mail: http://{name}:8025/api/v1/messages)` |
 | `oauth2` | 8080 | no | `issuer http://{name}:8080/default  (any username logs in; claims via the login form)` |
 
@@ -43,10 +43,10 @@ from a clean copy of the source and never sees changes you made by hand.
 - **Migrations in `build`.** Services are up before `install` runs, so `build` can migrate and
   seed (`manage.py migrate`, `alembic upgrade head`, `npx prisma migrate deploy`,
   `npm run seed`).
-- **Service `seed` files.** For `postgres`, `mysql` and `mongo`, `seed` lists repo-relative files
-  loaded when the container first initialises: `.sql` and `.sh` for the SQL engines, `.js` and
-  `.sh` for mongo, run in file-name order. Use them for a repository's own `schema.sql` /
-  `seed.sql`. They run before the app's migrations, so do not combine a seed file that creates
+- **Service `seed` files.** For `postgres` and `mysql`, `seed` lists repo-relative `.sql` or
+  `.sql.gz` files loaded when the container first initialises, in the order listed. Use them for
+  a repository's own `schema.sql` / `seed.sql`. Scripts (`.sh`, `.js`) are never loaded; mongo
+  takes no seed files, so seed it through the app or a `build` command. They run before the app's migrations, so do not combine a seed file that creates
   tables with migrations that create the same tables.
 - **Inline build commands.** A short script that uses the app's own models and password hasher
   is the most reliable way to create users: the hash format is always right and constraints are

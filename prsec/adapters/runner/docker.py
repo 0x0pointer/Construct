@@ -14,11 +14,12 @@ import os
 import re
 import secrets
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from prsec.adapters.protocols import WorkbenchSpec
-from prsec.adapters.runner.common import GRACE_S, RESULT_FILE, load_result, tail, write_task
+from prsec.adapters.runner.common import GRACE_S, RESULT_FILE, load_result, tail, write_nofollow, write_task
 from prsec.adapters.runner.env import (
     EGRESS_ALIAS,
     LABEL_ENV,
@@ -26,16 +27,17 @@ from prsec.adapters.runner.env import (
     LABEL_LLM,
     REPLAY_COMMAND,
     REPLAY_ENTRYPOINT,
-    RESOLV_FILE,
     SINK_ALIAS,
     SINK_MOUNT,
     check_env_name,
     check_env_request,
+    checked_resolv,
+    checked_sink_dir,
     env_network_name,
     load_replay_result,
+    make_sink_dir,
     replay_result_path,
     replay_run_id,
-    sink_dir,
     write_hosts,
     write_resolv,
     write_stubs,
@@ -53,6 +55,7 @@ LABEL_SCAN = "prsec.scan_id"
 LABEL_TASK = "prsec.task_id"
 LABEL_SERVICE = "prsec.service"
 SINK_COMMAND = ["prsec-sink", "--data-dir", SINK_MOUNT]
+SINK_READY = b"sink up on"  # logged by prsec-sink once DNS, HTTP and TLS listen
 HARDENED = {"cap_drop": ["ALL"], "security_opt": ["no-new-privileges:true"]}
 ENTRYPOINT = ["prsec-stage"]  # set explicitly: per-repo workbench images need not declare it
 
@@ -106,7 +109,12 @@ class DockerRunner:
         self.sink_image = os.environ.get("PRSEC_SINK_IMAGE") or os.environ.get("PRSEC_IMAGE") or "prsec/prsec:latest"
         self.service_mem = os.environ.get("PRSEC_SERVICE_MEM", "1g")
         self.service_pids = int(os.environ.get("PRSEC_SERVICE_PIDS", "512"))
+        self.service_cpus = float(os.environ.get("PRSEC_SERVICE_CPUS", "1"))
         self.service_health_s = float(os.environ.get("PRSEC_SERVICE_HEALTH_S", "120"))
+        # The sink parses untrusted traffic: same runtime as the workbench unless overridden (set
+        # PRSEC_SINK_RUNTIME=runc if the configured runtime cannot apply the port sysctl below).
+        self.sink_runtime = os.environ.get("PRSEC_SINK_RUNTIME", self.runtime or "") or None
+        self.sink_cpus = float(os.environ.get("PRSEC_SINK_CPUS", "1"))
         self.poll_s = 1.0
 
     @property
@@ -237,7 +245,7 @@ class DockerRunner:
         if not env_dir:
             raise RuntimeError(f"dynamic env {spec.env_name!r} of scan {spec.scan_id} does not exist")
         kw["network"] = env_network_name(spec.scan_id, spec.env_name or "")
-        kw["volumes"][str(Path(env_dir) / RESOLV_FILE)] = {"bind": "/etc/resolv.conf", "mode": "ro"}
+        kw["volumes"][str(checked_resolv(env_dir))] = {"bind": "/etc/resolv.conf", "mode": "ro"}
         if spec.app_dir is not None:
             kw["volumes"][str(spec.app_dir)] = {"bind": APP_DIR, "mode": "rw"}
 
@@ -299,7 +307,7 @@ class DockerRunner:
             code, logs, killed = self.run_container(spec, command, t.limits.wall_clock_s + self.grace_s, entrypoint=ENTRYPOINT)
         except Exception as e:
             code, logs, killed = None, f"failed to run workbench container: {type(e).__name__}: {e}", False
-        (Path(spec.out_dir) / LOG_FILE).write_text(logs)
+        write_nofollow(Path(spec.out_dir) / LOG_FILE, logs)
         return load_result(
             t, Path(spec.out_dir), killed=killed, exit_code=code, log_tail=tail(logs),
             duration_s=time.monotonic() - started,
@@ -318,7 +326,7 @@ class DockerRunner:
         except Exception as e:
             code, logs, killed = None, f"failed to run replay container: {type(e).__name__}: {e}", False
         Path(spec.out_dir).mkdir(parents=True, exist_ok=True)
-        (Path(spec.out_dir) / LOG_FILE).write_text(logs)
+        write_nofollow(Path(spec.out_dir) / LOG_FILE, logs)
         return load_replay_result(spec.out_dir, run_id, exit_code=code, killed=killed, log_tail=tail(logs))
 
     def replay_refusal(self, spec: WorkbenchSpec) -> str | None:
@@ -368,13 +376,34 @@ class DockerRunner:
             return
         self._remove_network(net, (self.gateway_container, self.egress_container))
 
+    def reap_envs(self, max_age_s: float) -> list[str]:
+        """Remove dynamic-env containers and networks created more than `max_age_s` ago.
+
+        Env containers (sink, catalog databases) never exit on their own; a worker that is killed
+        mid-stage, or a create_env the client gave up on, leaves them without an owner. No env lives
+        anywhere near max_age_s in normal operation. Returns the names of removed containers."""
+        cutoff = time.time() - max_age_s
+        removed = []
+        for c in self.client.containers.list(all=True, filters={"label": LABEL_ENV}):
+            if _created(c.attrs) < cutoff:
+                _remove_container(c)
+                removed.append(str(c.name))
+        for net in self.client.networks.list(filters={"label": LABEL_ENV}):
+            if _created(net.attrs) < cutoff:
+                self._remove_network(net, (self.gateway_container, self.egress_container))
+        if removed:
+            log.warning("reaped %d orphaned env container(s): %s", len(removed), ", ".join(removed))
+        return removed
+
     def _build_env(self, scan_id: int, env_name: str, req: EnvRequest, entries: dict[str, CatalogEntry]) -> EnvInfo:
         network = env_network_name(scan_id, env_name)
         labels = {LABEL_SCAN: str(scan_id), LABEL_ENV: env_name}
         net = self.client.networks.create(network, driver="bridge", internal=True, labels={
             **labels, LABEL_ENV_DIR: req.env_dir, LABEL_LLM: "1" if req.llm else "0", "prsec": "env-network"})
         self._prepare_sink_dir(req)
-        sink_ip = _ip_on(self._start_sink(network, labels, req), network)
+        sink = self._start_sink(network, labels, req)
+        sink_ip = _ip_on(sink, network)
+        self._wait_sink(sink)
         hosts = {SINK_ALIAS: sink_ip}
         write_hosts(req.env_dir, hosts)
         write_resolv(req.env_dir, sink_ip)
@@ -386,26 +415,39 @@ class DockerRunner:
         return EnvInfo(network=network, sink_ip=sink_ip, hosts=hosts, services=status)
 
     def _prepare_sink_dir(self, req: EnvRequest) -> None:
-        d = sink_dir(req.env_dir)
-        d.mkdir(parents=True, exist_ok=True)
+        d = make_sink_dir(req.env_dir)  # refuses a symlink: it is chowned and mounted rw below
         if self._user() == NONROOT:
             _give_to_nonroot(d, self._uid_remapped())
         write_stubs(req.env_dir, req)
+
+    def _wait_sink(self, sink: Any) -> None:
+        """Until the sink logs that it serves: before that, the workbench would have no DNS."""
+        deadline = time.monotonic() + self.service_health_s
+        while True:
+            sink.reload()
+            if SINK_READY in sink.logs(stdout=True, stderr=True):
+                return
+            if sink.status in ("exited", "dead") or time.monotonic() >= deadline:
+                raise RuntimeError(f"sink {sink.name} did not start ({sink.status})")
+            time.sleep(self.poll_s)
 
     def _endpoint(self, network: str, aliases: list[str]) -> dict[str, Any]:
         return {network: self.client.api.create_endpoint_config(aliases=aliases)}
 
     def _start_sink(self, network: str, labels: dict[str, str], req: EnvRequest) -> Any:
-        return self.client.containers.run(
-            image=self.sink_image, command=SINK_COMMAND, detach=True,
-            name=f"prsec-sink-{labels[LABEL_SCAN]}-{labels[LABEL_ENV]}", labels={**labels, LABEL_SERVICE: SINK_ALIAS},
-            user=self._user(), environment={"PRSEC_SINK_DIR": SINK_MOUNT},
-            volumes={str(sink_dir(req.env_dir)): {"bind": SINK_MOUNT, "mode": "rw"}},
-            read_only=True, tmpfs={"/tmp": "rw,nosuid,nodev,size=64m"},  # NOSONAR(S5443) private per-container tmpfs
-            sysctls={"net.ipv4.ip_unprivileged_port_start": "0"},  # DNS :53, HTTP :80, TLS :443 as non-root
-            pids_limit=128, mem_limit="256m", memswap_limit="256m", init=True,
-            network=network, networking_config=self._endpoint(network, [SINK_ALIAS]), **HARDENED,
-        )
+        kw: dict[str, Any] = {
+            "image": self.sink_image, "command": SINK_COMMAND, "detach": True,
+            "name": f"prsec-sink-{labels[LABEL_SCAN]}-{labels[LABEL_ENV]}", "labels": {**labels, LABEL_SERVICE: SINK_ALIAS},
+            "user": self._user(), "environment": {"PRSEC_SINK_DIR": SINK_MOUNT, **_log_env()},
+            "volumes": {str(checked_sink_dir(req.env_dir)): {"bind": SINK_MOUNT, "mode": "rw"}},
+            "read_only": True, "tmpfs": {"/tmp": "rw,nosuid,nodev,size=64m"},  # NOSONAR(S5443) private per-container tmpfs
+            "sysctls": {"net.ipv4.ip_unprivileged_port_start": "0"},  # DNS :53, HTTP :80, TLS :443 as non-root
+            "pids_limit": 128, "mem_limit": "256m", "memswap_limit": "256m", "nano_cpus": int(self.sink_cpus * 1e9),
+            "init": True, "network": network, "networking_config": self._endpoint(network, [SINK_ALIAS]), **HARDENED,
+        }
+        if self.sink_runtime:
+            kw["runtime"] = self.sink_runtime
+        return self.client.containers.run(**kw)
 
     def _start_service(self, network: str, labels: dict[str, str], s: ServiceRequest, entry: CatalogEntry) -> Any:
         """A catalog service: image, env, caps and seed mount come from the catalog entry only."""
@@ -414,7 +456,7 @@ class DockerRunner:
             "name": f"prsec-svc-{labels[LABEL_SCAN]}-{labels[LABEL_ENV]}-{s.name}",
             "labels": {**labels, LABEL_SERVICE: s.name}, "cap_add": list(entry.caps),
             "pids_limit": self.service_pids, "mem_limit": self.service_mem, "memswap_limit": self.service_mem,
-            "network": network, "networking_config": self._endpoint(network, [s.name]), **HARDENED,
+            "nano_cpus": int(self.service_cpus * 1e9), "network": network, "networking_config": self._endpoint(network, [s.name]), **HARDENED,
         }
         if s.seed_dir and entry.seed_path:
             kw["volumes"] = {s.seed_dir: {"bind": entry.seed_path, "mode": "ro"}}
@@ -475,6 +517,23 @@ def _remove_container(c: Any) -> None:
             c.remove(force=True)
     except (NotFound, APIError):
         pass
+
+
+def _log_env() -> dict[str, str]:
+    """This process's PRSEC_LOG_FORMAT / PRSEC_LOG_LEVEL, for the sink (started here, so not from compose)."""
+    return {k: os.environ[k] for k in ("PRSEC_LOG_FORMAT", "PRSEC_LOG_LEVEL") if os.environ.get(k)}
+
+
+def _created(attrs: dict[str, Any] | None) -> float:
+    """Creation time (epoch s) from inspect ('2026-01-02T03:04:05.123456789Z') or list (int) attrs;
+    +inf when unknown, so an unparseable object is never reaped."""
+    raw = (attrs or {}).get("Created")
+    if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+        return float(raw)
+    try:
+        return datetime.strptime(str(raw)[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=UTC).timestamp()
+    except ValueError:
+        return float("inf")
 
 
 def _ip_on(container: Any, network: str) -> str:

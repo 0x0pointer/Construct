@@ -44,10 +44,15 @@ If you cannot get all three to "no", the outcome is `not_reproduced`, with what 
   produce it: `'prs' || 'ec${CANARY.token}'` (SQL), `echo prsec$((6*7))${CANARY.token}` (shell).
 - For data leaks, match a value only the victim has: B's seeded note, B's canary note, the
   sentinel file content. Never a field name, a generic word, or an id that every user has.
-- Beware empty values: an `extract` that found nothing substitutes an empty string, and every
-  response "contains" the empty string. Pair a `response_contains` on an extracted value with a
-  negative control on a response that must **not** contain it; that control fails when the value
-  is empty.
+- Beware weak values. An `extract` that finds nothing, or finds `null` or an empty string,
+  aborts the run (not fired), and an oracle whose value renders empty never passes. A value that
+  is merely short or generic (`1`, `true`, `"null"`, a user id every response carries) still
+  matches by accident: pair a `response_contains` on an extracted value with a negative control
+  on a response that must **not** contain it.
+- A `response_contains` value that occurs in the step's **own request** (path, query, headers,
+  body) never passes: an echo or an error message that repeats the input proves nothing. Markup
+  (a value with `<`, `>`, `&` or quotes) is the exception, since its unescaped reflection is the
+  XSS proof.
 
 ## Negative controls
 

@@ -269,3 +269,64 @@ def test_shared_scan_key_spend_is_not_used(tmp_path, mode, monkeypatch):
     res = run_task(make_task(tmp_path), get_adapter("fake"), GW)
     assert res.status == StageStatus.ok
     assert res.usage.usd == pytest.approx(0.01)
+
+
+# ------------------------------------------------------------ live event stream (events.jsonl)
+
+
+def _live(task) -> list[dict]:
+    path = Path(task.out_dir) / "events.jsonl"
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+def test_events_jsonl_mirrors_the_transcript(tmp_path, mode):
+    mode("valid")
+    task = make_task(tmp_path)
+    res = run_task(task, get_adapter("fake"), GW)
+    live = _live(task)
+    assert [e["kind"] for e in live] == [e.kind.value for e in res.transcript]
+    assert live[0]["text"] == "attempt 1 (fresh)"
+
+
+def test_events_jsonl_is_reset_per_run(tmp_path, mode):
+    mode("valid")
+    task = make_task(tmp_path)
+    (Path(task.out_dir)).mkdir(parents=True, exist_ok=True)
+    (Path(task.out_dir) / "events.jsonl").write_text('{"kind": "message", "text": "stale"}\n')
+    res = run_task(task, get_adapter("fake"), GW)
+    assert len(_live(task)) == len(res.transcript)
+
+
+def test_pump_writes_each_event_as_it_is_parsed(tmp_path):
+    from prsec.models import Event
+    from prsec.sandbox.entrypoint.run import Attempt, EventLog, _pump
+
+    path = tmp_path / "events.jsonl"
+    seen_before_second: list[str] = []
+
+    class Adapter:
+        def parse_events(self, lines):
+            for line in lines:
+                if line == "b":
+                    seen_before_second.extend(path.read_text().splitlines())
+                yield Event(kind=EventKind.message, text=line)
+
+    log = EventLog(path)
+    att = Attempt()
+    _pump(Adapter(), iter(["a", "b"]), att, log)
+    log.close()
+    assert len(seen_before_second) == 1
+    assert json.loads(seen_before_second[0])["text"] == "a"
+    assert len(path.read_text().splitlines()) == 2
+    assert len(att.events) == 2
+
+
+def test_event_log_never_raises(tmp_path):
+    from prsec.models import Event
+    from prsec.sandbox.entrypoint.run import EventLog
+
+    log = EventLog(tmp_path / "missing-dir" / "events.jsonl")
+    log.write(Event(kind=EventKind.system, text="x"))
+    log.write(Event(kind=EventKind.system, text="y"))
+    log.close()
+    assert not (tmp_path / "missing-dir").exists()

@@ -1,6 +1,7 @@
 # Mock service catalog for dynamic environments. Owned by AppSec: the launcher only starts
 # images listed here, with the env, caps and seed mount given here. Agents pick a `kind`.
 # Credentials are fixed and well known on purpose: they only exist inside one scan's network.
+# Seed files are limited to seed_suffixes (default .sql, .sql.gz): never scripts.
 # Pin every image by digest (tag@sha256:...).
 services:
   postgres:
@@ -30,7 +31,7 @@ services:
     image: mongo:7.0@sha256:ff35930c973ac3b35e0a8cd41b565f7ed2384237e3c498186fdc5a3795cfde25
     port: 27017
     env: {MONGO_INITDB_ROOT_USERNAME: app, MONGO_INITDB_ROOT_PASSWORD: app, MONGO_INITDB_DATABASE: app}
-    seed_path: /docker-entrypoint-initdb.d
+    # no seed_path: the mongo entrypoint only runs *.sh / *.js seeds, i.e. code; seed through the app
     health: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
     caps: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
     connection: "mongodb://app:app@{name}:27017/app?authSource=admin"

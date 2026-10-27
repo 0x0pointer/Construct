@@ -132,7 +132,7 @@ Points the contracts above leave open, and how the modules agree on them:
   `PRSEC_SINK_DIR=/sink`). `hosts.json` is `{name: ipv4}` (written atomically; it always holds `sink`),
   `stubs.json` is a list of `StubSpec`. Unknown names resolve to `hosts.json["sink"]`, else to
   `--self-ip` / `PRSEC_SINK_SELF_IP`, else to the container's own address. The sink appends every
-  record to `/sink/requests.jsonl` (memory only when that is not writable).
+  record to `/sink/requests.jsonl` up to 32 MiB (memory only after that, or when it is not writable).
 - **Sink hit record** (`/__prsec/hits`, `ReplayResult.sink_hits`): `ts` (epoch float), `client_ip`,
   `tls`, `host`, `method`, `path`, `query`, `headers`, `body` (≤ 64 KiB), `body_truncated`. `contains`
   matches host, path, raw or decoded query, any header value, or the body.
@@ -142,8 +142,9 @@ Points the contracts above leave open, and how the modules agree on them:
 - **Replay request.** The orchestrator writes `<in_dir>/replay.json` (`ReplayRequest`) before
   `run_replay`; runners take `run_id` from it. A replay's `StageTask` is minimal (stage `dynamic`,
   task id `<scan>-replay-<hyp>-r<n>` / `-base`, empty prompt and schema, `wall_clock_s =
-  dynamic.replay_timeout_s`, which is also `ReplayRequest.timeout_s`), and `harness_volume` is
-  `None`. The container's wall clock is that plus the runner's grace.
+  envspec.install_timeout_s + envspec.health.timeout_s + dynamic.replay_timeout_s`), and
+  `harness_volume` is `None`. The container's wall clock is that plus the runner's grace. The PoC's
+  own deadline (`ReplayRequest.timeout_s = dynamic.replay_timeout_s`) starts once the app is up.
 - **Canary sentinel** lives at `/work/app/.prsec/canary/sentinel-<token>.txt` (readable by the app).
 - **Extract.** A value extracted on a step becomes `${VARS.<var>}` and, when the step runs as a user,
   `${USER.<var>}` for that user and `${USERS.<user>.<var>}` for everyone else.
@@ -154,9 +155,44 @@ Points the contracts above leave open, and how the modules agree on them:
   aborts the run.
 - **Unexpected replay errors** after the app came up are recorded as a `StepRecord(name="replay",
   method="-", error=...)` with `fired=false`.
+- **Aborted runs.** `ReplayResult.aborted` says why a PoC run stopped early; `incomplete` is set when
+  that reason says nothing about the bug (transport error, timeout, template or unexpected error),
+  as opposed to an `expect_status` mismatch or a failed extract. An incomplete base run gives
+  `base_ran=false, base_fired=None` (introduced unknown).
+- **Replay hardening** (review of e146534). Steps take relative paths only (a request the PoC client
+  sends itself would land at the sink and satisfy `canary_hit`); redirects are not followed; an
+  oracle value that renders empty never passes, and an extract that yields nothing, `null` or an
+  empty string aborts the run; `response_contains` does not pass on a value that is in the step's
+  own request (markup excepted: that is the reflected-XSS proof); `json_compare` never passes on a
+  `null` actual value, and a numeric expected value needs a finite numeric actual value; step names
+  are unique across `steps` and every user's `login`.
+- **Env robustness.** A head replay whose env fails is retried once; only env_ok runs count
+  (`head_runs`), and a run whose env failed while every other run fired makes the outcome
+  `env_failed`, not `not_reproduced`. A created env with a service that is not `healthy` is
+  destroyed and reported as `env_failed`; so is a `create_env` that raised (the env is destroyed
+  again, since a launcher call that timed out may still be building it). Env names carry a 4-hex tag
+  of the lease (`h1<tag>`, `h1r2<tag>`), so a stale run never destroys its successor's env. Per-env
+  app, env and seed dirs are deleted right after the env (`_State.keep_dirs` keeps them).
+- **Orphans.** The launcher reaps containers and networks labelled `prsec.env` older than
+  `PRSEC_ENV_MAX_AGE_S` (default 4 h) every `PRSEC_ENV_REAP_INTERVAL_S` (600 s).
+- **Shared out_dir.** The container (PR code, in phase 2) can write `/work/out`, so the worker reads
+  `result.json` / `replay_result.json` and writes `workbench.log` without following symlinks, and
+  parse errors never echo the file's content. `resolv.conf` and the sink dir must be a plain file /
+  dir (not symlinks) when they are written and mounted.
+- **Credentials.** The app, its install commands, script PoCs and command oracles get the workbench
+  env without proxy settings, the gateway / harness credentials and any variable whose name looks
+  like a secret (`prsec.dynamic.app.inherited`), plus `EnvSpec.env`.
+- **Egress proxy limits.** The upstream always gets `Host: <vetted host>`; a client Host header that
+  names another host is refused (400). Per client IP at most `PRSEC_EGRESS_MAX_PER_CLIENT` (24)
+  connections, globally `PRSEC_EGRESS_MAX_CONNS` (256, new connections wait up to
+  `PRSEC_EGRESS_QUEUE_S`), each at most `PRSEC_EGRESS_LIFETIME_S` (900 s) on top of the idle timeout.
+- **Seeds.** Catalog `seed_suffixes` (default `.sql`, `.sql.gz`): other files are skipped by the
+  orchestrator and refused by the launcher, since the database entrypoints execute `*.sh` / `*.js`.
+  `mongo` takes no seed files. Sink and catalog services get a CPU limit (`PRSEC_SINK_CPUS`,
+  `PRSEC_SERVICE_CPUS`); the sink runs under the workbench runtime (`PRSEC_SINK_RUNTIME` overrides).
 - **CLIs.** `prsec-http` takes `--login-from` (alias `--poc`), `--relogin`, `--json`, `--form k=v`,
-  `--data` and `-H`. `prsec-env reset` stops the app, deletes the app copy (fresh DB files, re-install)
-  and runs `up` again. Each `prsec-env` subcommand takes `--spec`.
+  `--data` and `-H`. `prsec-env reset` stops the app, deletes the app copy (fresh DB files, re-install),
+  rotates the canaries and runs `up` again. Each `prsec-env` subcommand takes `--spec`.
 - **Agent outcome `blocked`** becomes `DynamicEvidence(outcome="not_reproduced", reason="blocked: ...")`.
 - **Provenance.** `DynamicEvidence.provenance` holds the dynamic stage run (task id, harness, model,
   skills, image) and is copied to `Finding.provenance["dynamic"]`.
@@ -164,8 +200,8 @@ Points the contracts above leave open, and how the modules agree on them:
   allows installing and running the app through the listed tools in the writable copy only.
 
 Known gaps (not yet expressible): no oracle on response headers (XSS `Content-Type`, open redirect
-`Location`); absolute step URLs are limited to canary hosts, so a PoC cannot fetch a token from the
-`oauth2` mock or read `mailpit`'s API; steps run sequentially, so race conditions cannot be proven.
+`Location`); steps only reach the app, so a PoC cannot fetch a token from the `oauth2` mock or read
+`mailpit`'s API; steps run sequentially, so race conditions cannot be proven.
 The skills tell the agent to report `blocked` / `not_reproduced` for these.
 
 ## Rules for every change

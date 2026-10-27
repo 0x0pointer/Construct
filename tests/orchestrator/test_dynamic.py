@@ -43,6 +43,7 @@ class EnvRunner(FakeRunner):
             self.supports_envs = False
         self.envs: list[tuple[str, object]] = []
         self.destroyed_envs: list[str] = []
+        self.health = lambda env_name: {}  # env name -> EnvInfo.services
         self.replays: list[tuple[ReplayRequest, object]] = []
 
     def create_env(self, scan_id, env_name, req):
@@ -51,7 +52,7 @@ class EnvRunner(FakeRunner):
         if self.create_error and self.create_error(env_name):
             raise RuntimeError("docker refused")
         self.envs.append((env_name, req))
-        return EnvInfo(network=f"prsec-scan-{scan_id}-{env_name}", sink_ip="10.0.0.2")
+        return EnvInfo(network=f"prsec-scan-{scan_id}-{env_name}", sink_ip="10.0.0.2", services=self.health(env_name))
 
     def destroy_env(self, scan_id, env_name):
         self.destroyed_envs.append(env_name)
@@ -60,6 +61,8 @@ class EnvRunner(FakeRunner):
         req = ReplayRequest.model_validate_json((spec.in_dir / "replay.json").read_text())
         self.replays.append((req, spec))
         fired = self.replay(req, spec)
+        if isinstance(fired, ReplayResult):
+            return fired
         if fired is None:
             return ReplayResult(run_id=req.run_id, env_ok=False, env_error="app never healthy", entry=req.poc.kind)
         return ReplayResult(run_id=req.run_id, env_ok=True, fired=fired, entry=req.poc.kind)
@@ -400,3 +403,107 @@ def test_superseded_during_dynamic_stops_the_scan(dyn, monkeypatch):
     pipeline.run_scan(ROW)
     assert only(q)["status"] == ScanStatus.superseded
     assert not s["sink"].calls
+
+
+# ------------------------------------------------------------- review fixes
+
+
+def test_seed_dir_skips_scripts(tmp_path):
+    st = dynamic_mod._State(ctx=_ctx(tmp_path), spec=dynamic_mod.EnvSpec.model_validate(ENVSPEC))
+    (tmp_path / "src").mkdir()
+    for name in ("init.sh", "seed.js", "schema.sql", "data.sql.gz"):
+        (tmp_path / "src" / name).write_text("x")
+    out = dynamic_mod._seed_dir(st, tmp_path / "src", "h1", "db", ["init.sh", "seed.js", "schema.sql", "data.sql.gz"],
+                                "postgres")
+    assert sorted(p.name for p in Path(out).iterdir()) == ["02-schema.sql", "03-data.sql.gz"]
+
+
+def test_unhealthy_service_in_a_replay_env_is_env_failed(dyn):
+    s = dyn()
+    s["runner"].health = lambda name: {"db": "unhealthy: container exited"} if "r" in name else {"db": "healthy"}
+    pipeline.run_scan(ROW)
+    ev = evidence(finding(s))
+    assert ev.outcome == "env_failed"
+    assert "unhealthy" in ev.reason
+    assert s["runner"].replays == []
+    assert "h1r1" in s["runner"].destroyed_envs
+
+
+def test_create_env_failure_destroys_the_env(dyn):
+    s = dyn(create_error=lambda name: name == "h1r1")
+    pipeline.run_scan(ROW)
+    assert s["runner"].destroyed_envs.count("h1r1") == 2  # first try and the retry
+
+
+def test_transient_env_failure_on_a_head_replay_is_retried(dyn):
+    s = dyn(replay=lambda req, spec: None if req.run_id.endswith("-r2") else not req.run_id.endswith("-base"))
+    pipeline.run_scan(ROW)
+    ev = evidence(finding(s))
+    assert ev.outcome == "reproduced"
+    assert [r.run_id for r in ev.replays] == ["101-replay-H1-r1", "101-replay-H1-r2-retry", "101-replay-H1-base"]
+
+
+def test_env_failure_on_a_later_head_replay_is_env_failed_not_not_reproduced(dyn):
+    s = dyn(replay=lambda req, spec: None if "-r2" in req.run_id else True)
+    pipeline.run_scan(ROW)
+    ev = evidence(finding(s))
+    assert ev.outcome == "env_failed"
+    assert (ev.head_runs, ev.head_fired) == (1, 1)
+
+
+def test_incomplete_base_run_leaves_introduced_unknown(dyn):
+    def replay(req, spec):
+        if req.run_id.endswith("-base"):
+            return ReplayResult(run_id=req.run_id, env_ok=True, fired=False, aborted="request failed: ConnectError",
+                                incomplete=True)
+        return True
+
+    s = dyn(replay=replay)
+    pipeline.run_scan(ROW)
+    fd = finding(s)
+    assert fd.introduced is None
+    assert evidence(fd).base_fired is None
+
+
+def test_clean_abort_on_base_counts_as_not_fired(dyn):
+    def replay(req, spec):
+        if req.run_id.endswith("-base"):
+            return ReplayResult(run_id=req.run_id, env_ok=True, fired=False, aborted="expected status [200], got 404")
+        return True
+
+    s = dyn(replay=replay)
+    pipeline.run_scan(ROW)
+    assert finding(s).introduced is True
+
+
+def test_replay_wall_clock_covers_install_and_health(dyn):
+    s = dyn()
+    pipeline.run_scan(ROW)
+    req, spec = s["runner"].replays[0]
+    expected = req.envspec.install_timeout_s + req.envspec.health.timeout_s + req.timeout_s
+    assert spec.task.limits.wall_clock_s == expected
+
+
+def test_replay_dirs_are_freed_after_each_replay(dyn):
+    leftovers: list[bool] = []
+
+    def replay(req, spec):
+        leftovers.append((spec.app_dir.parent / "h1r1").exists() and not spec.app_dir.name == "h1r1")
+        return not req.run_id.endswith("-base")
+
+    dyn(replay=replay)
+    pipeline.run_scan(ROW)
+    assert leftovers == [False, False, False]
+
+
+def test_env_names_carry_a_lease_tag(tmp_path):
+    ctx = _ctx(tmp_path)
+    ctx.lease_token = "tok-123456789abcdef"
+    st = dynamic_mod._State(ctx=ctx, spec=dynamic_mod.EnvSpec.model_validate(ENVSPEC))
+    other = dynamic_mod._State(ctx=_ctx(tmp_path), spec=st.spec)
+    other.ctx.lease_token = "tok-other"
+    name = dynamic_mod._env_name(st, "h12r2")
+    assert name.startswith("h12r2")
+    assert name != dynamic_mod._env_name(other, "h12r2")
+    from prsec.dynamic.results import ENV_NAME
+    assert ENV_NAME.fullmatch(name)

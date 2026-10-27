@@ -9,8 +9,11 @@ itself never does. The proxy sits on its own non-internal `egress` network and a
 only when <host> is on PRSEC_EGRESS_ALLOW (comma list; exact host or '*.suffix' for subdomains)
 AND every address it resolves to is public (no private, loopback, link-local, multicast,
 reserved, unspecified or cloud metadata address). It then connects to the vetted IP itself, not
-the name, so a second lookup cannot be rebound to an internal address. Concurrency is bounded
-and idle connections time out. One log line per decision.
+the name, so a second lookup cannot be rebound to an internal address. The upstream always gets
+`Host: <vetted host>` (a client Host header that names another host is refused), so a CDN that
+routes on Host cannot be steered to a different site. Connections are bounded per client (one
+env's app cannot starve the others) and globally (new ones wait briefly for a free slot); idle
+connections time out and every tunnel has an absolute lifetime. One log line per decision.
 """
 from __future__ import annotations
 
@@ -41,6 +44,7 @@ HTTP_PORTS = frozenset({80})
 MAX_HEAD = 16 * 1024
 HEAD_TIMEOUT_S = 15.0
 CONNECT_TIMEOUT_S = 10.0
+QUEUE_POLL_S = 0.05
 
 Resolver = Callable[[str, int], Awaitable[list[str]]]
 Connector = Callable[[str, int], Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]]
@@ -152,15 +156,28 @@ def parse_request(raw: bytes) -> ProxyRequest:
     return ProxyRequest(method, host, port, path, headers)
 
 
-_DROP = {"connection", "proxy-connection", "proxy-authorization", "keep-alive", "te", "upgrade"}
+_DROP = {"connection", "proxy-connection", "proxy-authorization", "keep-alive", "te", "upgrade", "host"}
+
+
+def check_host_header(req: ProxyRequest) -> None:
+    """A plain request's Host header(s) must name the vetted absolute-URI host (Denied otherwise)."""
+    for k, v in req.headers:
+        if k.lower() != "host":
+            continue
+        try:
+            host, _ = _split_hostport(v.strip(), req.port)
+        except ValueError:
+            raise Denied(400, "bad Host header") from None
+        if host.lower().rstrip(".") != req.host:
+            raise Denied(400, "Host header does not match the request URI")
 
 
 def forward_head(req: ProxyRequest) -> bytes:
-    """Origin-form request head for the upstream, hop-by-hop headers replaced by Connection: close."""
-    lines = [f"{req.method} {req.path} HTTP/1.1"]
+    """Origin-form request head for the upstream: Host is always the vetted host, hop-by-hop
+    headers are replaced by Connection: close."""
+    lines = [f"{req.method} {req.path} HTTP/1.1",
+             f"Host: {req.host}" if req.port == 80 else f"Host: {req.host}:{req.port}"]
     lines += [f"{k}: {v}" for k, v in req.headers if k.lower() not in _DROP]
-    if not any(k.lower() == "host" for k, _ in req.headers):
-        lines.append(f"Host: {req.host}" if req.port == 80 else f"Host: {req.host}:{req.port}")
     lines += ["Connection: close", "", ""]
     return "\r\n".join(lines).encode("latin-1")
 
@@ -196,12 +213,15 @@ async def _pump(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, idle
 
 class EgressProxy:
     def __init__(self, allow: list[str], resolver: Resolver = system_resolve,
-                 connector: Connector | None = None, max_conns: int = 64, idle_s: float = 60.0) -> None:
+                 connector: Connector | None = None, max_conns: int = 256, idle_s: float = 60.0,
+                 max_per_client: int = 24, queue_s: float = 10.0, lifetime_s: float = 900.0) -> None:
         self.allow = allow
         self.resolver = resolver
         self.connector = connector or self._open
         self.max_conns, self.idle_s = max_conns, idle_s
+        self.max_per_client, self.queue_s, self.lifetime_s = max_per_client, queue_s, lifetime_s
         self.active = 0
+        self.per_client: dict[str, int] = {}
         self.port = 0
         self._server: asyncio.Server | None = None
 
@@ -238,31 +258,52 @@ class EgressProxy:
     async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, client: str) -> None:
         head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), HEAD_TIMEOUT_S)
         req = parse_request(head[:-4])
-        if req.method != "CONNECT" and _has_body(req):
-            raise Denied(400, "request bodies are not forwarded")
+        if req.method != "CONNECT":
+            if _has_body(req):
+                raise Denied(400, "request bodies are not forwarded")
+            check_host_header(req)
         ip, up_reader, up_writer = await self._connect(await self.vet(req), req.port)
         log.info("allow client=%s %s %s:%d -> %s", client, req.method, req.host, req.port, ip)
         try:
             if req.method == "CONNECT":
                 writer.write(b"HTTP/1.1 200 Connection established\r\n\r\n")
-                await asyncio.gather(_pump(reader, up_writer, self.idle_s), _pump(up_reader, writer, self.idle_s))
+                pumps = asyncio.gather(_pump(reader, up_writer, self.idle_s), _pump(up_reader, writer, self.idle_s))
             else:  # one request per connection: later requests on it would bypass the allowlist
                 up_writer.write(forward_head(req))
-                await _pump(up_reader, writer, self.idle_s)
+                pumps = _pump(up_reader, writer, self.idle_s)
+            await asyncio.wait_for(pumps, self.lifetime_s)  # trickling a byte per idle_s is not forever
         finally:
             up_writer.close()
+
+    async def _admit(self, client: str) -> None:
+        """Take a slot: refuse a client at its own cap, wait up to queue_s for a global one."""
+        if self.per_client.get(client, 0) >= self.max_per_client:
+            raise Denied(503, "too many connections from this client")
+        deadline = asyncio.get_running_loop().time() + self.queue_s
+        while self.active >= self.max_conns:
+            if asyncio.get_running_loop().time() >= deadline:
+                raise Denied(503, "too many connections")
+            await asyncio.sleep(QUEUE_POLL_S)
+        self.active += 1
+        self.per_client[client] = self.per_client.get(client, 0) + 1
+
+    def _release(self, client: str) -> None:
+        self.active -= 1
+        left = self.per_client.get(client, 1) - 1
+        if left > 0:
+            self.per_client[client] = left
+        else:
+            self.per_client.pop(client, None)
 
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         peer = writer.get_extra_info("peername")
         client = str(peer[0]) if peer else "?"
         try:
-            if self.active >= self.max_conns:
-                raise Denied(503, "too many connections")
-            self.active += 1
+            await self._admit(client)
             try:
                 await self._serve(reader, writer, client)
             finally:
-                self.active -= 1
+                self._release(client)
         except Denied as d:
             log.info("deny client=%s status=%d reason=%s", client, d.status, d.reason)
             await _refuse(reader, writer, d)
@@ -309,13 +350,17 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="prsec-egress-proxy", description="Allowlisting proxy for package installs")
     p.add_argument("--bind", default=os.environ.get("PRSEC_EGRESS_BIND", "0.0.0.0"))
     p.add_argument("--port", type=int, default=int(os.environ.get("PRSEC_EGRESS_PORT") or 3128))
-    p.add_argument("--max-conns", type=int, default=int(os.environ.get("PRSEC_EGRESS_MAX_CONNS") or 64))
+    p.add_argument("--max-conns", type=int, default=int(os.environ.get("PRSEC_EGRESS_MAX_CONNS") or 256))
+    p.add_argument("--max-per-client", type=int, default=int(os.environ.get("PRSEC_EGRESS_MAX_PER_CLIENT") or 24))
+    p.add_argument("--queue-s", type=float, default=float(os.environ.get("PRSEC_EGRESS_QUEUE_S") or 10))
     p.add_argument("--idle-s", type=float, default=float(os.environ.get("PRSEC_EGRESS_IDLE_S") or 60))
+    p.add_argument("--lifetime-s", type=float, default=float(os.environ.get("PRSEC_EGRESS_LIFETIME_S") or 900))
     return p
 
 
 async def _serve_forever(args: argparse.Namespace) -> None:
-    proxy = EgressProxy(parse_allow(os.environ.get("PRSEC_EGRESS_ALLOW")), max_conns=args.max_conns, idle_s=args.idle_s)
+    proxy = EgressProxy(parse_allow(os.environ.get("PRSEC_EGRESS_ALLOW")), max_conns=args.max_conns, idle_s=args.idle_s,
+                        max_per_client=args.max_per_client, queue_s=args.queue_s, lifetime_s=args.lifetime_s)
     await proxy.start(args.bind, args.port)
     try:
         await asyncio.Event().wait()
@@ -324,7 +369,9 @@ async def _serve_forever(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    from prsec.obs.logging import setup_logging
+
+    setup_logging("egress-proxy")
     args = build_parser().parse_args(argv)
     try:
         asyncio.run(_serve_forever(args))

@@ -9,6 +9,7 @@
     GET  /api/notes/<id>           any logged-in user reads any note (IDOR)
     GET  /file?name=...            reads a file relative to the app dir without checks (traversal)
     GET  /fetch?url=...            fetches a URL server side (SSRF)
+    GET  /go?to=...                302 to `to` (open redirect)
     POST /api/withdraw {amount}    no balance check (balance can go negative)
 """
 from __future__ import annotations
@@ -69,6 +70,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, (Path.cwd() / q.get("name", "")).read_text())
             except OSError:
                 return self._send(404, {"error": "no such file"})
+        if url.path == "/go":
+            return self._send(302, {}, {"Location": q.get("to", "/")})
         if url.path == "/fetch":
             with urllib.request.urlopen(q["url"], timeout=5) as r:  # noqa: S310 - the bug under test
                 return self._send(200, {"fetched": r.status})

@@ -81,3 +81,27 @@ CREATE TABLE IF NOT EXISTS finding_occurrences (
     label           TEXT   NOT NULL,
     PRIMARY KEY (finding_id, scan_id)
 );
+
+-- Per-scan debugging (prsec.models.ScanDebug, manual scans only) and keep-for-debugging:
+-- a scan with debug.keep_minutes > 0 leaves its work dir and environments in place until
+-- keep_until; kept_dir is that work dir. The worker reaps due kept scans (queue.claim_due_kept).
+ALTER TABLE scans ADD COLUMN IF NOT EXISTS debug JSONB;
+ALTER TABLE scans ADD COLUMN IF NOT EXISTS keep_until TIMESTAMPTZ;
+ALTER TABLE scans ADD COLUMN IF NOT EXISTS kept_dir TEXT;
+CREATE INDEX IF NOT EXISTS scans_keep_idx ON scans (keep_until) WHERE keep_until IS NOT NULL;
+
+-- Scan timeline (prsec.obs.events): one row per meaningful step, polled by id to follow a scan live.
+-- No foreign key: emitting must never fail, and a timeline may outlive (or precede) its scan row.
+CREATE TABLE IF NOT EXISTS scan_events (
+    id              BIGSERIAL PRIMARY KEY,
+    scan_id         BIGINT      NOT NULL,
+    ts              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    kind            TEXT        NOT NULL,
+    level           TEXT        NOT NULL DEFAULT 'info',
+    stage           TEXT,
+    task_id         TEXT,
+    hypothesis_id   TEXT,
+    message         TEXT        NOT NULL,
+    data            JSONB
+);
+CREATE INDEX IF NOT EXISTS scan_events_scan_idx ON scan_events (scan_id, id);

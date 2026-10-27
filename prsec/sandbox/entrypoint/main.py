@@ -17,6 +17,7 @@ from pathlib import Path
 
 from prsec.adapters.harness.base import GatewayConfig, get_adapter
 from prsec.models import StageResult, StageStatus, StageTask
+from prsec.obs.logging import bind, setup_logging
 from prsec.sandbox.entrypoint.run import run_task
 
 TASK_FILE = "task.json"  # the runners always write <in_dir>/task.json
@@ -61,6 +62,7 @@ def task_file(arg: str) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
+    setup_logging("stage")  # stderr -> workbench.log; stdout stays the one-line summary
     if len(args) != 1:
         print("usage: prsec-stage <task.json>", file=sys.stderr)
         return 2
@@ -70,6 +72,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"prsec-stage: invalid task file {args[0]}: {e}", file=sys.stderr)
         return 2
 
+    with bind(scan_id=task.scan_id, task_id=task.task_id, stage=task.stage.value):
+        result = _execute(task)
+    write_outputs(result, Path(task.out_dir))
+    print(f"prsec-stage: {task.task_id} -> {result.status} ({result.attempts} attempt(s), {result.duration_s}s)")
+    return 0
+
+
+def _execute(task: StageTask) -> StageResult:
+    """Run the task with its harness adapter; never raises (failures become a harness_error result)."""
     gw = gateway_from_env(task)
     try:
         _load_extra_adapters()
@@ -89,9 +100,7 @@ def main(argv: list[str] | None = None) -> int:
                 errors=[f"entrypoint crashed: {type(e).__name__}: {e}", traceback.format_exc()[-4000:]],
                 harness=task.harness, model=gw.model if gw else task.model_alias,
             )
-    write_outputs(result, Path(task.out_dir))
-    print(f"prsec-stage: {task.task_id} -> {result.status} ({result.attempts} attempt(s), {result.duration_s}s)")
-    return 0
+    return result
 
 
 if __name__ == "__main__":

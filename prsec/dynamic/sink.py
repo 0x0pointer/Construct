@@ -53,6 +53,7 @@ MAX_HEAD = 64 * 1024
 RING_SIZE = 5000
 IO_TIMEOUT_S = 30.0
 REQUESTS_LOG = "requests.jsonl"
+MAX_LOG_BYTES = 32 * 1024 * 1024  # the JSONL mirror lives on the shared host work root: stop mirroring here
 
 T = TypeVar("T")
 
@@ -223,20 +224,29 @@ def _record_matches(rec: dict[str, Any], needle: str) -> bool:
 
 
 class Recorder:
-    """Bounded in-memory ring of recorded requests, mirrored to a JSONL file (best effort)."""
+    """Bounded in-memory ring of recorded requests, mirrored to a JSONL file (best effort, and only
+    up to `max_log_bytes`: after that, memory only)."""
 
-    def __init__(self, log_file: Path | None = None, size: int = RING_SIZE) -> None:
+    def __init__(self, log_file: Path | None = None, size: int = RING_SIZE, max_log_bytes: int = MAX_LOG_BYTES) -> None:
         self.ring: deque[dict[str, Any]] = deque(maxlen=size)
         self.log_file = log_file
+        self.max_log_bytes = max_log_bytes
         self._log_failed = False
+        self._log_bytes = 0
 
     def add(self, rec: dict[str, Any]) -> None:
         self.ring.append(rec)
         if self.log_file is None or self._log_failed:
             return
+        line = (json.dumps(rec) + "\n").encode("utf-8")
+        if self._log_bytes + len(line) > self.max_log_bytes:
+            self._log_failed = True
+            log.warning("sink: %s reached %d bytes (memory only from now on)", self.log_file, self.max_log_bytes)
+            return
         try:
-            with self.log_file.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(rec) + "\n")
+            with self.log_file.open("ab") as f:
+                f.write(line)
+            self._log_bytes += len(line)
         except OSError as e:
             self._log_failed = True
             log.warning("sink: cannot write %s (memory only from now on): %s", self.log_file, e)
@@ -592,7 +602,9 @@ async def _serve(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    from prsec.obs.logging import setup_logging
+
+    setup_logging("sink")
     args = build_parser().parse_args(argv)
     try:
         asyncio.run(_serve(args))

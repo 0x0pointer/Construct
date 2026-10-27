@@ -20,6 +20,7 @@ from prsec.config import current_skills_version, load_policy, Policy, settings, 
 from prsec.db import conn as db_conn
 from prsec.db import queue
 from prsec.models import ScanRequest
+from prsec.obs.logging import setup_logging
 
 log = logging.getLogger("prsec.api")
 
@@ -44,7 +45,8 @@ def _enqueue_response(req: ScanRequest, s: Settings, debounce_s: int) -> JSONRes
     scan_id = queue.enqueue(req, current_skills_version(s), debounce_s, s.max_supersedes)
     if scan_id is None:
         return JSONResponse({"ignored": "duplicate"}, status_code=200)
-    log.info("queued scan %s for %s#%s@%s (%s)", scan_id, req.repo, req.pr, req.head_sha, req.reason)
+    log.info("queued scan %s for %s#%s@%s (%s)%s", scan_id, req.repo, req.pr, req.head_sha, req.reason,
+             f" debug={req.debug.model_dump()}" if req.debug else "")
     return JSONResponse({"scan_id": scan_id}, status_code=202)
 
 
@@ -120,6 +122,7 @@ def create_app(migrate_on_startup: bool = True) -> FastAPI:
         x_prsec_admin: Annotated[str | None, Header()] = None,
     ) -> JSONResponse:
         _require_admin(s, x_prsec_admin)
+        # req.debug (log level, keep minutes) rides along into scans.debug; webhooks never set it.
         return _enqueue_response(req.model_copy(update={"reason": "manual"}), s, debounce_s=0)
 
     return app
@@ -131,6 +134,7 @@ app = create_app()
 def run() -> None:
     import uvicorn
 
+    setup_logging("api")
     # Loopback by default; the service image and compose stack set PRSEC_API_HOST=0.0.0.0 inside
     # the container, where only Caddy (webhooks) and the private network can reach it.
     uvicorn.run(
@@ -138,4 +142,5 @@ def run() -> None:
         host=os.environ.get("PRSEC_API_HOST", "127.0.0.1"),
         port=int(os.environ.get("PRSEC_API_PORT", "8080")),
         proxy_headers=True,
+        log_config=None,  # uvicorn logs through setup_logging's handler
     )

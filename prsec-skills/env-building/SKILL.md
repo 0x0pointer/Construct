@@ -90,8 +90,8 @@ reads). Options, best first:
   the README mentions).
 - An inline `build` command that creates users through the app's own models and password
   hasher (`.venv/bin/python -c "..."`), so password hashes are always in the right format.
-- Repo-relative SQL / JS seed files listed in a service's `seed` (only kinds that have a seed
-  path; see [mocking](../mocking/SKILL.md)).
+- Repo-relative `.sql` / `.sql.gz` seed files listed in a service's `seed` (postgres and mysql
+  only; see [mocking](../mocking/SKILL.md)).
 
 Details on users, tenants and roles are in [mocking](../mocking/SKILL.md). Record every seeded
 credential in `notes` so the PoC author can use it.

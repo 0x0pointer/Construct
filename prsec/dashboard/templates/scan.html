@@ -27,9 +27,13 @@
       <dt>Cost</dt><dd>{{ scan.cost_usd | usd }}</dd>
       <dt>Duration</dt><dd>{{ scan.duration_s | dur }}</dd>
       <dt>SARIF</dt><dd>{% if scan.sarif_uri %}<a href="/sarif/{{ scan.id }}">download</a>{% else %}-{% endif %}</dd>
+      {% if scan.debug %}<dt>Debug</dt><dd>log level <code>{{ scan.debug.log_level }}</code>{% if scan.debug.keep_minutes %}, keep {{ scan.debug.keep_minutes }} min{% endif %}</dd>{% endif %}
+      {% if scan.keep_until %}<dt>Kept until</dt><dd>{{ scan.keep_until }}</dd>{% endif %}
     </dl>
   </div>
 </div>
+
+{% include "_timeline.html" %}
 
 <h2>Stage runs</h2>
 <table>

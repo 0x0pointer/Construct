@@ -157,7 +157,7 @@ def _where(filters: dict[str, Any] | None, allowed: dict[str, str]) -> tuple[str
 _SCAN_COLS = """
     s.id, s.scm, s.repo, s.pr, s.head_sha, s.base_sha, s.skills_version, s.reason, s.status,
     s.not_before, s.attempts, s.supersede_count, s.triage, s.error, s.cost_usd::float AS cost_usd,
-    s.sarif_uri, s.created_at, s.started_at, s.finished_at,
+    s.sarif_uri, s.created_at, s.started_at, s.finished_at, s.debug, s.keep_until,
     s.triage->>'decision' AS triage_decision,
     EXTRACT(EPOCH FROM (COALESCE(s.finished_at, CASE WHEN s.status = 'running' THEN now() END) - s.started_at))::float
         AS duration_s,
@@ -200,7 +200,8 @@ def get_scan(scan_id: int) -> dict | None:
         ).fetchall()
         scan["findings"] = conn.execute(
             f"""SELECT f.id, f.fingerprint, f.bug_class, f.vuln_class, f.title, f.severity, o.label,
-                       f.status, f.triage_state, f.sink_file, f.sink_line
+                       f.status, f.triage_state, f.sink_file, f.sink_line,
+                       CASE WHEN f.last_scan_id = o.scan_id THEN f.data->>'hypothesis_id' END AS hypothesis_id
                 FROM finding_occurrences o JOIN findings f ON f.id = o.finding_id
                 WHERE o.scan_id = %s ORDER BY {_SEVERITY_ORDER}, f.id""",
             (scan_id,),

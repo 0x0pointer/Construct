@@ -1,0 +1,7 @@
+{% from "_timeline_macros.html" import item %}
+<h2 id="timeline">Timeline</h2>
+<div class="panel tl">
+  <ol class="tl-events" id="timeline-events">{% for it in tl['items'] %}{{ item(it, tl.live) }}{% endfor %}</ol>
+  {% if not tl['items'] %}<p class="muted" id="timeline-empty">No events recorded{% if tl.live %} yet{% endif %}.</p>{% endif %}
+  {% include "_timeline_poller.html" %}
+</div>

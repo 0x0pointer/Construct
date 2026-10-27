@@ -48,7 +48,7 @@ class Step(BaseModel):
     name: str
     as_user: str | None = Field(default=None, alias="as", description="User whose cookies/headers/vars apply")
     method: str = "GET"
-    path: str = Field(description="Path on the app ('/api/x?y=1'); absolute URLs are only allowed to canary hosts")
+    path: str = Field(description="Path on the app ('/api/x?y=1'); absolute URLs are refused")
     headers: dict[str, str] = Field(default_factory=dict)
     query: dict[str, str] = Field(default_factory=dict)
     json_body: object | None = Field(default=None, alias="json")
@@ -85,7 +85,9 @@ class User(BaseModel):
 class ResponseContains(BaseModel):
     type: Literal["response_contains"]
     step: str
-    value: str = Field(description="Substring (placeholders allowed), e.g. ${CANARY.file_content} or another tenant's marker")
+    value: str = Field(min_length=1, description=(
+        "Substring (placeholders allowed), e.g. ${CANARY.file_content} or another tenant's marker; "
+        "never passes when it is in the step's own request (markup excepted) or renders empty"))
     negate: bool = False
 
 
@@ -109,7 +111,7 @@ class CanaryHit(BaseModel):
     """The sink recorded a request whose host, path, headers or body contains the value."""
 
     type: Literal["canary_hit"]
-    value: str = "${CANARY.token}"
+    value: str = Field(default="${CANARY.token}", min_length=1)
 
 
 class Command(BaseModel):
@@ -117,7 +119,7 @@ class Command(BaseModel):
 
     type: Literal["command"]
     run: str
-    expect: str
+    expect: str = Field(min_length=1)
     negate: bool = False
 
 
@@ -140,8 +142,11 @@ class PoC(BaseModel):
     @model_validator(mode="after")
     def _consistent(self) -> "PoC":
         names = [s.name for s in self.steps]
-        if len(names) != len(set(names)):
-            raise ValueError("step names must be unique")
+        every = names + [st.name for u in self.users.values() for st in u.login]
+        if len(every) != len(set(every)):
+            raise ValueError("step names (login steps of every user included) must be unique")
+        if SCRIPT_STEP in every:
+            raise ValueError(f"{SCRIPT_STEP!r} is reserved for a script PoC's output")
         for u in self.users:
             if not NAME.fullmatch(u):
                 raise ValueError(f"invalid user name {u!r}")

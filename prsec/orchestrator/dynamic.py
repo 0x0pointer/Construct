@@ -10,9 +10,15 @@ Only the replays count; they become a `DynamicEvidence` per hypothesis for `verd
 Nothing here fails the scan: every failure becomes `DynamicEvidence(outcome="error"|"env_failed")`,
 an unsupported runner `outcome="skipped"`. Superseded / LeaseLost from `ctx.check()` propagate.
 See docs/design/phase2-dynamic.md.
+
+Timeline: env_created / env_destroyed per environment (with service health), one `replay` event per
+replay (fired, which oracles passed) and one `dynamic_outcome` per hypothesis. With ctx.keep
+(debug.keep_minutes > 0) used environments and their dirs are left up for inspection; the scan's
+destroy_scan, run by the worker's reaper once the keep expires, removes them.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import shutil
@@ -37,6 +43,7 @@ from prsec.dynamic.results import (
     ServiceRequest,
 )
 from prsec.models import Limits, Severity, Stage, StageTask
+from prsec.obs.logging import bind, submit_with_context
 from prsec.orchestrator import pipeline, stages
 from prsec.stages.outputs import DynamicOutput, EnvOutput, Hypothesis, StaticVerifyOutput
 
@@ -59,6 +66,9 @@ class _State:
     base_fetched: bool = False
     base_src: Path | None = None
     cached: bool = False
+    keep_dirs: bool = False  # keep per-env app/env/seed dirs after use (debugging); else freed right away
+    keep_envs: bool = False  # leave used envs up (debugging); destroy_scan removes them later
+    kept: set[str] = field(default_factory=set)  # envs left up under keep_envs
 
 
 # ------------------------------------------------------------------ helpers
@@ -157,7 +167,7 @@ def _env_stage(ctx: pipeline.Ctx, meta: dict[str, Any]) -> EnvSpec | None:
 
 def _seed_dir(st: _State, src: Path, env_name: str, name: str, seeds: list[str], kind: str) -> str | None:
     """Copy a service's repo-relative seed files (in order) into a dir under the work root."""
-    from prsec.dynamic.catalog import load_catalog
+    from prsec.dynamic.catalog import load_catalog, seed_allowed
 
     entry = load_catalog().services.get(kind)
     if not seeds or entry is None or not entry.seed_path:
@@ -168,6 +178,10 @@ def _seed_dir(st: _State, src: Path, env_name: str, name: str, seeds: list[str],
         f = (root / rel).resolve()
         if not f.is_relative_to(root) or not f.is_file():
             log.warning("scan %s: seed %r of %s is not a repository file; skipped", st.ctx.scan_id, rel, name)
+            continue
+        if not seed_allowed(entry, f.name):  # *.sh / *.js would run as code in the service container
+            log.warning("scan %s: seed %r of %s is not a data file (%s); skipped", st.ctx.scan_id, rel, name,
+                        ", ".join(entry.seed_suffixes))
             continue
         shutil.copyfile(f, out / f"{n:02d}-{f.name}")
     return str(out)
@@ -182,11 +196,79 @@ def _env_request(st: _State, spec: EnvSpec, src: Path, env_name: str, *, llm: bo
     return EnvRequest(services=services, stubs=spec.stubs, llm=llm, packages=True, env_dir=str(env_dir))
 
 
+def _env_name(st: _State, base: str) -> str:
+    """`base` plus a short tag of this lease: a stale run and its successor never share (or destroy)
+    each other's envs, although both work on the same scan id."""
+    token = st.ctx.lease_token
+    return f"{base}{hashlib.sha256(token.encode()).hexdigest()[:4]}" if token else base
+
+
 def _destroy(st: _State, env_name: str) -> None:
+    with st.lock:
+        st.kept.discard(env_name)
     try:
         st.ctx.runner.destroy_env(st.ctx.scan_id, env_name)
     except Exception:
         log.warning("scan %s: destroy_env %s failed (destroy_scan cleans up)", st.ctx.scan_id, env_name, exc_info=True)
+        st.ctx.emit("env_destroyed", f"env {env_name}: destroy failed (destroy_scan cleans up)", level="warning",
+                    data={"env": env_name})
+        return
+    st.ctx.emit("env_destroyed", f"env {env_name} destroyed", data={"env": env_name})
+
+
+def _done_with(st: _State, env_name: str) -> None:
+    """An env is no longer needed: destroy it, or leave it up for debugging."""
+    if not st.keep_envs:
+        _destroy(st, env_name)
+        return
+    with st.lock:
+        st.kept.add(env_name)
+    st.ctx.emit("env_destroyed", f"env {env_name} left up for debugging (keep-for-debugging)",
+                data={"env": env_name, "kept": True})
+
+
+def _cleanup(st: _State, env_name: str) -> None:
+    """Free an env's host dirs (full app installs) as soon as it is gone; results live in out/."""
+    if st.keep_dirs:
+        return
+    for sub in ("app", "envs", "seeds"):
+        shutil.rmtree(st.ctx.root / sub / env_name, ignore_errors=True)
+
+
+def _unhealthy(info: Any) -> str | None:
+    services = getattr(info, "services", None) or {}
+    bad = sorted(f"{name}: {status}" for name, status in services.items() if status != "healthy")
+    return "; ".join(bad) or None
+
+
+def _create(st: _State, env_name: str, req: EnvRequest) -> str | None:
+    """Create env `env_name`; None when it is usable, else why not (it is then destroyed again: a
+    launcher call that timed out may still be building it). NotImplementedError propagates."""
+    ctx = st.ctx
+    if env_name in st.kept:  # kept for debugging, now reused (a retry): it must start fresh
+        _destroy(st, env_name)
+    try:
+        info = ctx.runner.create_env(ctx.scan_id, env_name, req)
+    except NotImplementedError:
+        raise
+    except Exception as e:
+        log.warning("scan %s: create_env %s failed", ctx.scan_id, env_name, exc_info=True)
+        ctx.emit("env_created", f"env {env_name} could not be created: {_error(e)}", level="warning",
+                 data={"env": env_name, "ok": False})
+        _destroy(st, env_name)
+        return f"create_env: {_error(e)}"
+    services = getattr(info, "services", None) or {}
+    health = ", ".join(f"{n} {v}" for n, v in sorted(services.items())) or "no services"
+    bad = _unhealthy(info)
+    ctx.emit("env_created", f"env {env_name} {'unusable' if bad else 'up'}: {health}"[:_REASON_MAX],
+             level="warning" if bad else "info",
+             data={"env": env_name, "ok": not bad, "services": services, "llm": req.llm,
+                   "network": getattr(info, "network", None)})
+    if bad:  # a dead mock database would read as "the PoC does not fire"
+        log.warning("scan %s: env %s has unhealthy services: %s", ctx.scan_id, env_name, bad)
+        _destroy(st, env_name)
+        return f"services not healthy: {bad}"[:_REASON_MAX]
+    return None
 
 
 # ------------------------------------------------------------ dynamic stage
@@ -225,42 +307,48 @@ def _attempt(
 ) -> tuple[DynamicOutput | DynamicEvidence, dict[str, Any]]:
     """The dynamic stage in its own env `h<i>`, and its provenance. NotImplementedError (no envs) propagates."""
     ctx = st.ctx
-    env_name = f"h{i}"
+    env_name = _env_name(st, f"h{i}")
     app_dir = _fresh_dir(ctx.root / "app" / env_name)
     try:
-        ctx.runner.create_env(ctx.scan_id, env_name, _env_request(st, st.spec, ctx.src, env_name, llm=True))
-    except NotImplementedError:
-        raise
-    except Exception as e:
-        log.warning("scan %s: create_env %s failed", ctx.scan_id, env_name, exc_info=True)
-        return _evidence(h, "env_failed", f"create_env: {_error(e)}"), {}
-    try:
-        ran = pipeline._run(
-            ctx, Stage.dynamic, _stage_files(st, h, static),
-            prompt_ctx={"pr_number": ctx.pr.number, "bug_class": h.bug_class, "app_dir": APP_DIR},
-            hyp_id=h.id, env_name=env_name, app_dir=app_dir,
-        )
+        failed = _create(st, env_name, _env_request(st, st.spec, ctx.src, env_name, llm=True))
+        if failed:
+            return _evidence(h, "env_failed", failed), {}
+        try:
+            ran = pipeline._run(
+                ctx, Stage.dynamic, _stage_files(st, h, static),
+                prompt_ctx={"pr_number": ctx.pr.number, "bug_class": h.bug_class, "app_dir": APP_DIR},
+                hyp_id=h.id, env_name=env_name, app_dir=app_dir,
+            )
+        finally:
+            _done_with(st, env_name)
     finally:
-        _destroy(st, env_name)
+        _cleanup(st, env_name)
     return _agent_result(h, ran), ran.provenance(ctx)
 
 
 # ------------------------------------------------------------------ replays
 
 
-def _replay_task(st: _State, run_id: str) -> StageTask:
+def replay_wall_clock_s(replay_timeout_s: int, spec: EnvSpec) -> int:
+    """A replay installs and starts the app from scratch (each under its own EnvSpec timeout) before
+    the PoC gets replay_timeout_s; the container's wall clock covers all three."""
+    return spec.install_timeout_s + spec.health.timeout_s + replay_timeout_s
+
+
+def _replay_task(st: _State, run_id: str, spec: EnvSpec) -> StageTask:
     """Replays run no agent; the task only names the run and carries its wall clock."""
     sp = st.ctx.policy.stage(Stage.dynamic.value, st.ctx.repo)
+    wall = replay_wall_clock_s(st.ctx.policy.dynamic.replay_timeout_s, spec)
     return StageTask(
         scan_id=st.ctx.scan_id, stage=Stage.dynamic, task_id=run_id, harness=sp.harness, model_alias=sp.model,
         prompt_md="", output_schema={}, context_files=[Path(REPLAY_REQUEST).name],
-        limits=Limits(wall_clock_s=st.ctx.policy.dynamic.replay_timeout_s, usd_budget=0.0),
+        limits=Limits(wall_clock_s=wall, usd_budget=0.0),
     )
 
 
 def _run_replay(st: _State, env_name: str, run_id: str, src: Path, spec: EnvSpec, poc: PoC) -> ReplayResult:
     ctx = st.ctx
-    task = _replay_task(st, run_id)
+    task = _replay_task(st, run_id, spec)
     in_dir = _fresh_dir(ctx.root / "in" / run_id)
     out_dir = _fresh_dir(ctx.root / "out" / run_id)
     req = ReplayRequest(run_id=run_id, envspec=spec, poc=poc, timeout_s=ctx.policy.dynamic.replay_timeout_s)
@@ -281,17 +369,51 @@ def _replay(st: _State, env_name: str, run_id: str, src: Path, spec: EnvSpec, po
     """One agent-free replay in a fresh env (no gateway) with a fresh app dir."""
     ctx = st.ctx
     ctx.check()
+    with bind(env=env_name):
+        r = _replay_in_env(st, env_name, run_id, src, spec, poc)
+        _replay_event(st, r)
+    return r
+
+
+def _replay_in_env(st: _State, env_name: str, run_id: str, src: Path, spec: EnvSpec, poc: PoC) -> ReplayResult:
     try:
-        ctx.runner.create_env(ctx.scan_id, env_name, _env_request(st, spec, src, env_name, llm=False))
-    except NotImplementedError:
-        raise
-    except Exception as e:
-        log.warning("scan %s: create_env %s failed", ctx.scan_id, env_name, exc_info=True)
-        return ReplayResult(run_id=run_id, env_ok=False, env_error=f"create_env: {_error(e)}", entry=poc.kind)
-    try:
-        return _run_replay(st, env_name, run_id, src, spec, poc)
+        failed = _create(st, env_name, _env_request(st, spec, src, env_name, llm=False))
+        if failed:
+            return ReplayResult(run_id=run_id, env_ok=False, env_error=failed, entry=poc.kind)
+        try:
+            return _run_replay(st, env_name, run_id, src, spec, poc)
+        finally:
+            _done_with(st, env_name)
     finally:
-        _destroy(st, env_name)
+        _cleanup(st, env_name)
+
+
+def _replay_event(st: _State, r: ReplayResult) -> None:
+    where = "base" if r.run_id.endswith("-base") else "head"
+    passed = [f"{o.type}#{o.index}" for o in r.oracle_results if o.passed]
+    if not r.env_ok:
+        msg, level = f"replay {r.run_id} on {where}: environment failed: {r.env_error}", "warning"
+    else:
+        msg = (f"replay {r.run_id} on {where}: {'fired' if r.fired else 'did not fire'}; oracles passed "
+               f"{len(passed)}/{len(r.oracle_results)}" + (f" ({', '.join(passed)})" if passed else ""))
+        if r.aborted:
+            msg += f"; aborted: {r.aborted}" + (" (incomplete: no evidence)" if r.incomplete else "")
+        level = "info"
+    st.ctx.emit("replay", msg[:_REASON_MAX * 2], level=level, data={
+        "run_id": r.run_id, "on": where, "env_ok": r.env_ok, "env_error": r.env_error, "fired": r.fired,
+        "aborted": r.aborted, "incomplete": r.incomplete, "duration_s": r.duration_s,
+        "oracles": [{"index": o.index, "type": o.type, "passed": o.passed, "detail": o.detail[:300]}
+                    for o in r.oracle_results],
+    })
+
+
+def _replay_retrying(st: _State, env_name: str, run_id: str, src: Path, spec: EnvSpec, poc: PoC) -> ReplayResult:
+    """One replay; an env failure (pull, install, health) is retried once: it is not a verdict on the PoC."""
+    r = _replay(st, env_name, run_id, src, spec, poc)
+    if r.env_ok:
+        return r
+    log.info("scan %s: replay %s env failed (%s); retrying once", st.ctx.scan_id, run_id, r.env_error)
+    return _replay(st, env_name, f"{run_id}-retry", src, spec, poc)
 
 
 def _base_src(st: _State) -> Path | None:
@@ -317,7 +439,7 @@ def _head_replays(st: _State, i: int, prefix: str, spec: EnvSpec, poc: PoC) -> l
     """Up to replay_runs head replays; stops at the first that does not fire (it cannot confirm)."""
     runs: list[ReplayResult] = []
     for n in range(1, st.ctx.policy.dynamic.replay_runs + 1):
-        r = _replay(st, f"h{i}r{n}", f"{prefix}-r{n}", st.ctx.src, spec, poc)
+        r = _replay_retrying(st, _env_name(st, f"h{i}r{n}"), f"{prefix}-r{n}", st.ctx.src, spec, poc)
         runs.append(r)
         if r.env_ok:
             _cache_envspec(st, spec)
@@ -332,20 +454,25 @@ def _replayed(st: _State, i: int, h: Hypothesis, out: DynamicOutput) -> DynamicE
     spec = _replay_spec(st, out.envspec)
     prefix = f"{st.ctx.scan_id}-replay-{h.id}"
     head = _head_replays(st, i, prefix, spec, poc)
-    fired = sum(1 for r in head if r.env_ok and r.fired)
-    ev = _evidence(h, "not_reproduced", f"replay fired {fired}/{len(head)}", entry=poc.kind, head_runs=len(head),
+    ran = [r for r in head if r.env_ok]  # only runs whose env came up say anything about the PoC
+    fired = sum(1 for r in ran if r.fired)
+    ev = _evidence(h, "not_reproduced", f"replay fired {fired}/{len(ran)}", entry=poc.kind, head_runs=len(ran),
                    head_fired=fired, poc=poc, replays=head)
-    if not any(r.env_ok for r in head):
-        return ev.model_copy(update={"outcome": "env_failed", "reason": f"replay env: {head[0].env_error}"[:_REASON_MAX]})
+    env_failed = [r for r in head if not r.env_ok]
+    if env_failed and fired == len(ran):  # no run failed to fire; an environment failed
+        return ev.model_copy(update={"outcome": "env_failed",
+                                     "reason": f"replay env: {env_failed[-1].env_error}"[:_REASON_MAX]})
     if not ev.replay_confirmed:
         return ev
     ev = ev.model_copy(update={"outcome": "reproduced", "reason": "replay_confirmed"})
     base_src = _base_src(st) if st.ctx.policy.dynamic.base_replay else None
     if base_src is None:
         return ev
-    base = _replay(st, f"h{i}b", f"{prefix}-base", base_src, spec, poc)
+    base = _replay(st, _env_name(st, f"h{i}b"), f"{prefix}-base", base_src, spec, poc)
+    # A base run that crashed, timed out or hit a transport error did not "not fire": introduced unknown.
+    usable = base.env_ok and not base.incomplete
     return ev.model_copy(update={
-        "base_ran": base.env_ok, "base_fired": base.fired if base.env_ok else None, "replays": [*head, base],
+        "base_ran": usable, "base_fired": base.fired if usable else None, "replays": [*head, base],
     })
 
 
@@ -368,6 +495,25 @@ def _upload(ctx: pipeline.Ctx, ev: DynamicEvidence) -> DynamicEvidence:
 
 def _one(st: _State, i: int, h: Hypothesis, static: StaticVerifyOutput) -> DynamicEvidence:
     """Never raises, except Superseded / LeaseLost (the scan must stop)."""
+    with bind(hypothesis_id=h.id):
+        ev = _one_bound(st, i, h, static)
+        _outcome_event(st.ctx, ev)
+    return ev
+
+
+def _outcome_event(ctx: pipeline.Ctx, ev: DynamicEvidence) -> None:
+    detail = f"; head fired {ev.head_fired}/{ev.head_runs}" if ev.head_runs else ""
+    if ev.base_ran:
+        detail += f"; base {'fired' if ev.base_fired else 'did not fire'}"
+    level = "warning" if ev.outcome in ("error", "env_failed") else "info"
+    ctx.emit("dynamic_outcome", f"{ev.hypothesis_id}: {ev.outcome} ({ev.reason}){detail}", level=level,
+             hypothesis_id=ev.hypothesis_id,
+             data={"outcome": ev.outcome, "reason": ev.reason, "entry": ev.entry, "head_runs": ev.head_runs,
+                   "head_fired": ev.head_fired, "base_ran": ev.base_ran, "base_fired": ev.base_fired,
+                   "evidence_uri": ev.evidence_uri})
+
+
+def _one_bound(st: _State, i: int, h: Hypothesis, static: StaticVerifyOutput) -> DynamicEvidence:
     try:
         st.ctx.check()
         res, provenance = _attempt(st, i, h, static)
@@ -383,8 +529,25 @@ def _one(st: _State, i: int, h: Hypothesis, static: StaticVerifyOutput) -> Dynam
     return _upload(st.ctx, ev)
 
 
-def _skip_all(cands: list[tuple[Hypothesis, StaticVerifyOutput]], outcome: str, reason: str) -> dict[str, DynamicEvidence]:
-    return {h.id: _evidence(h, outcome, reason) for h, _ in cands}
+def _skip_all(
+    ctx: pipeline.Ctx, cands: list[tuple[Hypothesis, StaticVerifyOutput]], outcome: str, reason: str
+) -> dict[str, DynamicEvidence]:
+    out = {h.id: _evidence(h, outcome, reason) for h, _ in cands}
+    for ev in out.values():
+        _outcome_event(ctx, ev)
+    return out
+
+
+def _candidates_event(
+    ctx: pipeline.Ctx, cands: list[tuple[Hypothesis, StaticVerifyOutput]], not_selected: list[str]
+) -> None:
+    if not cands:
+        ctx.emit("dynamic_outcome", "dynamic validation: no static survivor qualifies (verdict, severity floor)")
+        return
+    over = f"; over the cap: {', '.join(not_selected)}" if not_selected else ""
+    ctx.emit("dynamic_outcome", f"dynamic validation of {len(cands)} hypothesis(es): "
+             f"{', '.join(h.id for h, _ in cands)}{over}",
+             data={"candidates": [h.id for h, _ in cands], "not_selected": not_selected})
 
 
 def _gate(ctx: pipeline.Ctx) -> str | None:
@@ -406,20 +569,28 @@ def run_dynamic(
     meta["dynamic"] = {}
     cands = _candidates(ctx, survivors, meta)
     meta["dynamic"]["candidates"] = [h.id for h, _ in cands]
+    _candidates_event(ctx, cands, meta["dynamic"]["not_selected"])
     if not cands:
         return {}
     gate = _gate(ctx)
     if gate:
         meta["dynamic"]["skipped"] = gate
-        return _skip_all(cands, "skipped", gate)
+        return _skip_all(ctx, cands, "skipped", gate)
 
     ctx.check()
     spec = _env_stage(ctx, meta)
     if spec is None:
-        return _skip_all(cands, "env_failed", f"env stage {meta['dynamic']['env_stage']}")
-    st = _State(ctx=ctx, spec=spec)
+        return _skip_all(ctx, cands, "env_failed", f"env stage {meta['dynamic']['env_stage']}")
+    keep = bool(getattr(ctx, "keep", False))
+    st = _State(ctx=ctx, spec=spec, keep_dirs=keep, keep_envs=keep)
     workers = max(1, min(ctx.policy.dynamic.concurrency, len(cands)))
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        evidence = list(pool.map(lambda p: _one(st, p[0], *p[1]), enumerate(cands, 1)))
+    pool = ThreadPoolExecutor(max_workers=workers)
+    try:
+        futures = [submit_with_context(pool, _one, st, i, h, static) for i, (h, static) in enumerate(cands, 1)]
+        evidence = [f.result() for f in futures]
+    except BaseException:  # Superseded / LeaseLost: start no further hypothesis
+        pool.shutdown(wait=True, cancel_futures=True)
+        raise
+    pool.shutdown()
     meta["dynamic"]["outcomes"] = {ev.hypothesis_id: ev.outcome for ev in evidence}
     return {ev.hypothesis_id: ev for ev in evidence}

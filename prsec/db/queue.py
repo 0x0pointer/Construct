@@ -9,6 +9,9 @@ those writes conditional on still holding that lease, so a worker that lost its 
 after a stall) or whose superseded scan was revived cannot clobber the new run. finish() releases
 the token; a superseded row is only revived once its old run has released it (or its lease ran out).
 Failed scans are retried for the same head up to FAILED_RETRY_MAX times with exponential backoff.
+
+Keep-for-debugging: a scan requested with debug.keep_minutes > 0 is finished normally, but its work
+dir and environments stay until `keep_until` (keep()); the worker reaps due ones (claim_due_kept()).
 """
 from __future__ import annotations
 
@@ -52,6 +55,10 @@ def _supersede_others(conn: psycopg.Connection, req: ScanRequest) -> int:
     return max((r["supersede_count"] for r in rows), default=-1) + 1
 
 
+def _debug(req: ScanRequest) -> Jsonb | None:
+    return Jsonb(req.debug.model_dump(mode="json")) if req.debug is not None else None
+
+
 def enqueue(req: ScanRequest, skills_version: str, debounce_s: int, max_supersedes: int) -> int | None:
     """Queue a scan; returns the scan id, or None if this (repo, pr, head_sha, skills_version) is already known.
 
@@ -76,24 +83,24 @@ def enqueue(req: ScanRequest, skills_version: str, debounce_s: int, max_supersed
                 UPDATE scans SET status = 'queued', supersede_count = %s,
                     not_before = now() + make_interval(secs => %s), lease_until = NULL, lease_token = NULL,
                     attempts = 0, retries = retries + (status = 'failed')::int,
-                    finished_at = NULL, error = NULL, reason = %s,
+                    finished_at = NULL, error = NULL, reason = %s, debug = %s,
                     base_sha = COALESCE(%s, base_sha), installation_id = COALESCE(%s, installation_id)
                 WHERE id = %s
                 """,
-                (count, delay, req.reason, req.base_sha, req.installation_id, existing["id"]),
+                (count, delay, req.reason, _debug(req), req.base_sha, req.installation_id, existing["id"]),
             )
             return int(existing["id"])
 
         row = conn.execute(
             """
             INSERT INTO scans (scm, repo, pr, head_sha, base_sha, installation_id, skills_version,
-                               reason, status, supersede_count, not_before)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'queued', %s, now() + make_interval(secs => %s))
+                               reason, status, supersede_count, not_before, debug)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'queued', %s, now() + make_interval(secs => %s), %s)
             ON CONFLICT (repo, pr, head_sha, skills_version) DO NOTHING
             RETURNING id
             """,
             (req.scm, req.repo, req.pr, req.head_sha, req.base_sha, req.installation_id,
-             skills_version, req.reason, count, delay),
+             skills_version, req.reason, count, delay, _debug(req)),
         ).fetchone()
         return int(row["id"]) if row else None
 
@@ -238,3 +245,58 @@ def known_head(repo: str, pr: int, head_sha: str, skills_version: str) -> bool:
             (repo, pr, head_sha, skills_version),
         ).fetchone()
         return row is not None
+
+
+# ------------------------------------------------------------ keep-for-debugging
+
+
+def keep(scan_id: int, minutes: int, kept_dir: str | None, lease_token: str | None = None) -> bool:
+    """Leave the scan's work dir and environments in place for `minutes` (reaped by claim_due_kept).
+    With `lease_token`, only while that lease is current. Returns whether the row was updated."""
+    with get_pool().connection() as conn:
+        cur = conn.execute(
+            "UPDATE scans SET keep_until = now() + make_interval(mins => %s), kept_dir = %s"
+            " WHERE id = %s AND (%s::text IS NULL OR lease_token = %s)",
+            (int(minutes), kept_dir, scan_id, lease_token, lease_token),
+        )
+        return cur.rowcount == 1
+
+
+def release_kept(scan_id: int, lease_token: str | None = None) -> dict[str, Any] | None:
+    """Clear a previous run's keep on a scan the caller holds the lease of (with `lease_token`).
+    Returns {id, kept_dir} when there was one to tear down, else None."""
+    with get_pool().connection() as conn:
+        return conn.execute(
+            """
+            WITH old AS (
+                SELECT id, kept_dir FROM scans
+                WHERE id = %s AND keep_until IS NOT NULL AND (%s::text IS NULL OR lease_token = %s)
+                FOR UPDATE
+            )
+            UPDATE scans s SET keep_until = NULL, kept_dir = NULL
+            FROM old WHERE s.id = old.id
+            RETURNING s.id, old.kept_dir
+            """,
+            (scan_id, lease_token, lease_token),
+        ).fetchone()
+
+
+def claim_due_kept(limit: int = 10) -> list[dict[str, Any]]:
+    """Claim kept scans whose keep_until has passed and that are not (again) queued or running:
+    clears keep_until/kept_dir and returns [{id, kept_dir}] for the caller to tear down."""
+    with get_pool().connection() as conn:
+        return conn.execute(
+            """
+            WITH due AS (
+                SELECT id, kept_dir FROM scans
+                WHERE keep_until IS NOT NULL AND keep_until <= now() AND status <> ALL(%s)
+                ORDER BY keep_until
+                FOR UPDATE SKIP LOCKED
+                LIMIT %s
+            )
+            UPDATE scans s SET keep_until = NULL, kept_dir = NULL
+            FROM due WHERE s.id = due.id
+            RETURNING s.id, due.kept_dir
+            """,
+            (list(_ACTIVE), limit),
+        ).fetchall()

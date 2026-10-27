@@ -17,6 +17,9 @@ class CatalogEntry(BaseModel):
     port: int
     env: dict[str, str] = Field(default_factory=dict)
     seed_path: str | None = None
+    # Only data files: the images' entrypoints also execute *.sh (and mongo *.js) from seed_path,
+    # as root in a container that does not get the workbench's hardening.
+    seed_suffixes: list[str] = Field(default_factory=lambda: [".sql", ".sql.gz"])
     health: list[str] = Field(default_factory=list)  # exec'd in the container; [] = running is enough
     caps: list[str] = Field(default_factory=list)
     connection: str = ""
@@ -25,6 +28,10 @@ class CatalogEntry(BaseModel):
         bad = set(self.caps) - ALLOWED_CAPS
         if bad:
             raise ValueError(f"catalog caps not allowed: {sorted(bad)}")
+
+
+def seed_allowed(entry: CatalogEntry, name: str) -> bool:
+    return any(name.lower().endswith(sfx) for sfx in entry.seed_suffixes)
 
 
 class Catalog(BaseModel):
@@ -39,7 +46,7 @@ def load_catalog(path: str | None = None) -> Catalog:
 
 def describe() -> str:
     """Markdown table of the catalog for the env-stage prompt."""
-    rows = ["| kind | port | seed files | connection |", "|---|---|---|---|"]
+    rows = ["| kind | port | seed files (.sql / .sql.gz) | connection |", "|---|---|---|---|"]
     for kind, e in load_catalog().services.items():
         rows.append(f"| `{kind}` | {e.port} | {'yes' if e.seed_path else 'no'} | `{e.connection}` |")
     return "\n".join(rows)

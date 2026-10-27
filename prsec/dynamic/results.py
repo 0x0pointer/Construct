@@ -85,6 +85,12 @@ class ReplayResult(BaseModel):
     env_ok: bool
     env_error: str | None = None
     fired: bool = False
+    # Why the PoC run stopped early, if it did. `incomplete`: for a reason that says nothing about the
+    # bug (transport error, timeout, template or unexpected error), unlike an expect_status mismatch
+    # or a failed extract, where the app answered differently. An incomplete run's "did not fire"
+    # is no evidence.
+    aborted: str | None = None
+    incomplete: bool = False
     entry: Literal["http", "script"] = "http"
     oracle_results: list[OracleResult] = Field(default_factory=list)
     steps: list[StepRecord] = Field(default_factory=list)

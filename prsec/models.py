@@ -50,6 +50,16 @@ class ScanRequest(BaseModel):
     base_sha: str | None = None
     installation_id: int | None = None
     reason: Literal["opened", "synchronize", "reopened", "ready_for_review", "reconcile", "manual"] = "opened"
+    debug: "ScanDebug | None" = None  # manual scans only (POST /scans); webhooks never set it
+
+
+class ScanDebug(BaseModel):
+    """Per-scan debugging, requested through the admin API."""
+
+    log_level: Literal["debug", "info"] = "debug"  # this scan's records pass at this level
+    # keep work dir + envs this long after the scan; capped at the launcher's leftover-env reaper
+    # (PRSEC_ENV_MAX_AGE_S, default 4 h), which would otherwise remove a kept env early
+    keep_minutes: int = Field(default=0, ge=0, le=4 * 60)
 
 
 class ScanStatus(StrEnum):

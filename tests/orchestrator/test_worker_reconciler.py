@@ -78,5 +78,34 @@ def test_serve_stops(monkeypatch):
 
     monkeypatch.setattr(worker.queue, "requeue_expired_leases", requeue)
     monkeypatch.setattr(worker.queue, "lease_next", lambda lease_s: None)
+    reaped = []
+    monkeypatch.setattr(worker.pipeline, "reap_kept", lambda: reaped.append(1) or 0)
     worker.serve(stop, concurrency=2, poll_s=0.01, reconcile=False)
     assert calls["requeue"] >= 3
+    assert reaped
+
+
+def test_reap_kept_destroys_scan_and_removes_only_dirs_under_work_root(tmp_path, monkeypatch, timeline):
+    from prsec.orchestrator import pipeline
+
+    monkeypatch.setattr(settings(), "work_root", tmp_path / "work")
+    kept = tmp_path / "work" / "7-abc"
+    kept.mkdir(parents=True)
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    destroyed = []
+
+    class Runner:
+        name = "fake"
+
+        def destroy_scan(self, scan_id):
+            destroyed.append(scan_id)
+
+    monkeypatch.setattr(pipeline.runner_pkg, "get_runner", lambda name: Runner(), raising=False)
+    monkeypatch.setattr(pipeline.queue, "claim_due_kept",
+                        lambda limit: [{"id": 7, "kept_dir": str(kept)}, {"id": 8, "kept_dir": str(outside)}])
+    assert pipeline.reap_kept() == 2
+    assert destroyed == [7, 8]
+    assert not kept.exists()
+    assert outside.exists()
+    assert timeline.kinds() == ["env_destroyed", "env_destroyed"]

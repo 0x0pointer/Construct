@@ -148,3 +148,42 @@ def test_manual_scan_requires_admin_token(client, calls, monkeypatch):
 def test_manual_scan_validates_body(client, monkeypatch):
     monkeypatch.setenv("PRSEC_ADMIN_TOKEN", "tok")
     assert client.post("/scans", json={"repo": "acme/api"}, headers={"X-PRSec-Admin": "tok"}).status_code == 422
+
+
+def test_manual_scan_passes_debug_through(client, calls, monkeypatch):
+    monkeypatch.setenv("PRSEC_ADMIN_TOKEN", "tok")
+    body = {"repo": "acme/api", "pr": 3, "head_sha": "e" * 40, "debug": {"log_level": "debug", "keep_minutes": 30}}
+    r = client.post("/scans", json=body, headers={"X-PRSec-Admin": "tok"})
+    assert r.status_code == 202
+    req = calls[0][0]
+    assert req.debug.log_level == "debug"
+    assert req.debug.keep_minutes == 30
+
+
+def test_manual_scan_without_debug(client, calls, monkeypatch):
+    monkeypatch.setenv("PRSEC_ADMIN_TOKEN", "tok")
+    client.post("/scans", json={"repo": "acme/api", "pr": 3, "head_sha": "e" * 40}, headers={"X-PRSec-Admin": "tok"})
+    assert calls[0][0].debug is None
+
+
+def test_manual_scan_rejects_bad_debug(client, calls, monkeypatch):
+    monkeypatch.setenv("PRSEC_ADMIN_TOKEN", "tok")
+    body = {"repo": "acme/api", "pr": 3, "head_sha": "e" * 40, "debug": {"keep_minutes": 99999}}
+    assert client.post("/scans", json=body, headers={"X-PRSec-Admin": "tok"}).status_code == 422
+    assert calls == []
+
+
+def test_webhook_never_sets_debug(client, calls):
+    post(client, pr_payload(action="synchronize"))
+    assert calls[0][0].debug is None
+
+
+def test_run_sets_up_logging(monkeypatch):
+    import uvicorn
+
+    seen = {}
+    monkeypatch.setattr(main, "setup_logging", lambda service: seen.setdefault("service", service))
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: seen.setdefault("kw", kw))
+    main.run()
+    assert seen["service"] == "api"
+    assert seen["kw"]["log_config"] is None

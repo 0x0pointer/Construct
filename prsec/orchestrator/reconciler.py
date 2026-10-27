@@ -8,6 +8,7 @@ from prsec.adapters import scm as scm_pkg
 from prsec.config import Policy, current_skills_version, load_policy, settings
 from prsec.db import queue
 from prsec.models import PRInfo, ScanRequest
+from prsec.obs.logging import setup_logging
 
 log = logging.getLogger(__name__)
 
@@ -53,5 +54,5 @@ def run_forever(stop: threading.Event, interval_s: int | None = None) -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    setup_logging("reconciler")
     print(len(reconcile_once()))

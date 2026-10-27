@@ -85,8 +85,10 @@ curl -X POST http://127.0.0.1:8080/scans \
 
 Get the head sha with `gh pr view 42 --json headRefOid -q .headRefOid`.
 
-**Step 6: look at the results.** Watch progress in the worker's output. When the scan
-finishes, open http://127.0.0.1:8081. The SARIF file is written under `./work/artifacts/`.
+**Step 6: look at the results.** Open the scan at http://127.0.0.1:8081 and follow its
+timeline live, or run `.venv/bin/prsec-trace <scan id> --follow` (see
+[Following a scan and debugging](#following-a-scan-and-debugging)). The SARIF file is written
+under `./work/artifacts/`.
 
 **Good to know:** dev mode has no sandbox and no network isolation. The agents run as you,
 on your machine, against the PR's source, so only scan repos you trust. Leave
@@ -141,6 +143,66 @@ make up          # starts everything and applies the database schema
 `make logs` shows the scan. The findings appear at `https://<your domain>/` after you log in.
 
 To stop: `make down` (data volumes are kept).
+
+### Following a scan and debugging
+
+Every scan writes a timeline as it runs: each stage with its harness, model, cost and
+status, every hypothesis with why it was kept or dropped, the environments and replays of the
+dynamic phase, each label with its reason, and the agent's own output while a stage runs.
+
+**Watch it on the dashboard.** The scan page (`/scans/<id>`) has a **Timeline** section that
+updates every 2 seconds while the scan is queued or running. The agent's output sits under
+*agent activity* for each stage, with a link to the full transcript once the stage ends.
+
+**Or follow it in a terminal.** `prsec-trace` reads the same timeline from the database:
+
+```bash
+.venv/bin/prsec-trace 42 --follow                   # path 2
+docker compose -f deploy/compose/docker-compose.yml --env-file .env \
+  exec worker prsec-trace 42 --follow               # path 3
+```
+
+`--no-agent` hides the agent's output, `--kinds triage,label,scan_finished` shows only those
+steps, and `--json` prints one raw event per line.
+
+**Search the logs.** Every log line carries the scan it belongs to (`scan_id`, plus `stage`,
+`task_id`, `hypothesis_id` and `env` where they apply). `PRSEC_LOG_FORMAT` picks `text` (the
+default) or `json`, and `PRSEC_LOG_LEVEL` picks the level (`INFO` by default). The compose
+stack logs JSON, so `jq` finds everything about one scan:
+
+```bash
+docker compose -f deploy/compose/docker-compose.yml --env-file .env \
+  logs --no-log-prefix worker api launcher | jq -cR 'fromjson? | select(.scan_id == 42)'
+```
+
+A stage's own log (the agent CLI and `prsec-stage`) is in `workbench.log` next to its output.
+
+**Debug one scan without making the whole service verbose.** `prsec-debug scan` queues a scan
+at `DEBUG` level for that scan only. With `--keep` the scan's work dir, containers and
+environments stay in place for that many minutes (at most 240, the launcher removes leftover environments after 4 hours) after it finishes, so you can
+look inside; the worker removes them afterwards.
+
+```bash
+.venv/bin/prsec-debug scan your-org/your-repo 42 <head sha> --keep 30          # path 2
+docker compose -f deploy/compose/docker-compose.yml --env-file .env \
+  exec api prsec-debug scan your-org/your-repo 42 <head sha> --keep 30         # path 3
+```
+
+It uses `PRSEC_ADMIN_TOKEN` and prints the `prsec-trace` command to follow the scan. The
+`kept` step on the timeline shows where the work dir is.
+
+**Re-run a single stage** from a kept scan, on your laptop with your own agent login:
+
+```bash
+.venv/bin/prsec-debug rerun-stage ./work/42-<token>/in/42-static_verify-H1/task.json \
+  --harness claude-code
+```
+
+It copies the stage's inputs to a new folder under the scan's `debug/` dir and never changes
+the original. It prints the status, cost and the paths to the output, transcript, live
+`events.jsonl` and `workbench.log`. `--src` points at the checked-out source when it is not
+next to the task. On a VM, copy the kept `in/<task id>` folder and the source to your laptop
+first.
 
 ### GitHub App setup
 

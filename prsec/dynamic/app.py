@@ -32,12 +32,25 @@ PROXY_HOST = "egress-proxy"
 PROXY_PORT = 3128
 SINK_HOST = "sink"
 PROXY_VARS = ("http_proxy", "https_proxy", "all_proxy", "no_proxy")
+# Never handed to the PR's install commands, app, script PoCs or command oracles: the workbench's
+# own credentials (LLM gateway key, harness tokens) and anything else that looks like a secret.
+SECRET_PREFIXES = ("PRSEC_GATEWAY", "PRSEC_HARNESS", "ANTHROPIC_", "OPENAI_", "CLAUDE", "CODEX_", "GEMINI_",
+                   "GOOGLE_", "AWS_", "AZURE_", "GITHUB_", "GH_")
+SECRET_WORDS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "PASSWD", "CREDENTIAL", "AUTH", "COOKIE", "SESSION")
 CANARY_DOMAIN = "canary.invalid"
 LOG_TAIL_BYTES = 16 * 1024
 
 
 class EnvError(RuntimeError):
     """The app could not be prepared, installed, started or made healthy."""
+
+
+def inherited(name: str) -> bool:
+    """Whether a workbench env var may be passed on to the PR's code."""
+    upper = name.upper()
+    if name.lower() in PROXY_VARS or upper.startswith(SECRET_PREFIXES):
+        return False
+    return not any(w in upper for w in SECRET_WORDS)
 
 
 def app_root_default() -> Path:
@@ -128,6 +141,26 @@ def _alive(pid: int) -> bool:
     return True
 
 
+def _group_alive(pgid: int) -> bool:
+    """Any process left in the app's process group (the leader may have exited: `cmd &`, --daemon)."""
+    _alive(pgid)  # reaps our own exited leader, so a zombie does not count
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _port_in_use(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
 def _tail(path: Path, nbytes: int = LOG_TAIL_BYTES) -> str:
     try:
         with path.open("rb") as f:
@@ -198,8 +231,9 @@ class AppRunner:
         return self._proxy
 
     def app_env(self) -> dict[str, str]:
-        """Environment of the app (and of script PoCs / command oracles): no proxy, EnvSpec.env."""
-        env = {k: v for k, v in os.environ.items() if k.lower() not in PROXY_VARS}
+        """Environment of the app (and of install commands, script PoCs, command oracles): the
+        workbench env without proxy settings and credentials (see `inherited`), plus EnvSpec.env."""
+        env = {k: v for k, v in os.environ.items() if inherited(k)}
         env.update(self.spec.env)
         return env
 
@@ -284,7 +318,7 @@ class AppRunner:
             if self.probe():
                 return
             pid = self.pid()
-            if pid is None or not _alive(pid):
+            if pid is None or not _group_alive(pid):
                 raise EnvError(f"app exited before it became healthy\n{self.logs(40)}")
             time.sleep(0.3)
         raise EnvError(f"app not healthy on {self.base_url}{self.spec.health.path} after {timeout}s\n{self.logs(40)}")
@@ -299,6 +333,8 @@ class AppRunner:
             return current
         if current.running:
             self.stop()
+        if _port_in_use(self.spec.port):  # a probe would reach that process, not the app started here
+            raise EnvError(f"port {self.spec.port} is already in use by a process prsec-env did not start")
         self.install()
         self.start(canaries)
         self.wait_healthy()
@@ -311,13 +347,14 @@ class AppRunner:
             return None
 
     def stop(self, grace_s: float = 10.0) -> None:
+        """Signal the whole process group, also when its leader already exited."""
         pid = self.pid()
-        if pid is not None and _alive(pid):
+        if pid is not None and _group_alive(pid):
             self._signal(pid, signal.SIGTERM)
             deadline = time.monotonic() + grace_s
-            while _alive(pid) and time.monotonic() < deadline:
+            while _group_alive(pid) and time.monotonic() < deadline:
                 time.sleep(0.1)
-            if _alive(pid):
+            if _group_alive(pid):
                 self._signal(pid, signal.SIGKILL)
         if self._proc is not None:
             try:
@@ -338,14 +375,16 @@ class AppRunner:
                 pass
 
     def reset(self) -> None:
-        """Stop the app and throw away the app copy (fresh DB files etc.); the next `up` starts clean."""
+        """Stop the app, throw away the app copy (fresh DB files etc.) and the canaries; the next `up`
+        starts clean, with new canaries, so an earlier run's sink hits cannot satisfy a later one."""
         self.stop()
         shutil.rmtree(self.app_src, ignore_errors=True)
         self._install_marker().unlink(missing_ok=True)
+        canaries_file(self.app_root).unlink(missing_ok=True)
 
     def status(self) -> AppStatus:
         pid = self.pid()
-        running = pid is not None and _alive(pid)
+        running = pid is not None and _group_alive(pid)
         return AppStatus(running=running, healthy=running and self.probe(), pid=pid if running else None,
                          port=self.spec.port, url=self.base_url)
 

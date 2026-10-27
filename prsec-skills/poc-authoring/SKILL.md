@@ -67,7 +67,7 @@ Fields (YAML or JSON):
 | `hypothesis_id` | the hypothesis id (`H1`) |
 | `description` | one or two sentences: who does what, and what proves it |
 | `users.<name>` | `vars` (credentials, known ids), `headers` sent on every request as that user, `login` steps run before `steps`; cookies are kept per user |
-| `steps[]` | `name` (unique, `[A-Za-z][A-Za-z0-9_-]*`), `as` (user), `method`, `path` (on the app; absolute URLs only to canary hosts), `headers`, `query`, at most one of `json` / `form` / `body`, `expect_status` (abort the run, not fired, if the status differs), `extract` |
+| `steps[]` | `name` (unique across `steps` and every user's `login`, `[A-Za-z][A-Za-z0-9_-]*`, not `script`), `as` (user), `method`, `path` (a path on the app; absolute URLs are refused, and redirects are not followed: a `302` is the step's response, add a step for the target if you need it), `headers`, `query`, at most one of `json` / `form` / `body`, `expect_status` (abort the run, not fired, if the status differs), `extract` |
 | `extract.<var>` | exactly one of `json` (dotted path `items.0.id`), `header`, `regex` (group 1); sets `${USER.<var>}` for the step's user, `${USERS.<user>.<var>}` and `${VARS.<var>}` |
 | `oracles[]` | 1-10 of `response_contains`, `response_status`, `json_compare`, `canary_hit`, `command` |
 | `fires_when` | `all` (default, prefer it) or `any` |

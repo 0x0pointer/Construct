@@ -100,6 +100,25 @@ def test_forward_head_is_origin_form_and_drops_proxy_headers():
     assert head.endswith("Connection: close\r\n\r\n")
 
 
+def test_forward_head_always_sends_the_vetted_host():
+    req = e.parse_request(b"GET http://pypi.org/simple/ HTTP/1.1\r\nhost: PyPI.org.\r\nAccept: */*")
+    head = e.forward_head(req).decode()
+    assert head.count("ost:") == 1
+    assert "Host: pypi.org\r\n" in head
+
+
+def test_host_header_naming_another_site_is_refused():
+    req = e.parse_request(b"GET http://pypi.org/x?d=1 HTTP/1.1\r\nHost: attacker-svc.example")
+    with pytest.raises(e.Denied) as exc:
+        e.check_host_header(req)
+    assert exc.value.status == 400
+
+
+def test_matching_host_header_is_accepted():
+    req = e.parse_request(b"GET http://pypi.org/x HTTP/1.1\r\nHost: pypi.org:80")
+    assert e.check_host_header(req) is None
+
+
 # ------------------------------------------------------------------- vetting
 
 
@@ -224,7 +243,7 @@ def test_connection_limit_returns_503(raw_http):
     async def body(port):
         return await raw_http(port, b"CONNECT pypi.org:443 HTTP/1.1\r\n\r\n")
 
-    resp, connected, _ = asyncio.run(_run_live(_echo, body, max_conns=0))
+    resp, connected, _ = asyncio.run(_run_live(_echo, body, max_conns=0, queue_s=0))
     assert resp.startswith(b"HTTP/1.1 503")
     assert connected == []
 
@@ -258,3 +277,56 @@ def test_connect_failure_is_502(raw_http):
             proxy.close()
 
     assert asyncio.run(run()).startswith(b"HTTP/1.1 502")
+
+
+def test_mismatched_host_is_refused_live(raw_http):
+    async def body(port):
+        return await raw_http(port, b"GET http://pypi.org/x HTTP/1.1\r\nHost: attacker-svc.example\r\n\r\n")
+
+    resp, connected, _ = asyncio.run(_run_live(_echo, body))
+    assert resp.startswith(b"HTTP/1.1 400")
+    assert connected == []
+
+
+def test_per_client_limit_returns_503(raw_http):
+    async def body(port):
+        return await raw_http(port, b"CONNECT pypi.org:443 HTTP/1.1\r\n\r\n")
+
+    resp, connected, _ = asyncio.run(_run_live(_echo, body, max_per_client=0))
+    assert resp.startswith(b"HTTP/1.1 503")
+    assert connected == []
+
+
+def test_slots_are_released_per_client():
+    proxy, _ = _proxy()
+
+    async def run():
+        await proxy._admit("10.0.0.5")
+        await proxy._admit("10.0.0.5")
+        proxy._release("10.0.0.5")
+        proxy._release("10.0.0.5")
+
+    asyncio.run(run())
+    assert proxy.per_client == {}
+    assert proxy.active == 0
+
+
+def test_tunnel_has_an_absolute_lifetime():
+    async def body(port):
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        writer.write(b"CONNECT pypi.org:443 HTTP/1.1\r\n\r\n")
+        await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 5)
+        sent = 0
+        try:
+            for _ in range(40):  # keeps the tunnel busy, well inside idle_s, for 2 s
+                writer.write(b"x")
+                await writer.drain()
+                sent += 1
+                await asyncio.sleep(0.05)
+        except ConnectionError:
+            pass
+        writer.close()
+        return sent
+
+    sent, _, _ = asyncio.run(_run_live(_echo, body, idle_s=5, lifetime_s=0.2))
+    assert sent < 40
