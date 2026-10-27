@@ -1,8 +1,8 @@
 [![Quality gate status](https://sonarcloud.io/api/project_badges/measure?project=0x0pointer_Construct&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=0x0pointer_Construct) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=0x0pointer_Construct&metric=coverage)](https://sonarcloud.io/summary/new_code?id=0x0pointer_Construct) [![Security issues](https://sonarcloud.io/api/project_badges/measure?project=0x0pointer_Construct&metric=software_quality_security_issues)](https://sonarcloud.io/summary/new_code?id=0x0pointer_Construct)
 
-# PRSec
+# Construct
 
-PRSec is an agentic, harness-agnostic security scanner for pull requests. An org-level
+Construct is an agentic, harness-agnostic security scanner for pull requests. An org-level
 GitHub App sends `pull_request` events to a central service. The service runs a small
 pipeline of LLM-agent stages on each PR: **triage → hypothesise → static verify → skeptic**.
 The stages run inside isolated workbench containers. The result is evidence-backed findings,
@@ -66,7 +66,7 @@ Create the App under the organisation (Settings → Developer settings → GitHu
 - **Subscribe to events:** **Pull request**
 - Then generate a private key. Save it as `deploy/compose/secrets/github-app.pem`, or point
   `PRSEC_GITHUB_PRIVATE_KEY_FILE` at it. Put the App ID in `PRSEC_GITHUB_APP_ID`.
-- Install the App on the org, for all repos or a selected set. PRSec writes nothing back to GitHub.
+- Install the App on the org, for all repos or a selected set. Construct writes nothing back to GitHub.
 
 ## Quickstart on one VM
 
