@@ -1,3 +1,5 @@
+[![Quality gate status](https://sonarcloud.io/api/project_badges/measure?project=0x0pointer_Construct&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=0x0pointer_Construct) [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=0x0pointer_Construct&metric=coverage)](https://sonarcloud.io/summary/new_code?id=0x0pointer_Construct) [![Security issues](https://sonarcloud.io/api/project_badges/measure?project=0x0pointer_Construct&metric=software_quality_security_issues)](https://sonarcloud.io/summary/new_code?id=0x0pointer_Construct)
+
 # PRSec
 
 PRSec is an agentic, harness-agnostic security scanner for pull requests. An org-level
