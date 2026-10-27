@@ -33,6 +33,50 @@
       {% if data.guards %}<ul>{% for g in data.guards %}<li>{{ g }}</li>{% endfor %}</ul>
       {% else %}<p class="muted">No guards recorded.</p>{% endif %}
     </div>
+    {% if dyn %}
+    <div class="panel" id="dynamic">
+      <h2 style="margin-top:0">Dynamic validation</h2>
+      <dl class="kv">
+        <dt>Outcome</dt><dd><span class="badge dyn-{{ dyn.outcome }}">{{ dyn.outcome }}</span></dd>
+        {% if dyn.reason %}<dt>Reason</dt><dd style="white-space: pre-wrap">{{ dyn.reason }}</dd>{% endif %}
+        {% if dyn.entry %}<dt>Entry</dt><dd>{{ 'HTTP request' if dyn.entry == 'http' else 'direct call (script)' }}</dd>{% endif %}
+        <dt>Head replays</dt><dd>{{ dyn.head_fired }}/{{ dyn.head_runs }} fired</dd>
+        <dt>Base replay</dt><dd>{% if dyn.base_fired is none %}not run{% elif dyn.base_fired %}fired (pre-existing){% else %}did not fire (introduced){% endif %}</dd>
+        {% if dyn.evidence_uri %}<dt>Evidence</dt><dd><a href="/findings/{{ f.id }}/dynamic-evidence">replay bundle</a></dd>{% endif %}
+      </dl>
+      {% if dyn.replays %}
+      <h3>Replay runs</h3>
+      <table>
+        <thead><tr><th>Run</th><th>Target</th><th>Env</th><th>Fired</th><th class="num">Duration</th></tr></thead>
+        <tbody>
+        {% for r in dyn.replays %}
+          <tr>
+            <td><code>{{ r.run_id }}</code></td>
+            <td>{{ r.target }}</td>
+            <td>{% if r.env_ok %}ok{% else %}<span title="{{ r.env_error or '' }}">failed</span>{% endif %}</td>
+            <td>{{ 'yes' if r.fired else 'no' }}</td>
+            <td class="num">{{ r.duration_s | dur }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% for r in dyn.replays %}
+      <details>
+        <summary><code>{{ r.run_id }}</code> details</summary>
+        {% if r.env_error %}<p>Environment error:</p><pre>{{ r.env_error }}</pre>{% endif %}
+        {% if r.oracle_results %}
+        <p>Oracles</p>
+        <ul>{% for o in r.oracle_results %}<li>#{{ o.index }} <code>{{ o.type }}</code>: {{ 'passed' if o.passed else 'failed' }}{% if o.detail %} · {{ o.detail }}{% endif %}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if r.steps %}<p>Steps</p><pre>{{ r.steps | tojson_pretty }}</pre>{% endif %}
+        {% if r.sink_hits %}<p>Sink hits</p><pre>{{ r.sink_hits | tojson_pretty }}</pre>{% endif %}
+        {% if r.app_log_tail %}<p>App log (tail)</p><pre>{{ r.app_log_tail }}</pre>{% endif %}
+      </details>
+      {% endfor %}
+      {% endif %}
+      {% if dyn.poc_yaml %}<h3>PoC</h3><pre>{{ dyn.poc_yaml }}</pre>{% endif %}
+    </div>
+    {% endif %}
   </div>
   <div>
     <div class="panel" id="triage-panel">{% include "_triage.html" %}</div>

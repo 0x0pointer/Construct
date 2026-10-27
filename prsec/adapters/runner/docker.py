@@ -2,6 +2,10 @@
 
 The scan network is an internal bridge (no route out); the LLM gateway container is attached to it,
 so the gateway is the only reachable service. Optional gVisor via PRSEC_DOCKER_RUNTIME=runsc.
+
+Phase 2 dynamic environments get their own internal network (prsec-scan-<id>-<env>) with a sink
+container (DNS for the workbench, catch-all HTTP/TLS recorder), catalog services, and optionally
+the LLM gateway and the egress proxy attached.
 """
 from __future__ import annotations
 
@@ -15,6 +19,30 @@ from typing import Any
 
 from prsec.adapters.protocols import WorkbenchSpec
 from prsec.adapters.runner.common import GRACE_S, RESULT_FILE, load_result, tail, write_task
+from prsec.adapters.runner.env import (
+    EGRESS_ALIAS,
+    LABEL_ENV,
+    LABEL_ENV_DIR,
+    LABEL_LLM,
+    REPLAY_COMMAND,
+    REPLAY_ENTRYPOINT,
+    RESOLV_FILE,
+    SINK_ALIAS,
+    SINK_MOUNT,
+    check_env_name,
+    check_env_request,
+    env_network_name,
+    load_replay_result,
+    replay_result_path,
+    replay_run_id,
+    sink_dir,
+    write_hosts,
+    write_resolv,
+    write_stubs,
+)
+from prsec.config import settings
+from prsec.dynamic.catalog import CatalogEntry, load_catalog
+from prsec.dynamic.results import APP_DIR, EnvInfo, EnvRequest, ReplayResult, ServiceRequest
 from prsec.models import StageResult
 
 log = logging.getLogger(__name__)
@@ -23,6 +51,9 @@ LOG_FILE = "workbench.log"
 NONROOT = "65532:65532"
 LABEL_SCAN = "prsec.scan_id"
 LABEL_TASK = "prsec.task_id"
+LABEL_SERVICE = "prsec.service"
+SINK_COMMAND = ["prsec-sink", "--data-dir", SINK_MOUNT]
+HARDENED = {"cap_drop": ["ALL"], "security_opt": ["no-new-privileges:true"]}
 ENTRYPOINT = ["prsec-stage"]  # set explicitly: per-repo workbench images need not declare it
 
 
@@ -58,6 +89,7 @@ def _give_to_nonroot(d: Path, uid_remapped: bool) -> None:
 
 class DockerRunner:
     name = "docker"
+    supports_envs = True
 
     def __init__(self, client: Any = None, grace_s: float = GRACE_S):
         self._client = client
@@ -69,6 +101,13 @@ class DockerRunner:
         self.cpus = float(os.environ.get("PRSEC_DOCKER_CPUS", "2"))
         self.pids_limit = int(os.environ.get("PRSEC_DOCKER_PIDS", "512"))
         self.tmp_size = os.environ.get("PRSEC_DOCKER_TMP_SIZE", "1g")
+        # phase 2: per-env infrastructure
+        self.egress_container = os.environ.get("PRSEC_EGRESS_CONTAINER", "prsec-egress-proxy")
+        self.sink_image = os.environ.get("PRSEC_SINK_IMAGE") or os.environ.get("PRSEC_IMAGE") or "prsec/prsec:latest"
+        self.service_mem = os.environ.get("PRSEC_SERVICE_MEM", "1g")
+        self.service_pids = int(os.environ.get("PRSEC_SERVICE_PIDS", "512"))
+        self.service_health_s = float(os.environ.get("PRSEC_SERVICE_HEALTH_S", "120"))
+        self.poll_s = 1.0
 
     @property
     def client(self) -> Any:
@@ -104,21 +143,27 @@ class DockerRunner:
         return name
 
     def destroy_scan(self, scan_id: int) -> None:
-        from docker.errors import APIError, NotFound
+        from docker.errors import NotFound
 
         for c in self.client.containers.list(all=True, filters={"label": f"{LABEL_SCAN}={scan_id}"}):
-            try:
-                c.remove(force=True)
-            except (NotFound, APIError):
-                pass
+            _remove_container(c)
+        for net in self.client.networks.list(filters={"label": [f"{LABEL_SCAN}={scan_id}", LABEL_ENV]}):
+            self._remove_network(net, (self.gateway_container, self.egress_container))
         try:
             net = self.client.networks.get(network_name(scan_id))
         except NotFound:
             return
-        try:
-            net.disconnect(self.gateway_container, force=True)
-        except (NotFound, APIError):
-            pass
+        self._remove_network(net, (self.gateway_container,))
+
+    def _remove_network(self, net: Any, attached: tuple[str, ...]) -> None:
+        """Detach the shared infrastructure containers, then remove the network."""
+        from docker.errors import APIError, NotFound
+
+        for name in attached:
+            try:
+                net.disconnect(name, force=True)
+            except (NotFound, APIError):
+                pass
         try:
             net.remove()
         except NotFound:
@@ -176,13 +221,25 @@ class DockerRunner:
         }
         if entrypoint is not None:  # explicit, so the image's own ENTRYPOINT is never prepended twice
             kw["entrypoint"] = entrypoint
-        if spec.network:
+        if spec.env_name:
+            self._join_env(spec, kw)
+        elif spec.network:
             kw["network"] = spec.network
         else:
             kw["network_mode"] = "none"
         if self.runtime:
             kw["runtime"] = self.runtime
         return kw
+
+    def _join_env(self, spec: WorkbenchSpec, kw: dict[str, Any]) -> None:
+        """Workbench inside a dynamic env: env network, the sink as DNS, app_dir writable at /work/app."""
+        env_dir = self._env_label(spec.scan_id, check_env_name(spec.env_name or ""), LABEL_ENV_DIR)
+        if not env_dir:
+            raise RuntimeError(f"dynamic env {spec.env_name!r} of scan {spec.scan_id} does not exist")
+        kw["network"] = env_network_name(spec.scan_id, spec.env_name or "")
+        kw["volumes"][str(Path(env_dir) / RESOLV_FILE)] = {"bind": "/etc/resolv.conf", "mode": "ro"}
+        if spec.app_dir is not None:
+            kw["volumes"][str(spec.app_dir)] = {"bind": APP_DIR, "mode": "rw"}
 
     def _uid_remapped(self) -> bool:
         """True when the daemon maps container uids to other host uids (userns-remap or rootless)."""
@@ -195,7 +252,10 @@ class DockerRunner:
     def _prepare_dirs(self, spec: WorkbenchSpec) -> None:
         nonroot = self._user() == NONROOT
         remapped = nonroot and self._uid_remapped()
-        for d in (Path(spec.in_dir), Path(spec.out_dir), Path(spec.out_dir) / ".home"):
+        dirs = [Path(spec.in_dir), Path(spec.out_dir), Path(spec.out_dir) / ".home"]
+        if spec.app_dir is not None:
+            dirs.append(Path(spec.app_dir))
+        for d in dirs:
             d.mkdir(parents=True, exist_ok=True)
             if nonroot:
                 _give_to_nonroot(d, remapped)
@@ -244,3 +304,202 @@ class DockerRunner:
             t, Path(spec.out_dir), killed=killed, exit_code=code, log_tail=tail(logs),
             duration_s=time.monotonic() - started,
         )
+
+    def run_replay(self, spec: WorkbenchSpec) -> ReplayResult:
+        """Run `prsec-replay /work/in/replay.json` (written by the orchestrator) in the spec's env."""
+        run_id = replay_run_id(spec.in_dir, spec.task.task_id)
+        replay_result_path(spec.out_dir).unlink(missing_ok=True)
+        refusal = self.replay_refusal(spec)
+        if refusal:
+            return ReplayResult(run_id=run_id, env_ok=False, env_error=refusal)
+        try:
+            code, logs, killed = self.run_container(
+                spec, REPLAY_COMMAND, spec.task.limits.wall_clock_s + self.grace_s, entrypoint=REPLAY_ENTRYPOINT)
+        except Exception as e:
+            code, logs, killed = None, f"failed to run replay container: {type(e).__name__}: {e}", False
+        Path(spec.out_dir).mkdir(parents=True, exist_ok=True)
+        (Path(spec.out_dir) / LOG_FILE).write_text(logs)
+        return load_replay_result(spec.out_dir, run_id, exit_code=code, killed=killed, log_tail=tail(logs))
+
+    def replay_refusal(self, spec: WorkbenchSpec) -> str | None:
+        """Why a replay may not run in this env, or None. Replays are agent-free: no LLM gateway."""
+        if not spec.env_name:
+            return "replay needs a dynamic env"
+        if self.env_has_llm(spec.scan_id, spec.env_name):
+            return f"replay env {spec.env_name!r} has the LLM gateway attached"
+        return None
+
+    # -------------------------------------------------------- dynamic envs
+
+    def _env_label(self, scan_id: int, env_name: str, label: str) -> str | None:
+        from docker.errors import NotFound
+
+        try:
+            net = self.client.networks.get(env_network_name(scan_id, env_name))
+        except NotFound:
+            return None
+        return (net.attrs.get("Labels") or {}).get(label)
+
+    def env_has_llm(self, scan_id: int, env_name: str) -> bool:
+        return self._env_label(scan_id, check_env_name(env_name), LABEL_LLM) == "1"
+
+    def create_env(self, scan_id: int, env_name: str, req: EnvRequest) -> EnvInfo:
+        """Fresh env: internal network, sink (started first), catalog services, gateway/proxy if asked."""
+        check_env_name(env_name)
+        catalog = load_catalog()
+        req = check_env_request(req, catalog, settings().work_root)
+        self.destroy_env(scan_id, env_name)
+        try:
+            return self._build_env(scan_id, env_name, req, {s.name: catalog.services[s.kind] for s in req.services})
+        except Exception:
+            self.destroy_env(scan_id, env_name)
+            raise
+
+    def destroy_env(self, scan_id: int, env_name: str) -> None:
+        from docker.errors import NotFound
+
+        check_env_name(env_name)
+        labels = [f"{LABEL_SCAN}={scan_id}", f"{LABEL_ENV}={env_name}"]
+        for c in self.client.containers.list(all=True, filters={"label": labels}):
+            _remove_container(c)
+        try:
+            net = self.client.networks.get(env_network_name(scan_id, env_name))
+        except NotFound:
+            return
+        self._remove_network(net, (self.gateway_container, self.egress_container))
+
+    def _build_env(self, scan_id: int, env_name: str, req: EnvRequest, entries: dict[str, CatalogEntry]) -> EnvInfo:
+        network = env_network_name(scan_id, env_name)
+        labels = {LABEL_SCAN: str(scan_id), LABEL_ENV: env_name}
+        net = self.client.networks.create(network, driver="bridge", internal=True, labels={
+            **labels, LABEL_ENV_DIR: req.env_dir, LABEL_LLM: "1" if req.llm else "0", "prsec": "env-network"})
+        self._prepare_sink_dir(req)
+        sink_ip = _ip_on(self._start_sink(network, labels, req), network)
+        hosts = {SINK_ALIAS: sink_ip}
+        write_hosts(req.env_dir, hosts)
+        write_resolv(req.env_dir, sink_ip)
+        started = {s.name: self._start_service(network, labels, s, entries[s.name]) for s in req.services}
+        hosts.update({name: _ip_on(c, network) for name, c in started.items()})
+        hosts.update(self._attach_infra(net, network, req))
+        write_hosts(req.env_dir, hosts)
+        status = self._wait_healthy({name: (c, entries[name].health) for name, c in started.items()})
+        return EnvInfo(network=network, sink_ip=sink_ip, hosts=hosts, services=status)
+
+    def _prepare_sink_dir(self, req: EnvRequest) -> None:
+        d = sink_dir(req.env_dir)
+        d.mkdir(parents=True, exist_ok=True)
+        if self._user() == NONROOT:
+            _give_to_nonroot(d, self._uid_remapped())
+        write_stubs(req.env_dir, req)
+
+    def _endpoint(self, network: str, aliases: list[str]) -> dict[str, Any]:
+        return {network: self.client.api.create_endpoint_config(aliases=aliases)}
+
+    def _start_sink(self, network: str, labels: dict[str, str], req: EnvRequest) -> Any:
+        return self.client.containers.run(
+            image=self.sink_image, command=SINK_COMMAND, detach=True,
+            name=f"prsec-sink-{labels[LABEL_SCAN]}-{labels[LABEL_ENV]}", labels={**labels, LABEL_SERVICE: SINK_ALIAS},
+            user=self._user(), environment={"PRSEC_SINK_DIR": SINK_MOUNT},
+            volumes={str(sink_dir(req.env_dir)): {"bind": SINK_MOUNT, "mode": "rw"}},
+            read_only=True, tmpfs={"/tmp": "rw,nosuid,nodev,size=64m"},  # NOSONAR(S5443) private per-container tmpfs
+            sysctls={"net.ipv4.ip_unprivileged_port_start": "0"},  # DNS :53, HTTP :80, TLS :443 as non-root
+            pids_limit=128, mem_limit="256m", memswap_limit="256m", init=True,
+            network=network, networking_config=self._endpoint(network, [SINK_ALIAS]), **HARDENED,
+        )
+
+    def _start_service(self, network: str, labels: dict[str, str], s: ServiceRequest, entry: CatalogEntry) -> Any:
+        """A catalog service: image, env, caps and seed mount come from the catalog entry only."""
+        kw: dict[str, Any] = {
+            "image": entry.image, "detach": True, "environment": dict(entry.env),
+            "name": f"prsec-svc-{labels[LABEL_SCAN]}-{labels[LABEL_ENV]}-{s.name}",
+            "labels": {**labels, LABEL_SERVICE: s.name}, "cap_add": list(entry.caps),
+            "pids_limit": self.service_pids, "mem_limit": self.service_mem, "memswap_limit": self.service_mem,
+            "network": network, "networking_config": self._endpoint(network, [s.name]), **HARDENED,
+        }
+        if s.seed_dir and entry.seed_path:
+            kw["volumes"] = {s.seed_dir: {"bind": entry.seed_path, "mode": "ro"}}
+        if self.runtime:
+            kw["runtime"] = self.runtime
+        return self.client.containers.run(**kw)
+
+    def _attach_infra(self, net: Any, network: str, req: EnvRequest) -> dict[str, str]:
+        """Attach the LLM gateway (agent envs) and the egress proxy (package installs) when asked."""
+        hosts: dict[str, str] = {}
+        if req.llm:
+            hosts[self.gateway_alias] = self._attach(net, network, self.gateway_container, self.gateway_alias)
+        if req.packages:
+            try:
+                hosts[EGRESS_ALIAS] = self._attach(net, network, self.egress_container, EGRESS_ALIAS)
+            except RuntimeError as e:  # installs fail visibly in the env stage; the app may not need any
+                log.warning("%s", e)
+        return hosts
+
+    def _attach(self, net: Any, network: str, container: str, alias: str) -> str:
+        from docker.errors import APIError, NotFound
+
+        try:
+            net.connect(container, aliases=[alias])
+        except NotFound:
+            raise RuntimeError(f"container {container!r} not found; cannot attach it to {network}") from None
+        except APIError as e:
+            if "already exists" not in str(e) and "already attached" not in str(e):
+                raise
+        return _ip_on(self.client.containers.get(container), network)
+
+    def _wait_healthy(self, started: dict[str, tuple[Any, list[str]]]) -> dict[str, str]:
+        """Exec each service's health command until it succeeds; never fatal, reported per service."""
+        status: dict[str, str] = {}
+        pending = dict(started)
+        deadline = time.monotonic() + self.service_health_s
+        while pending:
+            for name, (c, health) in list(pending.items()):
+                result = _probe(c, health)
+                if result is not None:
+                    status[name] = result
+                    del pending[name]
+            if not pending or time.monotonic() >= deadline:
+                break
+            time.sleep(self.poll_s)
+        status.update({name: f"unhealthy: not healthy after {self.service_health_s:.0f}s" for name in pending})
+        return status
+
+
+def _remove_container(c: Any) -> None:
+    """Force-remove; env containers also drop their anonymous volumes (database data dirs)."""
+    from docker.errors import APIError, NotFound
+
+    try:
+        if LABEL_ENV in (c.labels or {}):
+            c.remove(force=True, v=True)
+        else:
+            c.remove(force=True)
+    except (NotFound, APIError):
+        pass
+
+
+def _ip_on(container: Any, network: str) -> str:
+    container.reload()
+    nets = (container.attrs.get("NetworkSettings") or {}).get("Networks") or {}
+    ip = (nets.get(network) or {}).get("IPAddress")
+    if not ip:
+        raise RuntimeError(f"container {container.name} has no address on {network}")
+    return str(ip)
+
+
+def _probe(c: Any, health: list[str]) -> str | None:
+    """'healthy' / 'unhealthy: <why>' when decided, None to try again."""
+    from docker.errors import APIError, NotFound
+
+    try:
+        c.reload()
+        if c.status in ("exited", "dead"):
+            return f"unhealthy: container {c.status}"
+        if c.status != "running":
+            return None
+        if not health:
+            return "healthy"
+        return "healthy" if c.exec_run(health).exit_code == 0 else None
+    except NotFound:
+        return "unhealthy: container gone"
+    except APIError:  # e.g. exec while the container restarts: try again
+        return None

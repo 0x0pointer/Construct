@@ -85,3 +85,14 @@ def test_runaway_entrypoint_is_killed(tmp_path):
     res = runner.run_workbench(spec_for(tmp_path, wall_clock_s=1))
     assert res.status == StageStatus.timeout
     assert res.duration_s < 10
+
+
+def test_local_runner_has_no_dynamic_envs(tmp_path):
+    from prsec.dynamic.results import EnvRequest
+
+    runner = LocalRunner()
+    with pytest.raises(NotImplementedError, match="runner_unsupported"):
+        runner.create_env(7, "h1", EnvRequest(env_dir=str(tmp_path)))
+    runner.destroy_env(7, "h1")  # no-op
+    with pytest.raises(NotImplementedError, match="runner_unsupported"):
+        runner.run_replay(spec_for(tmp_path))

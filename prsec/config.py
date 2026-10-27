@@ -91,6 +91,18 @@ class StagePolicy(BaseModel):
     max_turns: int | None = None
 
 
+class DynamicPolicy(BaseModel):
+    """Phase 2. Dynamic validation runs for static survivors (plausible / confirmed_static)."""
+
+    enabled: bool = True
+    max_hypotheses: int = 3  # per scan, highest severity first
+    min_severity: str = "medium"
+    replay_runs: int = 2  # head replays; all must fire for 'reproduced'
+    base_replay: bool = True  # one replay on base_sha -> introduced true/false
+    replay_timeout_s: int = 900
+    concurrency: int = 2
+
+
 class Experiment(BaseModel):
     stage: str
     harnesses: list[str]
@@ -114,6 +126,7 @@ class Policy(BaseModel):
     scan_forks: bool = False
     experiments: list[Experiment] = Field(default_factory=list)
     repos: dict[str, RepoOverride] = Field(default_factory=dict)  # key: owner/name (glob allowed)
+    dynamic: DynamicPolicy = Field(default_factory=DynamicPolicy)
 
     def stage(self, stage: str, repo: str | None = None) -> StagePolicy:
         base = self.defaults[stage]

@@ -1,6 +1,7 @@
 """LocalRunner: runs the stage entrypoint as a host subprocess (dev mode, conformance suite).
 
-No network isolation: the harness reaches whatever the host reaches.
+No network isolation: the harness reaches whatever the host reaches. Phase 2 dynamic environments
+are not supported (the orchestrator skips dynamic validation with reason `runner_unsupported`).
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from pathlib import Path, PurePosixPath
 import prsec
 from prsec.adapters.protocols import WorkbenchSpec
 from prsec.adapters.runner.common import GRACE_S, RESULT_FILE, load_result, tail, write_task
+from prsec.dynamic.results import EnvInfo, EnvRequest, ReplayResult
 from prsec.models import StageResult, StageTask
 
 log = logging.getLogger(__name__)
@@ -53,6 +55,7 @@ def host_task(spec: WorkbenchSpec) -> StageTask:
 
 class LocalRunner:
     name = "local"
+    supports_envs = False  # no containers: create_env/run_replay raise NotImplementedError
 
     def __init__(self, python: str | None = None, grace_s: float = GRACE_S):
         self.python = python or sys.executable
@@ -64,6 +67,15 @@ class LocalRunner:
 
     def destroy_scan(self, scan_id: int) -> None:
         log.debug("LocalRunner has nothing to tear down (scan %s)", scan_id)
+
+    def create_env(self, scan_id: int, env_name: str, req: EnvRequest) -> EnvInfo:
+        raise NotImplementedError("runner_unsupported")
+
+    def destroy_env(self, scan_id: int, env_name: str) -> None:
+        log.debug("LocalRunner has no dynamic envs (scan %s, env %s)", scan_id, env_name)
+
+    def run_replay(self, spec: WorkbenchSpec) -> ReplayResult:
+        raise NotImplementedError("runner_unsupported")
 
     def _env(self, spec: WorkbenchSpec) -> dict[str, str]:
         env = dict(os.environ)

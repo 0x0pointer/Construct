@@ -12,6 +12,9 @@ cases/<case-id>/
   diff.patch       # unified diff, paths a/<file> b/<file>, relative to repo/
   repo/            # the tiny repository at the PR head (what the agent reads)
   expected.json    # labels, validated against expected.schema.json
+  reference/       # optional, dynamic cases only; never shown to the agent:
+    envspec.json   #   an EnvSpec that starts repo/ (validated against prsec.dynamic.envspec.EnvSpec)
+    poc.yaml       #   a PoC that fires on head and not on base (validated against prsec.dynamic.poc.PoC)
 ```
 
 `repo/` is the **head** state. `diff.patch` must be the exact diff from base to head, so that
@@ -40,6 +43,15 @@ inside `sink_lines`. Any reported finding that matches nothing is counted as a f
 In phase 1 (static only) the best possible label is `likely`; list `reproduced` as well once a
 case is meant to be validated dynamically.
 
+## Dynamic cases
+
+A case meant to be reproduced dynamically lists `reproduced` in `labels`, carries the tag
+`dynamic`, and ships `reference/envspec.json` and `reference/poc.yaml`. The repository must be
+startable with nothing but its own files and the package registry: a `requirements.txt` /
+`package.json`, a sqlite or catalog-service schema, and a seed script that creates the users the
+PoC needs. The reference PoC must fire on `repo/` and must not fire on the base (reverse-applied
+diff); the reference is what an eval run compares a failed agent attempt against.
+
 ## Adding a case
 
 1. Start from a real PR (or a false positive reported by AppSec triage in the dashboard). Strip
@@ -58,6 +70,8 @@ case is meant to be validated dynamically.
 
 | Case | Expectation |
 |---|---|
-| [sqli-new-endpoint](cases/sqli-new-endpoint/expected.json) | `full` triage; `sqli` at `app.py` 35-37, label `likely` |
+| [sqli-new-endpoint](cases/sqli-new-endpoint/expected.json) | `full` triage; `sqli` at `app.py` 35-37, label `likely` (or `reproduced` once dynamic) |
 | [sqli-parameterised](cases/sqli-parameterised/expected.json) | same feature, bound parameters: any `sqli` hypothesis must be `refuted` (known false positive) |
 | [css-only](cases/css-only/expected.json) | `skip` |
+| [idor-two-users](cases/idor-two-users/expected.json) | `idor` at `app.py` 44-46; reproduced by alice reading bob's order (two seeded users) |
+| [negative-quantity](cases/negative-quantity/expected.json) | `value-tampering` at `app.py` 57-61; reproduced by a `json_compare` on a negative cart total |

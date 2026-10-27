@@ -7,6 +7,12 @@
 # launcher through the Docker API; it attaches `prsec-llm-gateway` to each one so the
 # gateway is the only thing a workbench can reach. The launcher is the only service with
 # the Docker socket; the worker asks it to run workbenches over the private `launcher` network.
+#
+# Phase 2 dynamic environments (prsec-scan-<id>-<env>, internal) are also created by the
+# launcher: a per-env sink container (the prsec image running prsec-sink) plus allowlisted
+# mock services from prsec/dynamic/catalog.yaml, which ships inside the prsec image. The
+# launcher attaches `prsec-egress-proxy` (package registries only) to envs that install
+# packages, and the gateway to envs where an agent runs; replays never get the gateway.
 
 name: prsec
 
@@ -202,6 +208,9 @@ services:
       PRSEC_WORK_ROOT: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/work
       PRSEC_SKILLS_DIR: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/skills/current
       PRSEC_HARNESS_ROOT: ${PRSEC_HOST_ROOT:-/var/lib/prsec}/harness
+      # phase 2: the per-env sink runs the prsec image itself; the egress proxy is attached by name.
+      PRSEC_SINK_IMAGE: ${PRSEC_IMAGE:-prsec/prsec:latest}
+      PRSEC_EGRESS_CONTAINER: prsec-egress-proxy
     # Docker group of the host socket, so the non-root launcher can use the Docker API.
     group_add: ["${DOCKER_GID:-999}"]
     volumes:
@@ -233,6 +242,25 @@ services:
       <<: *http-healthcheck
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=3)"]
     stop_grace_period: 60s
+
+  # Forward/CONNECT proxy for package installs in dynamic environments. Allows only registry
+  # hosts and refuses targets that resolve to private, loopback, link-local or metadata
+  # addresses. Its own `egress` network is the only one with a route out; the launcher
+  # attaches it (alias egress-proxy) to env networks whose EnvRequest asks for packages.
+  egress-proxy:
+    <<: [*prsec-image, *restart, *logging]
+    container_name: prsec-egress-proxy
+    command: ["prsec-egress-proxy"]
+    environment:
+      PRSEC_EGRESS_ALLOW: ${PRSEC_EGRESS_ALLOW:-pypi.org,files.pythonhosted.org,registry.npmjs.org,registry.yarnpkg.com,proxy.golang.org,sum.golang.org,repo1.maven.org,repo.maven.apache.org,plugins.gradle.org,services.gradle.org}
+    networks: [egress]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:size=16m"]  # NOSONAR(S5443) private per-container tmpfs
+    healthcheck:
+      <<: *http-healthcheck
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 3128), timeout=3).close()"]
 
   dashboard:
     <<: [*prsec-image, *restart, *logging]
@@ -357,6 +385,10 @@ networks:
   gateway-db:
     name: prsec-gateway-db
     internal: true
+  # NOT internal: the egress proxy's route to the package registries. Only egress-proxy joins it.
+  egress:
+    name: prsec-egress
+    internal: false
 
 volumes:
   pgdata:

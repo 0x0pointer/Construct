@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from prsec.adapters.protocols import WorkbenchSpec
 from prsec.adapters.runner.launcher import LauncherError, LauncherRunner
 from prsec.config import settings
+from prsec.dynamic.results import EnvInfo, EnvRequest, ReplayResult, ServiceRequest
 from prsec.launcher.main import create_app
 from prsec.models import Stage, StageResult, StageStatus, StageTask
 
@@ -26,7 +27,7 @@ def roots(tmp_path, monkeypatch):
     (harness / "codex" / "1.0").mkdir(parents=True)
     (harness / "codex" / "current").symlink_to("1.0")
     scan = work / "scan-7"
-    for d in ("src", "in/t1", "out/t1"):
+    for d in ("src", "in/t1", "out/t1", "app/h1", "env/h1", "seed"):
         (scan / d).mkdir(parents=True)
     policy = tmp_path / "policy.yaml"
     policy.write_text(
@@ -48,6 +49,8 @@ def docker() -> MagicMock:
     runner = MagicMock()
     runner.create_scan_network.side_effect = lambda sid: f"prsec-scan-{sid}"
     runner.run_container.return_value = (0, "stage done", False)
+    runner.env_has_llm.return_value = False
+    runner.create_env.side_effect = lambda sid, env, req: EnvInfo(network=f"prsec-scan-{sid}-{env}", sink_ip="10.0.0.2")
     return runner
 
 
@@ -252,3 +255,178 @@ def test_runner_turns_refusal_into_stage_failure(client, docker, roots):
 def test_runner_network_errors_raise(client, roots):
     with pytest.raises(LauncherError):
         _runner_against(client, token="wrong").create_scan_network(7)
+
+
+# ------------------------------------------------------------------ phase 2: dynamic envs
+
+
+def _env_body(roots, **kw) -> dict:
+    scan = roots["scan"]
+    body = {"env_dir": str(scan / "env" / "h1"), "llm": True, "packages": True,
+            "services": [{"name": "db", "kind": "postgres", "seed_dir": str(scan / "seed")}],
+            "stubs": [{"host": "api.example.com"}]}
+    return body | kw
+
+
+def _env_refused(client, docker, body, env: str = "h1") -> str:
+    r = client.post(f"/scans/7/envs/{env}", json=body)
+    assert r.status_code == 403, r.text
+    docker.create_env.assert_not_called()
+    return r.json()["detail"]
+
+
+def test_create_env_passes_checked_request(client, docker, roots):
+    r = client.post("/scans/7/envs/h1", json=_env_body(roots))
+    assert r.status_code == 200, r.text
+    assert r.json()["network"] == "prsec-scan-7-h1"
+    scan_id, env, req = docker.create_env.call_args.args
+    assert (scan_id, env) == (7, "h1")
+    assert req.env_dir == str((roots["scan"] / "env" / "h1").resolve())
+    assert req.services[0].seed_dir == str((roots["scan"] / "seed").resolve())
+
+
+def test_create_env_ignores_infrastructure_fields_in_the_request(client, docker, roots):
+    body = _env_body(roots, dns="8.8.8.8", sink_image="evil:1", network="host")
+    assert client.post("/scans/7/envs/h1", json=body).status_code == 200
+    req = docker.create_env.call_args.args[2]
+    assert set(req.model_dump()) == set(EnvRequest.model_fields)
+
+
+def test_refuses_unknown_service_kind(client, docker, roots):
+    body = _env_body(roots, services=[{"name": "db", "kind": "oracle"}])
+    assert "not in the catalog" in _env_refused(client, docker, body)
+
+
+@pytest.mark.parametrize("seed", ["/etc", "/", "{w}"])
+def test_refuses_seed_dir_outside_work_root(client, docker, roots, seed):
+    body = _env_body(roots, services=[{"name": "db", "kind": "postgres", "seed_dir": seed.format(w=roots["work"])}])
+    assert "outside" in _env_refused(client, docker, body)
+
+
+def test_refuses_seed_for_kind_without_seed_path(client, docker, roots):
+    body = _env_body(roots, services=[{"name": "c", "kind": "redis", "seed_dir": str(roots["scan"] / "seed")}])
+    assert "no seed" in _env_refused(client, docker, body)
+
+
+def test_refuses_env_dir_outside_work_root(client, docker, roots):
+    assert "env_dir" in _env_refused(client, docker, _env_body(roots, env_dir="/var/run"))
+
+
+@pytest.mark.parametrize("name", ["sink", "llm-gateway", "egress-proxy", "Db", "a_b"])
+def test_refuses_reserved_or_bad_service_names(client, docker, roots, name):
+    body = _env_body(roots, services=[{"name": name, "kind": "redis"}])
+    assert "service name" in _env_refused(client, docker, body)
+
+
+def test_refuses_too_many_or_too_large_stubs(client, docker, roots):
+    many = [{"host": f"h{i}.example.com"} for i in range(51)]
+    assert "stubs" in _env_refused(client, docker, _env_body(roots, stubs=many))
+    big = [{"host": "a.example.com", "body": "x" * 300_000}]
+    assert "stubs too large" in _env_refused(client, docker, _env_body(roots, stubs=big))
+
+
+@pytest.mark.parametrize("env", ["H1", "h-1", "x" * 17, "h1;rm"])
+def test_refuses_bad_env_name(client, docker, roots, env):
+    assert "env name" in _env_refused(client, docker, _env_body(roots), env=env)
+
+
+def test_destroy_env(client, docker):
+    assert client.delete("/scans/7/envs/h1").json() == {"ok": True}
+    docker.destroy_env.assert_called_once_with(7, "h1")
+    assert client.delete("/scans/7/envs/H1").status_code == 403
+
+
+def test_env_routes_need_the_token(roots, docker):
+    c = TestClient(create_app(runner=docker))
+    assert c.post("/scans/7/envs/h1", json=_env_body(roots)).status_code == 401
+    assert c.delete("/scans/7/envs/h1").status_code == 401
+    docker.create_env.assert_not_called()
+
+
+def _env_run(roots, **kw) -> dict:
+    return _body(roots, env_name="h1", app_dir=str(roots["scan"] / "app" / "h1"), network=None, **kw)
+
+
+def test_run_in_env_uses_env_network_and_resolved_app_dir(client, docker, roots):
+    assert client.post("/run", json=_env_run(roots)).status_code == 200
+    spec, command, _ = docker.run_container.call_args.args
+    assert spec.network == "prsec-scan-7-h1"
+    assert spec.app_dir == (roots["scan"] / "app" / "h1").resolve()
+    assert command == ["/work/in/task.json"]
+
+
+def test_replay_mode_runs_fixed_replay_entrypoint(client, docker, roots):
+    body = _env_run(roots, mode="replay", env={})
+    assert client.post("/run", json=body).status_code == 200
+    spec, command, _ = docker.run_container.call_args.args
+    assert command == ["/work/in/replay.json"]
+    assert docker.run_container.call_args.kwargs["entrypoint"] == ["prsec-replay"]
+    assert spec.mode == "replay"
+
+
+def test_refuses_replay_in_env_with_gateway(client, docker, roots):
+    docker.env_has_llm.return_value = True
+    assert "LLM gateway" in _refused(client, docker, _env_run(roots, mode="replay", env={}))
+
+
+def test_refuses_replay_with_gateway_credentials(client, docker, roots):
+    assert "gateway" in _refused(client, docker, _env_run(roots, mode="replay"))
+
+
+@pytest.mark.parametrize("kw,detail", [
+    ({"app_dir": "/etc"}, "outside"),
+    ({"app_dir": None}, "app_dir is required"),
+    ({"network": "prsec-scan-7"}, "network"),
+    ({"env_name": "../h1"}, "env name"),
+])
+def test_refuses_bad_env_runs(client, docker, roots, kw, detail):
+    assert detail in _refused(client, docker, _env_run(roots) | kw)
+
+
+@pytest.mark.parametrize("kw", [{"mode": "replay"}, {"app_dir": "/tmp"}])
+def test_refuses_env_fields_without_env_name(client, docker, roots, kw):
+    assert "need env_name" in _refused(client, docker, _body(roots, **kw))
+
+
+def test_runner_env_round_trip(client, docker, roots):
+    runner = _runner_against(client)
+    req = EnvRequest(env_dir=str(roots["scan"] / "env" / "h1"), services=[ServiceRequest(name="cache", kind="redis")])
+    info = runner.create_env(7, "h1", req)
+    assert info.network == "prsec-scan-7-h1"
+    assert docker.create_env.call_args.args[2].services[0].kind == "redis"
+    runner.destroy_env(7, "h1")
+    docker.destroy_env.assert_called_once_with(7, "h1")
+
+
+def test_runner_env_refusal_raises(client, docker, roots):
+    req = EnvRequest(env_dir="/etc")
+    with pytest.raises(LauncherError, match="403"):
+        _runner_against(client).create_env(7, "h1", req)
+
+
+def test_runner_replay_round_trip(client, docker, roots):
+    scan = roots["scan"]
+    (scan / "in" / "t1" / "replay.json").write_text('{"run_id": "r1"}')
+
+    def fake_run(spec, command, timeout, entrypoint):
+        assert spec.mode == "replay"
+        res = ReplayResult(run_id="r1", env_ok=True, fired=True)
+        (Path(spec.out_dir) / "replay_result.json").write_text(res.model_dump_json())
+        return 0, "replayed", False
+
+    docker.run_container.side_effect = fake_run
+    spec = _spec(roots, env={}, env_name="h1", app_dir=scan / "app" / "h1", network=None, mode="replay")
+    result = _runner_against(client).run_replay(spec)
+    assert result.fired is True
+    assert (scan / "out" / "t1" / "workbench.log").read_text() == "replayed"
+
+
+def test_runner_replay_refusal_is_env_failure(client, docker, roots):
+    docker.env_has_llm.return_value = True
+    scan = roots["scan"]
+    (scan / "in" / "t1" / "replay.json").write_text('{"run_id": "r9"}')
+    spec = _spec(roots, env={}, env_name="h1", app_dir=scan / "app" / "h1", network=None)
+    result = _runner_against(client).run_replay(spec)
+    assert result.env_ok is False
+    assert result.run_id == "r9"
+    assert "403" in result.env_error

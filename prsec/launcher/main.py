@@ -1,4 +1,9 @@
-"""Launcher HTTP API. Bearer-token auth; every request is validated against the fixed recipe."""
+"""Launcher HTTP API. Bearer-token auth; every request is validated against the fixed recipe.
+
+Phase 2 adds dynamic environments (POST/DELETE /scans/{id}/envs/{env}) and `env_name`, `app_dir`
+and `mode` on /run. Networks, DNS (resolv.conf) and the sink are computed here, never taken from
+the request.
+"""
 from __future__ import annotations
 
 import hmac
@@ -6,14 +11,25 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from prsec.adapters.protocols import WorkbenchSpec
 from prsec.adapters.runner.docker import ENTRYPOINT, DockerRunner, network_name
+from prsec.adapters.runner.env import (
+    REPLAY_COMMAND,
+    REPLAY_ENTRYPOINT,
+    EnvRefused,
+    check_env_name,
+    check_env_request,
+    env_network_name,
+    under_root,
+)
 from prsec.config import load_policy, settings
+from prsec.dynamic.catalog import load_catalog
+from prsec.dynamic.results import EnvInfo, EnvRequest
 from prsec.models import StageTask
 
 log = logging.getLogger("prsec.launcher")
@@ -26,7 +42,7 @@ MAX_LOG_BYTES = 1024 * 1024
 CONTAINER_PATHS = {f: StageTask.model_fields[f].default for f in ("workdir", "in_dir", "out_dir", "skills_dir")}
 
 
-class Refused(ValueError):
+class Refused(EnvRefused):
     """The request is outside the fixed recipe."""
 
 
@@ -42,6 +58,10 @@ class RunRequest(BaseModel):
     env: dict[str, str] = Field(default_factory=dict)
     network: str | None = None
     timeout_s: float = Field(gt=0)
+    # phase 2: run inside dynamic env `env_name` with app_dir at /work/app; "replay" runs prsec-replay
+    env_name: str | None = None
+    app_dir: str | None = None
+    mode: Literal["stage", "replay"] = "stage"
 
 
 class RunResponse(BaseModel):
@@ -65,13 +85,7 @@ def allowed_images() -> set[str]:
 
 def _under(path: str, root: Path, what: str) -> Path:
     """Resolve `path` (following symlinks) and require it strictly below `root`."""
-    if not Path(path).is_absolute():
-        raise Refused(f"{what} must be an absolute path")
-    resolved = Path(path).resolve()
-    root = root.resolve()
-    if resolved == root or not resolved.is_relative_to(root):
-        raise Refused(f"{what} is outside {root}")
-    return resolved
+    return under_root(path, root, what)
 
 
 def _check_env(env: dict[str, str]) -> None:
@@ -102,12 +116,30 @@ def _harness_volume(req: RunRequest, harness_root: Path) -> str | None:
     return str(_under(req.harness_volume, harness_root, "harness_volume"))
 
 
+def _check_dynamic(req: RunRequest, work_root: Path) -> dict[str, Any]:
+    """WorkbenchSpec fields for the env part of a run: network, env_name, app_dir, mode."""
+    if req.env_name is None:
+        if req.app_dir is not None or req.mode != "stage":
+            raise Refused("app_dir and mode 'replay' need env_name")
+        if req.network not in (None, network_name(req.scan_id)):
+            raise Refused(f"network must be {network_name(req.scan_id)} or none")
+        return {"network": req.network}
+    env_net = env_network_name(req.scan_id, check_env_name(req.env_name))
+    if req.network not in (None, env_net):
+        raise Refused(f"network must be {env_net} or none in env {req.env_name}")
+    if req.app_dir is None:
+        raise Refused("app_dir is required in a dynamic env")
+    if req.mode == "replay" and any(k.startswith("PRSEC_GATEWAY") for k in req.env):
+        raise Refused("replays get no LLM gateway credentials")
+    return {"network": env_net, "env_name": req.env_name, "mode": req.mode,
+            "app_dir": _under(req.app_dir, work_root, "app_dir")}
+
+
 def validate(req: RunRequest) -> WorkbenchSpec:
     """Turn a request into a WorkbenchSpec built only from checked parts, or raise Refused."""
     s = settings()
     _check_task(req)
-    if req.network not in (None, network_name(req.scan_id)):
-        raise Refused(f"network must be {network_name(req.scan_id)} or none")
+    dynamic = _check_dynamic(req, s.work_root)
     if req.image not in allowed_images():
         raise Refused(f"image {req.image!r} is not a workbench image in the policy")
     if Path(req.skills_dir).resolve() != s.skills_dir.resolve():
@@ -122,8 +154,16 @@ def validate(req: RunRequest) -> WorkbenchSpec:
         src_dir=_under(req.src_dir, s.work_root, "src_dir"),
         in_dir=_under(req.in_dir, s.work_root, "in_dir"),
         out_dir=_under(req.out_dir, s.work_root, "out_dir"),
-        skills_dir=s.skills_dir.resolve(), env=req.env, network=req.network,
+        skills_dir=s.skills_dir.resolve(), env=req.env, **dynamic,
     )
+
+
+def validate_env(scan_id: int, env_name: str, req: EnvRequest) -> EnvRequest:
+    """Checked copy of an env request: catalog kinds only, host dirs under the work root, capped stubs."""
+    if scan_id < 0:
+        raise Refused("scan_id must be >= 0")
+    check_env_name(env_name)
+    return check_env_request(req, load_catalog(), settings().work_root)
 
 
 def _require_token(authorization: str | None) -> None:
@@ -149,6 +189,15 @@ Auth = Annotated[None, Depends(_auth)]
 Docker = Annotated[Any, Depends(_docker)]
 
 
+def _check_replay_env(spec: WorkbenchSpec, runner: Any) -> None:
+    """Replays are agent-free: refuse an env that has the LLM gateway attached."""
+    if spec.mode == "replay" and runner.env_has_llm(spec.scan_id, spec.env_name):
+        raise Refused(f"replay env {spec.env_name!r} has the LLM gateway attached")
+
+
+AUTH_403 = {401: {"description": "Invalid token"}, 403: {"description": "Outside the recipe"}}
+
+
 def create_app(runner: Any = None) -> FastAPI:
     app = FastAPI(title="Construct workbench launcher", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.runner = runner
@@ -168,15 +217,37 @@ def create_app(runner: Any = None) -> FastAPI:
         runner.destroy_scan(scan_id)
         return {"ok": True}
 
-    @app.post("/run", responses={401: {"description": "Invalid token"}, 403: {"description": "Outside the recipe"}})
+    @app.post("/scans/{scan_id}/envs/{env_name}", responses={**AUTH_403})
+    def create_env(scan_id: int, env_name: str, req: EnvRequest, _: Auth, runner: Docker) -> EnvInfo:
+        try:
+            checked = validate_env(scan_id, env_name, req)
+        except EnvRefused as e:
+            log.warning("refused env %s for scan %s: %s", env_name, scan_id, e)
+            raise HTTPException(403, str(e)) from None
+        return runner.create_env(scan_id, env_name, checked)
+
+    @app.delete("/scans/{scan_id}/envs/{env_name}", responses={**AUTH_403})
+    def destroy_env(scan_id: int, env_name: str, _: Auth, runner: Docker) -> dict[str, bool]:
+        try:
+            check_env_name(env_name)
+        except EnvRefused as e:
+            raise HTTPException(403, str(e)) from None
+        runner.destroy_env(scan_id, env_name)
+        return {"ok": True}
+
+    @app.post("/run", responses={**AUTH_403})
     def run(req: RunRequest, _: Auth, runner: Docker) -> RunResponse:
         try:
             spec = validate(req)
-        except Refused as e:
+            _check_replay_env(spec, runner)
+        except EnvRefused as e:
             log.warning("refused run for scan %s task %s: %s", req.scan_id, req.task.task_id, e)
             raise HTTPException(403, str(e)) from None
-        command = [f"{spec.task.in_dir.rstrip('/')}/task.json"]
-        code, logs, killed = runner.run_container(spec, command, req.timeout_s, entrypoint=ENTRYPOINT)
+        if spec.mode == "replay":
+            command, entrypoint = REPLAY_COMMAND, REPLAY_ENTRYPOINT
+        else:
+            command, entrypoint = [f"{spec.task.in_dir.rstrip('/')}/task.json"], ENTRYPOINT
+        code, logs, killed = runner.run_container(spec, command, req.timeout_s, entrypoint=entrypoint)
         return RunResponse(exit_code=code, logs=logs[-MAX_LOG_BYTES:], killed=killed)
 
     return app

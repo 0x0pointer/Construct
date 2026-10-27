@@ -32,6 +32,14 @@ prsec-api = "prsec.api.main:run"
 prsec-worker = "prsec.orchestrator.worker:main"
 prsec-dashboard = "prsec.dashboard.main:run"
 prsec-launcher = "prsec.launcher.main:run"
+# phase 2 (dynamic): workbench CLIs, replay entrypoint and per-env infrastructure
+prsec-env = "prsec.sandbox.cli.env:main"
+prsec-http = "prsec.sandbox.cli.http:main"
+prsec-canary = "prsec.sandbox.cli.canary:main"
+prsec-poc = "prsec.sandbox.cli.poc:main"
+prsec-replay = "prsec.dynamic.replay:main"
+prsec-sink = "prsec.dynamic.sink:main"
+prsec-egress-proxy = "prsec.dynamic.egress_proxy:main"
 prsec-stage = "prsec.sandbox.entrypoint.main:main"
 prsec-cite = "prsec.sandbox.cli.cite:main"
 prsec-skills-lint = "prsec.skills_lint:main"
@@ -40,7 +48,7 @@ prsec-skills-lint = "prsec.skills_lint:main"
 include = ["prsec*"]
 
 [tool.setuptools.package-data]
-"prsec" = ["prompts/*.md", "db/*.sql", "dashboard/templates/*.html", "policy/*.yaml"]
+"prsec" = ["prompts/*.md", "db/*.sql", "dashboard/templates/*.html", "policy/*.yaml", "dynamic/*.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,3 +1,5 @@
+import pytest
+
 from prsec.config import Experiment, Policy, RepoOverride, StagePolicy, load_policy
 from prsec.models import Stage
 from prsec.orchestrator import stages
@@ -84,10 +86,32 @@ def test_repo_override_wins_and_disables_experiment():
     assert choice2.experiment == "hypothesise:codex"
 
 
+def _static_usd(d, n):
+    return d["triage"].usd_budget + d["hypothesise"].usd_budget + n * d["static_verify"].usd_budget + n * d["skeptic"].usd_budget
+
+
 def test_scan_budget():
     p = _policy()
     usd, wall, models = stages.scan_budget(p, "a/b", 2)
     d = p.defaults
-    assert usd == d["triage"].usd_budget + d["hypothesise"].usd_budget + 2 * d["static_verify"].usd_budget + 2 * d["skeptic"].usd_budget
+    assert usd == pytest.approx(_static_usd(d, 2) + d["env"].usd_budget + 2 * d["dynamic"].usd_budget)
     assert wall > 0
     assert set(models) == {sp.model for sp in d.values()}
+
+
+def test_scan_budget_caps_dynamic_and_covers_replays():
+    p = _policy()
+    p = p.model_copy(update={"dynamic": p.dynamic.model_copy(update={"max_hypotheses": 1})})
+    d = p.defaults
+    usd, wall, _ = stages.scan_budget(p, "a/b", 4)
+    assert usd == pytest.approx(_static_usd(d, 4) + d["env"].usd_budget + d["dynamic"].usd_budget)
+    replays = (p.dynamic.replay_runs + 1) * p.dynamic.replay_timeout_s
+    static_wall = d["triage"].wall_clock_s + d["hypothesise"].wall_clock_s + 4 * (d["static_verify"].wall_clock_s + d["skeptic"].wall_clock_s)
+    assert wall == static_wall + d["env"].wall_clock_s + d["dynamic"].wall_clock_s + replays
+
+
+def test_scan_budget_without_dynamic():
+    p = _policy()
+    p = p.model_copy(update={"dynamic": p.dynamic.model_copy(update={"enabled": False})})
+    usd, _, _ = stages.scan_budget(p, "a/b", 2)
+    assert usd == pytest.approx(_static_usd(p.defaults, 2))

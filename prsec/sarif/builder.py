@@ -108,6 +108,21 @@ def _rule(bug_class: str, members: list[Finding]) -> dict[str, Any]:
     }
 
 
+def _dynamic_summary(dyn: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Phase-2 summary of the stored DynamicEvidence; the full PoC and replays live at evidenceUri."""
+    if not dyn:
+        return None
+    return {
+        "outcome": dyn.get("outcome"),
+        "reason": dyn.get("reason") or None,
+        "entry": dyn.get("entry"),
+        "head_runs": dyn.get("head_runs", 0),
+        "head_fired": dyn.get("head_fired", 0),
+        "base_fired": dyn.get("base_fired"),
+        "evidenceUri": dyn.get("evidence_uri"),
+    }
+
+
 def _result(f: Finding, rule_index: int) -> dict[str, Any]:
     text = f.title if not f.description else f"{f.title}\n\n{f.description}"
     result: dict[str, Any] = {
@@ -134,6 +149,9 @@ def _result(f: Finding, rule_index: int) -> dict[str, Any]:
     if f.remediation:
         # SARIF `fixes` require concrete artifactChanges; prose remediation goes in properties.
         result["properties"]["remediation"] = f.remediation
+    dynamic = _dynamic_summary(f.dynamic)
+    if dynamic:
+        result["properties"]["dynamic"] = dynamic
     return result
 
 

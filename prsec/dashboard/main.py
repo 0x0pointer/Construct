@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import urlsplit
 
+import yaml
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
@@ -148,7 +149,19 @@ def finding_detail(request: Request, finding_id: int):
         flow.append(("source", data["source"]))
     flow.extend((f"step {i}", p) for i, p in enumerate(data.get("path") or [], 1))
     flow.append(("sink", data.get("sink") or {"file": f["sink_file"], "line": f["sink_line"]}))
-    return _render(request, "finding.html", f=f, data=data, flow=flow, triage_states=db.TRIAGE_STATES)
+    return _render(request, "finding.html", f=f, data=data, flow=flow, dyn=_dynamic_view(data.get("dynamic")),
+                   triage_states=db.TRIAGE_STATES)
+
+
+def _dynamic_view(dyn: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Phase-2 evidence for the finding page: the PoC as YAML, each replay tagged head or base."""
+    if not dyn:
+        return None
+    poc = dyn.get("poc")
+    replays = [{**r, "target": "base" if str(r.get("run_id", "")).endswith("-base") else "head"}
+               for r in dyn.get("replays") or []]
+    poc_yaml = yaml.safe_dump(poc, sort_keys=False, allow_unicode=True) if poc else None
+    return {**dyn, "replays": replays, "poc_yaml": poc_yaml}
 
 
 @app.post(
@@ -221,6 +234,19 @@ def finding_evidence(finding_id: int) -> Response:
     if f is None:
         raise HTTPException(404, FINDING_NOT_FOUND)
     body = _artifact((f["data"] or {}).get("evidence_uri"), "evidence")
+    return Response(body, media_type="text/plain; charset=utf-8")
+
+
+@app.get(
+    "/findings/{finding_id}/dynamic-evidence",
+    response_class=PlainTextResponse,
+    responses={404: {"description": "Artifact not stored or unreadable"}, 502: {"description": "Object store error"}},
+)
+def finding_dynamic_evidence(finding_id: int) -> Response:
+    f = db.get_finding(finding_id)
+    if f is None:
+        raise HTTPException(404, FINDING_NOT_FOUND)
+    body = _artifact(((f["data"] or {}).get("dynamic") or {}).get("evidence_uri"), "dynamic evidence")
     return Response(body, media_type="text/plain; charset=utf-8")
 
 

@@ -18,6 +18,8 @@ FILE_NOTES = {
     "repo_profile.json": "repository profile: stack, routes, auth model, glossary",
     "output_schema.json": "JSON Schema your output must satisfy",
     "prior_findings.json": "findings reported on earlier commits of this PR, to re-confirm or retire",
+    "previous_envspec.json": "the environment spec that last started this repository's app (may be outdated)",
+    "envspec.json": "how to install, build and start the app, and which mock services it has",
 }
 
 

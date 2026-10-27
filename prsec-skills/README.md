@@ -11,6 +11,10 @@ feature of one particular agent runtime.
 | [business-logic](business-logic/SKILL.md) | `hypothesise` | Intended vs actual workflow, invariants, abuse cases |
 | [static-validation](static-validation/SKILL.md) | `static_verify`, `skeptic` | Refute-first verification of one hypothesis, one reference per bug class |
 | [org](org/SKILL.md) | `hypothesise`, `static_verify` | Company knowledge: internal auth libraries, safe wrappers, glossary |
+| [env-building](env-building/SKILL.md) | `env`, `dynamic` | How the PR's app installs, seeds and starts: the EnvSpec |
+| [mocking](mocking/SKILL.md) | `env`, `dynamic` | Catalog services, seed data, test users and roles, stubs, the sink |
+| [poc-authoring](poc-authoring/SKILL.md) | `dynamic` | A replayable `poc.yaml` per bug class, run with `prsec-poc` |
+| [oracles](oracles/SKILL.md) | `dynamic` | Oracles that cannot fire by accident; negative controls; no judgement calls |
 
 [evals/](evals/README.md) holds the labelled corpus that every skills change is measured against.
 
@@ -23,13 +27,14 @@ feature of one particular agent runtime.
    field names used throughout these skills are exactly the schema fields (`decision`,
    `hypotheses[].sink`, `verdict`, `citations[]`, ...).
 3. **Non-interactive.** Nobody answers questions. If information is missing, decide, say what you
-   assumed in the free-text field (`rationale`, `description`, `reasoning`) and move on.
+   assumed in the free-text field (`rationale`, `description`, `reasoning`, `notes`) and move on.
 4. **Evidence is a citation.** A citation is `{file, line, end_line?, quote}`: a repo-relative
    path, a 1-based line number, and a verbatim copy of the code on those lines. Citations are
    checked by code after the stage ends; a citation that does not match the file drops the
    hypothesis. When a shell is available run `prsec-cite check <output.json>` before finishing.
 5. **One vocabulary.** `bug_class` values come from [bug-classes.yaml](bug-classes.yaml) only.
-6. **Tools are shell CLIs** on `PATH` (`prsec-cite`, later `prsec-env`, `prsec-http`, `prsec-poc`).
+6. **Tools are shell CLIs** on `PATH` (`prsec-cite`; in dynamic stages also `prsec-env`,
+   `prsec-http`, `prsec-canary`, `prsec-poc`).
    Use plain shell (`grep -rn`, `sed -n`, `cat`, `find`, `git` if present) for everything else.
 
 ## Writing or changing a skill
@@ -38,6 +43,8 @@ feature of one particular agent runtime.
   directory name) and a one-line `description` of at most 1024 characters.
 - Keep `SKILL.md` focused on method; push long per-language or per-class detail into
   `references/*.md` and link to it relatively.
+- Dynamic skills use benign canaries only (an echoed token, a canary URL, a sentinel file);
+  never destructive payloads or anything that opens a shell or a connection back.
 - Write for a single non-interactive run: no delegation to helpers, no tool names that only one
   agent runtime has, no interactive commands, no attack tooling. Describe actions generically
   ("search the repository for callers of `f`") or via the `prsec-*` CLIs.

@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from prsec.dynamic.envspec import EnvSpec
+from prsec.dynamic.poc import PoC
 from prsec.models import Severity, Stage
 
 
@@ -82,11 +84,33 @@ class SkepticOutput(BaseModel):
     reasoning: str
 
 
+# ------------------------------------------------------- phase 2: dynamic
+
+
+class EnvOutput(BaseModel):
+    envspec: EnvSpec
+    notes: str = Field(default="", description="How the app was understood to start; anything uncertain")
+
+
+class DynamicOutput(BaseModel):
+    hypothesis_id: str
+    outcome: Literal["reproduced", "not_reproduced", "env_failed", "blocked"] = Field(description=(
+        "reproduced: `prsec-poc run` fired against the running app. not_reproduced: the app ran but "
+        "no PoC fired. env_failed: the app could not be started. blocked: needs something the "
+        "environment cannot provide"))
+    reasoning: str
+    poc: PoC | None = Field(default=None, description="Required when outcome is reproduced")
+    envspec: EnvSpec | None = Field(default=None, description=(
+        "Corrected EnvSpec if you had to change commands/env/stubs to make the app run; services cannot change"))
+
+
 _MODELS: dict[Stage, type[BaseModel]] = {
     Stage.triage: TriageOutput,
     Stage.hypothesise: HypothesesOutput,
     Stage.static_verify: StaticVerifyOutput,
     Stage.skeptic: SkepticOutput,
+    Stage.env: EnvOutput,
+    Stage.dynamic: DynamicOutput,
 }
 
 

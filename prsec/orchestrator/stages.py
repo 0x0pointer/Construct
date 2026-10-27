@@ -106,22 +106,38 @@ def build_task(
         "triage_decision": "full",
         "focus_files": [],
         "has_repo_profile": "repo_profile.json" in files,
+        "app_dir": "",  # dynamic stage: writable app copy (its tools may install and run the app)
     }
     ctx.update(prompt_ctx or {})
     task.prompt_md = prompts.render(stage.value, **ctx)
     return task, choice
 
 
+def _dynamic_runs(policy: Policy, n_hypotheses: int) -> int:
+    """Hypotheses that may get a dynamic attempt (0 when phase 2 is off)."""
+    return min(n_hypotheses, policy.dynamic.max_hypotheses) if policy.dynamic.enabled else 0
+
+
 def scan_budget(policy: Policy, repo: str, n_hypotheses: int) -> tuple[float, int, list[str]]:
-    """Upper bound (usd, wall-clock seconds, model aliases) for one scan's gateway key."""
+    """Upper bound (usd, wall-clock seconds, model aliases) for one scan's gateway key.
+
+    Phase 2 adds the env stage (once) and one dynamic stage per candidate; the wall clock also
+    covers the agent-free replays, since the key must outlive every dynamic stage that waits on them.
+    """
+    n_dyn = _dynamic_runs(policy, n_hypotheses)
     usd = 0.0
     wall = 0
     models: set[str] = set()
-    for stage, mult in (("triage", 1), ("hypothesise", 1), ("static_verify", n_hypotheses), ("skeptic", n_hypotheses)):
-        if stage not in policy.defaults:
+    plan = (("triage", 1), ("hypothesise", 1), ("static_verify", n_hypotheses), ("skeptic", n_hypotheses),
+            ("env", 1 if n_dyn else 0), ("dynamic", n_dyn))
+    for stage, mult in plan:
+        if stage not in policy.defaults or not mult:
             continue
         sp = policy.stage(stage, repo)
         usd += sp.usd_budget * mult
         wall += sp.wall_clock_s * mult
         models.add(sp.model)
+    if n_dyn and "dynamic" in policy.defaults:
+        replays = policy.dynamic.replay_runs + (1 if policy.dynamic.base_replay else 0)
+        wall += policy.dynamic.replay_timeout_s * replays * n_dyn
     return usd, wall, sorted(models)

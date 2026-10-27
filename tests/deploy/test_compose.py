@@ -30,7 +30,7 @@ def services(compose: dict) -> dict:
 def test_expected_services(services: dict) -> None:
     assert {
         "caddy", "oauth2-proxy", "api", "worker", "launcher", "dashboard", "postgres",
-        "minio", "minio-init", "llm-gateway", "llm-gateway-db", "migrate",
+        "minio", "minio-init", "llm-gateway", "llm-gateway-db", "migrate", "egress-proxy",
     } <= set(services)
 
 
@@ -170,3 +170,52 @@ def test_dashboard_sso_restricted_to_appsec(services: dict) -> None:
     # no fallback credentials or placeholder IdP
     assert "${OIDC_CLIENT_SECRET:?" in text
     assert "${OIDC_ISSUER_URL:?" in text
+
+
+# ------------------------------------------------------------------ phase 2: dynamic environments
+
+
+def test_egress_proxy_is_hardened_on_its_own_open_network(compose: dict, services: dict) -> None:
+    proxy = services["egress-proxy"]
+    assert proxy["image"].startswith("${PRSEC_IMAGE:-")
+    assert proxy["command"] == ["prsec-egress-proxy"]
+    assert proxy["container_name"] == "prsec-egress-proxy"
+    assert proxy["networks"] == ["egress"]
+    assert proxy["read_only"] is True
+    assert proxy["cap_drop"] == ["ALL"]
+    assert proxy["security_opt"] == ["no-new-privileges:true"]
+    assert "ports" not in proxy
+    assert "volumes" not in proxy
+    assert "healthcheck" in proxy
+
+
+def test_egress_network_is_only_for_the_proxy(compose: dict, services: dict) -> None:
+    assert compose["networks"]["egress"].get("internal", False) is False
+    members = sorted(n for n, s in services.items() if "egress" in (s.get("networks") or []))
+    assert members == ["egress-proxy"]
+
+
+def test_egress_proxy_has_no_credentials(services: dict) -> None:
+    env = services["egress-proxy"].get("environment") or {}
+    assert not any(k.startswith(("PRSEC_DATABASE", "PRSEC_S3", "PRSEC_GITHUB", "PRSEC_GATEWAY", "PRSEC_LAUNCHER")) for k in env)
+    assert "secrets" not in services["egress-proxy"]
+
+
+def test_launcher_knows_sink_image_and_egress_container(services: dict) -> None:
+    env = services["launcher"]["environment"]
+    assert env["PRSEC_SINK_IMAGE"] == "${PRSEC_IMAGE:-prsec/prsec:latest}"
+    assert env["PRSEC_EGRESS_CONTAINER"] == services["egress-proxy"]["container_name"]
+
+
+def test_catalog_ships_in_the_prsec_image() -> None:
+    pyproject = (ROOT / "pyproject.toml").read_text()
+    assert '"dynamic/*.yaml"' in pyproject
+    assert "COPY prsec ./prsec" in (ROOT / "images" / "prsec" / "Dockerfile").read_text()
+
+
+def test_catalog_images_are_pinned_by_digest() -> None:
+    from prsec.dynamic.catalog import CATALOG_FILE, Catalog
+
+    catalog = Catalog.model_validate(yaml.safe_load(CATALOG_FILE.read_text()))
+    unpinned = [k for k, e in catalog.services.items() if not re.search(r":[^@/]+@sha256:[0-9a-f]{64}$", e.image)]
+    assert not unpinned

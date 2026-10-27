@@ -1,0 +1,50 @@
+# Mock service catalog for dynamic environments. Owned by AppSec: the launcher only starts
+# images listed here, with the env, caps and seed mount given here. Agents pick a `kind`.
+# Credentials are fixed and well known on purpose: they only exist inside one scan's network.
+# Pin every image by digest (tag@sha256:...).
+services:
+  postgres:
+    image: postgres:16.15-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+    port: 5432
+    env: {POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: app}
+    seed_path: /docker-entrypoint-initdb.d
+    health: ["pg_isready", "-U", "app", "-d", "app"]
+    caps: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
+    connection: "postgresql://app:app@{name}:5432/app"
+  mysql:
+    image: mysql:8.4@sha256:76f0358884cb92d9a086d24e5671c38048d3fef40f2588703d73eb55392d6b69
+    port: 3306
+    env: {MYSQL_USER: app, MYSQL_PASSWORD: app, MYSQL_DATABASE: app, MYSQL_ROOT_PASSWORD: app}
+    seed_path: /docker-entrypoint-initdb.d
+    health: ["mysqladmin", "ping", "-h", "127.0.0.1", "-uapp", "-papp"]
+    caps: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
+    connection: "mysql://app:app@{name}:3306/app"
+  redis:
+    image: redis:7.4-alpine@sha256:6ba19c50b56777f5c11c58eff8ddb69d0d5f27ba131cffb63f180ccfd43c66af
+    port: 6379
+    env: {}
+    health: ["redis-cli", "ping"]
+    caps: [SETUID, SETGID]
+    connection: "redis://{name}:6379/0"
+  mongo:
+    image: mongo:7.0@sha256:ff35930c973ac3b35e0a8cd41b565f7ed2384237e3c498186fdc5a3795cfde25
+    port: 27017
+    env: {MONGO_INITDB_ROOT_USERNAME: app, MONGO_INITDB_ROOT_PASSWORD: app, MONGO_INITDB_DATABASE: app}
+    seed_path: /docker-entrypoint-initdb.d
+    health: ["mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+    caps: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
+    connection: "mongodb://app:app@{name}:27017/app?authSource=admin"
+  mailpit:
+    image: axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
+    port: 1025
+    env: {}
+    health: ["/mailpit", "readyz"]
+    caps: []
+    connection: "smtp://{name}:1025  (web API for sent mail: http://{name}:8025/api/v1/messages)"
+  oauth2:
+    image: ghcr.io/navikt/mock-oauth2-server:2.3.0@sha256:dfcc1b60abe7414d2754767fceaec62a5dc79a10e543804069f69287b277e314
+    port: 8080
+    env: {SERVER_PORT: "8080"}
+    health: []
+    caps: []
+    connection: "issuer http://{name}:8080/default  (any username logs in; claims via the login form)"

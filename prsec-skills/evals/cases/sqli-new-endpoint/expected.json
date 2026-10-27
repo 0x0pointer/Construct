@@ -12,7 +12,7 @@
       "sink_lines": [35, 37],
       "entry_point": "GET /api/orders/search",
       "static_verdicts": ["confirmed_static", "plausible"],
-      "labels": ["likely"],
+      "labels": ["reproduced", "likely"],
       "min_severity": "medium",
       "introduced": true
     }

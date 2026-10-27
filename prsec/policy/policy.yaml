@@ -32,6 +32,28 @@ defaults:
     skills: []
     wall_clock_s: 180
     usd_budget: 0.3
+  # phase 2: dynamic validation (needs a container runner: docker or launcher)
+  env:
+    harness: claude-code
+    model: agent-large
+    skills: [env-building, mocking]
+    wall_clock_s: 600
+    usd_budget: 1.0
+  dynamic:
+    harness: claude-code
+    model: agent-large
+    skills: [env-building, mocking, poc-authoring, oracles, org]
+    wall_clock_s: 1800
+    usd_budget: 4.0
+
+dynamic:
+  enabled: true
+  max_hypotheses: 3
+  min_severity: medium
+  replay_runs: 2
+  base_replay: true
+  replay_timeout_s: 900
+  concurrency: 2
 
 experiments:
   - stage: hypothesise

@@ -69,7 +69,8 @@ class Stage(StrEnum):
     hypothesise = "hypothesise"
     static_verify = "static_verify"
     skeptic = "skeptic"
-    dynamic = "dynamic"  # phase 2
+    env = "env"  # phase 2: agent writes the EnvSpec (once per scan)
+    dynamic = "dynamic"  # phase 2: agent runs the app and writes a PoC (per hypothesis)
 
 
 class Limits(BaseModel):
@@ -199,7 +200,7 @@ class Finding(BaseModel):
     label: Label
     label_reason: str
     severity: Severity
-    introduced: bool | None = None  # None = unknown (no base replay in phase 1)
+    introduced: bool | None = None  # None = unknown (no base replay ran)
     entry_point: str | None = None
     source: CodeLoc | None = None
     sink: CodeLoc
@@ -208,3 +209,4 @@ class Finding(BaseModel):
     remediation: str | None = None
     evidence_uri: str | None = None
     provenance: dict[str, Any] = Field(default_factory=dict)  # per stage: harness, version, model, skills, image
+    dynamic: dict[str, Any] | None = None  # prsec.dynamic.results.DynamicEvidence (dumped), when dynamic ran

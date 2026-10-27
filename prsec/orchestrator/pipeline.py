@@ -1,4 +1,9 @@
-"""Phase-1 scan pipeline: rules -> triage -> hypothesise -> static_verify (fan-out) -> skeptic -> verdict -> sink.
+"""Scan pipeline: rules -> triage -> hypothesise -> static_verify (fan-out) -> skeptic -> dynamic -> verdict -> sink.
+
+Phase 2 (`prsec.orchestrator.dynamic`) runs after the skeptics: an env stage, then per selected
+survivor a dynamic stage in its own environment and agent-free replays on head and base. Its
+DynamicEvidence feeds `verdict.decide` (reproduced / introduced) and is stored on the Finding; any
+dynamic failure is recorded there, never a scan failure.
 
 Ownership: every write about the scan (stage runs, terminal status) carries the worker's lease token,
 and the pipeline stops at the next stage boundary once the lease is gone (superseded, or requeued
@@ -27,6 +32,7 @@ from prsec.adapters.protocols import Runner, WorkbenchSpec
 from prsec.citations import repo_relative
 from prsec.config import Policy, current_skills_version, load_policy, settings
 from prsec.db import queue
+from prsec.dynamic.results import DynamicEvidence
 from prsec.models import (
     CodeLoc,
     Finding,
@@ -40,7 +46,7 @@ from prsec.models import (
     StageStatus,
     StageTask,
 )
-from prsec.orchestrator import stages, verdict
+from prsec.orchestrator import dynamic, stages, verdict
 from prsec.orchestrator.symbols import enclosing_symbol
 from prsec.sarif.fingerprint import fingerprint
 from prsec.stages.outputs import (
@@ -117,6 +123,8 @@ class Ctx:
     shared: dict[str, str] = field(default_factory=dict)  # file name -> content copied into every task
     lease_token: str | None = None
     per_task_keys: bool = False  # mint a gateway key per task (authoritative per-stage cost + cap)
+    scm: Any = None  # phase 2: fetches the base source for the base replay
+    installation_id: int | None = None
 
     def check(self) -> None:
         if queue.is_superseded(self.scan_id):
@@ -190,7 +198,12 @@ def _book_gateway_cost(result: StageResult, task_key: str) -> StageResult:
     return result.model_copy(update={"usage": result.usage.model_copy(update={"usd": booked})})
 
 
-def _run(ctx: Ctx, stage: Stage, files: dict[str, str], *, prompt_ctx: dict[str, Any], hyp_id: str | None = None) -> Ran:
+def _run(
+    ctx: Ctx, stage: Stage, files: dict[str, str], *, prompt_ctx: dict[str, Any], hyp_id: str | None = None,
+    env_name: str | None = None, app_dir: Path | None = None,
+) -> Ran:
+    """One agent stage. With `env_name` it runs inside that dynamic environment (its network and
+    DNS, `app_dir` writable at /work/app) instead of on the static scan network."""
     names = list(files)
     task, choice = stages.build_task(
         ctx.policy, stage, ctx.scan_id, ctx.repo, context_files=names, prompt_ctx=prompt_ctx, hyp_id=hyp_id
@@ -221,7 +234,9 @@ def _run(ctx: Ctx, stage: Stage, files: dict[str, str], *, prompt_ctx: dict[str,
             out_dir=out_dir,
             skills_dir=settings().skills_dir,
             env=_gateway_env(ctx, task, task_key or ctx.gw_key),
-            network=ctx.network,
+            network=None if env_name else ctx.network,
+            env_name=env_name,
+            app_dir=app_dir,
         )
         result = ctx.runner.run_workbench(spec)
     except Exception as e:  # runner / key failure is a stage failure, not a scan failure
@@ -346,7 +361,10 @@ def _code_slices(ctx: Ctx, cits: list[Citation]) -> str:
     return "\n".join(parts)
 
 
-def _finding(ctx: Ctx, h: Hypothesis, hyp_run: Ran, sv: Ran | None, sk: Ran | None, label: Label, reason: str) -> Finding:
+def _finding(
+    ctx: Ctx, h: Hypothesis, hyp_run: Ran, sv: Ran | None, sk: Ran | None, label: Label, reason: str,
+    dyn: DynamicEvidence | None = None,
+) -> Finding:
     static = sv.output if sv else None
     assert static is None or isinstance(static, StaticVerifyOutput)
     description = h.description + f"\n\nImpact: {h.impact}"
@@ -357,6 +375,8 @@ def _finding(ctx: Ctx, h: Hypothesis, hyp_run: Ran, sv: Ran | None, sk: Ran | No
         provenance["static_verify"] = sv.provenance(ctx)
     if sk:
         provenance["skeptic"] = sk.provenance(ctx)
+    if dyn and dyn.provenance:
+        provenance["dynamic"] = dyn.provenance
     provenance["introduced_by_diff_claim"] = h.introduced_by_diff
     return Finding(
         fingerprint=fingerprint(h.bug_class, h.sink.file, enclosing_symbol(ctx.src, h.sink.file, h.sink.line), h.entry_point),
@@ -372,6 +392,7 @@ def _finding(ctx: Ctx, h: Hypothesis, hyp_run: Ran, sv: Ran | None, sk: Ran | No
         label=label,
         label_reason=reason,
         severity=static.severity if static else h.severity_guess,
+        introduced=verdict.introduced(dyn),
         entry_point=h.entry_point,
         source=_loc(ctx, h.source) if h.source else None,
         sink=_loc(ctx, h.sink),
@@ -380,6 +401,7 @@ def _finding(ctx: Ctx, h: Hypothesis, hyp_run: Ran, sv: Ran | None, sk: Ran | No
         remediation=static.remediation if static else None,
         evidence_uri=(sv.evidence_uri if sv else None) or hyp_run.evidence_uri,
         provenance=provenance,
+        dynamic=dyn.model_dump(mode="json", by_alias=True) if dyn else None,
     )
 
 
@@ -567,13 +589,17 @@ def _analyse(ctx: Ctx, triage: dict[str, Any], decision: str, meta: dict[str, An
     ctx.check()
     skeptics = _skeptics(ctx, survivors)
 
+    ctx.check()
+    evidence = dynamic.run_dynamic(ctx, survivors, meta)
+
     findings = []
     for h, sv, errs in survivors:
         static = sv.output if isinstance(sv.output, StaticVerifyOutput) else None
         sk = skeptics.get(h.id)
         skeptic = sk.output if sk and isinstance(sk.output, SkepticOutput) else None
-        label, reason = verdict.decide(h, static, skeptic, errs)
-        findings.append(_finding(ctx, h, hyp_run, sv, sk, label, reason))
+        dyn = evidence.get(h.id)
+        label, reason = verdict.decide(h, static, skeptic, errs, dyn)
+        findings.append(_finding(ctx, h, hyp_run, sv, sk, label, reason, dyn))
     return _dedupe(findings)
 
 
@@ -682,7 +708,7 @@ def _scan(scan_row: dict, scan_id: int, token: str | None, res: _ScanResources) 
     ctx = Ctx(
         scan_id=scan_id, repo=repo, pr=pr, policy=policy, root=root, src=src, runner=runner, network=network,
         gw_key=res.gw_key, image=_workbench_image(policy, repo), skills_version=skills_version,
-        lease_token=token, per_task_keys=per_task,
+        lease_token=token, per_task_keys=per_task, scm=scm, installation_id=inst,
     )
     ctx.shared = _shared_files(repo, pr, diff, changed)
 

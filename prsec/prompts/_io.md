@@ -6,7 +6,11 @@
 {%- for f in context_files %}
   - `{{ in_dir }}/{{ f }}`{% if f in file_notes %} — {{ file_notes[f] }}{% endif %}
 {%- endfor %}
+{%- if app_dir is defined and app_dir %}
+- You may run shell commands (for example `cat`, `grep`, `find`, `sed -n`) to inspect code. Do not modify the repository checkout. Install, build and run the application only with the tools described under "The environment" below, which work in a writable copy under `{{ app_dir }}`.
+{%- else %}
 - You may run read-only shell commands (for example `cat`, `grep`, `find`, `sed -n`) to inspect code. Do not modify the repository, do not install anything, and do not contact external services.
+{%- endif %}
 {% else -%}
 - You cannot run commands or open files. The contents of your input files are included after this prompt, each under a heading with its file name:
 {%- for f in context_files %}
