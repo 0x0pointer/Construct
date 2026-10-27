@@ -4,11 +4,23 @@
 
 Construct scans every pull request in your GitHub org for security bugs. A GitHub App sends
 PR events to one central service, which runs a short chain of LLM agents on the change:
-**triage → hypothesise → static verify → skeptic**. Each agent runs in an isolated
+**triage → hypothesise → static verify → skeptic → dynamic**. Each agent runs in an isolated
 container. Findings come out as **SARIF** and appear on an internal dashboard. Dev teams
-don't change anything in their own CI.
+don't change anything in their own CI, and nothing is posted back to the PR yet.
 
-Phase 1 is static analysis only: no dynamic validation, and nothing is posted back to the PR.
+The dynamic step is what makes a finding trustworthy. For each bug that survives the static
+checks, Construct starts the PR's app next to mock services (databases, a mock login server,
+a mail catcher), an agent tries to prove the bug with a declarative PoC, and then the PoC is
+**replayed without any agent** in fresh environments: twice on the PR, once on the base
+branch. A finding is labelled:
+
+| Label | Means |
+|---|---|
+| **reproduced** | every replay on the PR fired through the app's real HTTP entry point |
+| **likely** | the static checks confirmed it and the skeptic did not refute it (or it was replayed, but only by calling the code directly) |
+| **inconclusive** | everything else, always with the reason |
+
+The base replay tells you whether the PR **introduced** the bug or it was already there.
 
 ## Getting started
 
@@ -91,14 +103,17 @@ timeline live, or run `.venv/bin/prsec-trace <scan id> --follow` (see
 under `./work/artifacts/`.
 
 **Good to know:** dev mode has no sandbox and no network isolation. The agents run as you,
-on your machine, against the PR's source, so only scan repos you trust. Leave
+on your machine, against the PR's source, so only scan repos you trust. The dynamic step needs
+containers for its mock services, so dev mode skips it (reason `runner_unsupported`) and
+findings stop at `likely`; use path 3 for reproduced findings. Leave
 `PRSEC_GATEWAY_MASTER_KEY` empty in dev mode. To send dev traffic through a LiteLLM instead,
 set `PRSEC_GATEWAY_URL` and `PRSEC_GATEWAY_DEV_KEY`.
 
 ### 3. Deploy for the whole org
 
-One Linux VM runs the full stack in Docker Compose: API, worker, dashboard behind SSO,
-Postgres, MinIO, the LiteLLM gateway, and Caddy for TLS.
+One Linux VM runs the full stack in Docker Compose: API, worker, the launcher (the only
+service with the Docker socket), dashboard behind SSO, Postgres, MinIO, the LiteLLM gateway,
+the egress proxy for package installs, and Caddy for TLS.
 
 **Before you start, have these ready:**
 
@@ -124,13 +139,15 @@ key at `deploy/compose/secrets/github-app.pem`.
 **Step 2: build and install.**
 
 ```bash
-make images                                  # service image + workbench image
+make images                                  # service image (also the sink) + workbench image
 sudo make host-dirs                          # creates /var/lib/prsec/{work,skills,harness}
 sudo make harness-volumes                    # installs the agent CLIs (claude-code, codex, opencode, pi)
 sudo make skills SKILLS_VERSION=2026.10.1    # checks and installs the scan methodology
 ```
 
-Then set `PRSEC_SKILLS_VERSION=2026.10.1` in `.env` to match.
+Then set `PRSEC_SKILLS_VERSION=2026.10.1` in `.env` to match. Optionally pre-pull the mock
+service images from `prsec/dynamic/catalog.yaml` (`docker pull <image>` for each), so the first
+dynamic run does not wait for them.
 
 **Step 3: start.**
 
@@ -140,7 +157,9 @@ make up          # starts everything and applies the database schema
 ```
 
 **Step 4: check it works.** Open a PR, or push to one, in a repo where the App is installed.
-`make logs` shows the scan. The findings appear at `https://<your domain>/` after you log in.
+Follow the scan on the dashboard at `https://<your domain>/` (after you log in) or with
+`prsec-trace`, see below. Findings with a dynamic result show the PoC, every replay and the
+recorded outbound requests on their page.
 
 To stop: `make down` (data volumes are kept).
 
@@ -179,8 +198,9 @@ A stage's own log (the agent CLI and `prsec-stage`) is in `workbench.log` next t
 
 **Debug one scan without making the whole service verbose.** `prsec-debug scan` queues a scan
 at `DEBUG` level for that scan only. With `--keep` the scan's work dir, containers and
-environments stay in place for that many minutes (at most 240, the launcher removes leftover environments after 4 hours) after it finishes, so you can
-look inside; the worker removes them afterwards.
+environments stay in place for that many minutes after it finishes (at most 240: the launcher
+removes leftover environments after 4 hours), so you can look inside; the worker removes them
+afterwards.
 
 ```bash
 .venv/bin/prsec-debug scan your-org/your-repo 42 <head sha> --keep 30          # path 2
@@ -243,24 +263,38 @@ Notes on the compose stack:
 - **Per-scan networks** (`prsec-scan-<id>`, internal) are created by the launcher. It
   attaches the fixed-name `prsec-llm-gateway` container to each one, with the alias
   `llm-gateway`.
+- **Dynamic environments** get their own internal network each (`prsec-scan-<id>-<env>`): the
+  workbench, the catalog's mock services (`prsec/dynamic/catalog.yaml`, pinned by digest) and a
+  **sink** that is the workbench's DNS server. Service names resolve to the services; every
+  other name resolves to the sink, which records the request instead of letting it out. The
+  gateway is attached only for the agent's run, never for replays. The launcher removes
+  environments older than 4 hours (`PRSEC_ENV_MAX_AGE_S`).
+- **The egress proxy** (`prsec-egress-proxy`) is the only way out, and only for install and
+  build commands: it allows package registries only (`PRSEC_EGRESS_ALLOW`), refuses private,
+  loopback and metadata addresses, and pins the `Host` header. The running app never uses it.
 - **The gateway has its own Postgres** (`llm-gateway-db`) on an internal network that only
   the gateway joins. It is separate from the prsec database.
 - **MinIO** uses Chainguard's image, pinned by digest, because upstream stopped publishing
   community images. `minio-init` creates the bucket.
 - **Back up** the `pgdata` and `miniodata` volumes nightly, off the box.
 
-## Architecture (phase 1)
+## Architecture
 
 ```
 GitHub ──webhook──► caddy ─/webhooks/*─► api (HMAC verify → ScanRequest → Postgres queue)
-                      └── everything else ─► oauth2-proxy (OIDC) ─► dashboard
+                      └── everything else ─► oauth2-proxy (OIDC) ─► dashboard (live timeline)
                                                                          │
  worker ── lease from queue (FOR UPDATE SKIP LOCKED) ── per stage: ask the launcher
    │         launcher (only holder of the Docker socket, fixed container recipe)
-   │         └── per-scan internal network prsec-scan-<id>:
-   │               [workbench: prsec-stage + harness volume + skills + PR source]
-   │               └── only reachable host: prsec-llm-gateway (LiteLLM)
-   ├── mints a per-scan virtual key (budget + TTL + allowed aliases) at the gateway
+   │         ├── per-scan internal network prsec-scan-<id> (static stages):
+   │         │     [workbench: prsec-stage + harness volume + skills + PR source]
+   │         │     └── only reachable host: prsec-llm-gateway (LiteLLM)
+   │         └── per-hypothesis internal network prsec-scan-<id>-<env> (dynamic, replays):
+   │               [workbench: the PR's app + prsec-env/http/poc/replay]  [mock services]
+   │               [sink: DNS + recorder for every other host]  [egress proxy: installs only]
+   │               └── gateway only during the agent's run, never during replays
+   ├── mints a per-task virtual key (budget + TTL + allowed aliases) at the gateway
+   ├── writes every step to the scan timeline (scan_events)
    └── writes SARIF to MinIO + upserts findings in Postgres
 ```
 
@@ -279,13 +313,21 @@ These are the main ideas. The approved architecture plan has the full rationale.
 - **Citations are checked deterministically.** Every `file:line` and quote a stage cites
   is fuzzy-matched against the real source. Findings that fail are dropped.
 - **Fingerprints** are `bug_class` + sink + entry point, so findings dedupe across pushes.
-  Findings are never auto-closed in phase 1.
+  Findings are never auto-closed.
+- **Only the replay counts as dynamic evidence.** The agent writes a PoC (`poc.yaml`): users,
+  HTTP steps (or several sent at once, for races), and oracles that code evaluates, on the
+  response body, status, headers or JSON, on a request recorded by the sink, or on a command's
+  output. Canaries are fresh per replay, and an oracle never passes on a value the PoC itself
+  sent. The design is in [docs/design/phase2-dynamic.md](docs/design/phase2-dynamic.md).
 
 ## Repository layout
 
 | Path | What |
 |---|---|
-| `prsec/` | the Python package (api, orchestrator, adapters, sandbox entrypoint, sarif, dashboard, db) |
+| `prsec/` | the Python package (api, orchestrator, adapters, launcher, sandbox entrypoint, sarif, dashboard, db) |
+| `prsec/dynamic/` | dynamic validation: EnvSpec, PoC, mock catalog, app runner, replay, sink, egress proxy |
+| `prsec/obs/` | logging, the scan timeline, `prsec-trace` and `prsec-debug` |
+| `docs/design/` | design notes (dynamic validation) |
 | `prsec/policy/policy.yaml` | central scan policy (harness + model per stage, budgets, experiments, per-repo overrides) |
 | `prsec-skills/` | the methodology (SKILL.md skills), its own repo in production |
 | `deploy/compose/` | single-VM stack: `docker-compose.yml`, `caddy/Caddyfile`, `litellm/config.yaml` + `prsec_hooks.py` |
@@ -345,11 +387,16 @@ set `PRSEC_POLICY_FILE` to use a file outside the repo. It sets:
   or `workbench_image`)
 - global knobs: `max_hypotheses`, `static_verify_min_severity`, `skip_audit_sample`,
   `scan_drafts`, `scan_forks`
+- `dynamic`: `enabled`, how many hypotheses per scan get a dynamic attempt
+  (`max_hypotheses`, highest severity first, at or above `min_severity`), `replay_runs` (at
+  least 2; all must fire), `base_replay`, `replay_timeout_s` and `concurrency`. The `env` and
+  `dynamic` stages under `defaults` pick their harness and model like every other stage.
 
 ## Skills
 
 The methodology lives in `prsec-skills/`, in the open `SKILL.md` format, one directory per
-skill. Skills must use harness-neutral language: generic actions and `prsec-*` CLIs, with
+skill: `triage`, `taint-analysis`, `business-logic`, `static-validation` and `org` for the static
+stages; `env-building`, `mocking`, `poc-authoring` and `oracles` for the dynamic ones. Skills must use harness-neutral language: generic actions and `prsec-*` CLIs, with
 no harness-specific tools. `make lint-skills` enforces this.
 
 `make skills SKILLS_VERSION=<ver>` lints the skills, copies them to
@@ -388,7 +435,7 @@ Upgrading a harness means building a new volume and moving `current`. Images don
 ```bash
 make test        # unit tests (no DB, no Docker, no network)
 make test-db     # starts postgres:16 on :55432 (container prsec-test-pg) and runs -m db
-.venv/bin/pytest -m docker          # needs a Docker daemon (runner, compose config)
+.venv/bin/pytest -m docker          # needs a Docker daemon (runner, compose config, a real dynamic env)
 make conformance  # harness conformance suite, offline tier (all adapters, stub CLIs)
 make test-e2e     # pipeline end to end: Postgres queue + LocalRunner + scripted harness
 make conformance-live LIVE_HARNESSES=claude-code   # real harness CLIs + LLM (dev-mode login)
