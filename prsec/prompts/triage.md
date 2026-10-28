@@ -19,6 +19,15 @@ Decide:
 - `light` — security-relevant but small and local (one handler, one query, one check).
 - `full` — touches authentication or authorisation, multiple trust boundaries, business-critical flows, or is large enough that interactions matter.
 
+Two signals override a small-looking diff:
+
+- **A removed guard or check is `full`**, even when the PR calls it a cleanup or refactor. Watch
+  removed lines mentioning auth, permission, owner, tenant, role, verify, validate, sanitize,
+  escape, csrf, rate, limit, lock or transaction.
+- **A change to a shared helper** (authentication/authorisation middleware, a query builder, a
+  serializer base class, an HTTP-client wrapper) is `full` regardless of diff size: its blast radius
+  is every caller.
+
 When in doubt between two levels, choose the deeper one.
 
 Fill the output fields:

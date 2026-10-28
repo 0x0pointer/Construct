@@ -64,11 +64,12 @@ def seeded(pg_pool, tmp_path, monkeypatch):
             ("c" * 40, Jsonb({"decision": "skip", "rationale": "css only"})),
         ).fetchone()[0]
         c.execute(
-            """INSERT INTO stage_runs (scan_id, task_id, stage, harness, harness_version, model, status, usage, errors, duration_s)
-               VALUES (%s, 't1', 'hypothesise', 'codex', '0.50.0', 'agent-large', 'ok', %s, %s, 42),
-                      (%s, 't2', 'static_verify', 'claude-code', '2.1.0', 'agent-large', 'output_invalid', %s, %s, 80)""",
-            (s1, Jsonb({"usd": 0.4, "tokens_in": 1000, "tokens_out": 200}), Jsonb([]),
-             s1, Jsonb({"usd": 0.8}), Jsonb(["schema: citations missing"])),
+            """INSERT INTO stage_runs (scan_id, task_id, stage, harness, harness_version, model, status, usage, output, errors, duration_s)
+               VALUES (%s, 't1', 'hypothesise', 'codex', '0.50.0', 'agent-large', 'ok', %s, %s, %s, 42),
+                      (%s, 't2', 'static_verify', 'claude-code', '2.1.0', 'agent-large', 'output_invalid', %s, %s, %s, 80)""",
+            (s1, Jsonb({"usd": 0.4, "tokens_in": 1000, "tokens_out": 200, "turns": 3}),
+             Jsonb({"summary": "adds endpoints", "hypotheses": [{"id": "H1"}, {"id": "H2"}]}), Jsonb([]),
+             s1, Jsonb({"usd": 0.8}), Jsonb(None), Jsonb(["schema: citations missing"])),
         )
     fs = [finding(scan_id=s1), finding(scan_id=s1, bug_class="idor", symbol="get", label="reproduced", severity="critical"),
           finding(scan_id=s1, symbol="other", severity="low", label="inconclusive")]

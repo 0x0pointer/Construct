@@ -66,6 +66,7 @@ from prsec.stages.outputs import (
     Citation,
     HypothesesOutput,
     Hypothesis,
+    RulesOutput,
     SkepticOutput,
     StaticVerifyOutput,
     TriageOutput,
@@ -595,10 +596,32 @@ def _pr_json(pr: PRInfo) -> str:
 # -------------------------------------------------------------------- stages
 
 
-def _triage(ctx: Ctx, rules: dict[str, Any], audited: bool) -> tuple[dict[str, Any], str]:
-    """Returns (triage record, effective decision skip|light|full)."""
+def _rules(ctx: Ctx, hint: str | None) -> tuple[dict[str, Any], str]:
+    """First-pass noise filter (LLM, cheap). Returns (rules record, decision skip|scan).
+
+    Replaces the deterministic skip-list as the decision-maker; the deterministic pre-pass still runs
+    in `_scan` and is passed in here as `hint` for the agent to confirm or override. Fails open to
+    `scan` if the stage errors or returns invalid output.
+    """
+    ran = _run(ctx, Stage.rules, dict(ctx.shared), prompt_ctx={"pr_number": ctx.pr.number, "rules_hint": hint or ""})
+    record: dict[str, Any] = {"llm_task_id": ran.task.task_id, "hint": hint}
+    out = ran.output
+    if isinstance(out, RulesOutput):
+        record.update(out.model_dump())
+        decision = out.decision
+        record["source"] = "llm"
+    else:
+        record.update(decision="scan", reason=f"rules stage {ran.result.status.value}; failing open", source="fallback")
+        decision = "scan"
+    ctx.emit("rules", f"rules: {decision} ({record['source']}): {str(record.get('reason') or '')[:300]}",
+             data={"decision": decision, "source": record["source"], "reason": record.get("reason")})
+    return record, decision
+
+
+def _triage(ctx: Ctx, rules: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """Returns (triage record, decision skip|light|full). `rules` is the rules-agent record."""
     ran = _run(ctx, Stage.triage, dict(ctx.shared), prompt_ctx={"pr_number": ctx.pr.number})
-    record: dict[str, Any] = {"rules": rules, "llm_task_id": ran.task.task_id, "audit_sample": audited}
+    record: dict[str, Any] = {"rules": rules, "llm_task_id": ran.task.task_id}
     out = ran.output
     if isinstance(out, TriageOutput):
         record.update(out.model_dump())
@@ -607,18 +630,9 @@ def _triage(ctx: Ctx, rules: dict[str, Any], audited: bool) -> tuple[dict[str, A
     else:
         record.update(decision="full", rationale=f"triage stage {ran.result.status.value}; failing open", source="fallback")
         decision = "full"
-    if rules["decision"] == "skip":  # only reached for audit samples
-        record["source"] = "rules"
-        record["would_skip"] = True
-    elif decision == "skip" and audited:
-        record["would_skip"] = True
-    if decision == "skip" and audited:
-        decision = "light"
-    note = " (audit sample: would have skipped)" if record.get("would_skip") else ""
-    ctx.emit("triage", f"triage: {decision} ({record['source']}){note}: {str(record.get('rationale') or '')[:300]}",
+    ctx.emit("triage", f"triage: {decision} ({record['source']}): {str(record.get('rationale') or '')[:300]}",
              data={"decision": decision, "source": record["source"], "rationale": record.get("rationale"),
-                   "risk_tags": record.get("risk_tags"), "focus_files": record.get("focus_files"),
-                   "audit_sample": audited})
+                   "risk_tags": record.get("risk_tags"), "focus_files": record.get("focus_files")})
     return record, decision
 
 
@@ -871,12 +885,13 @@ def _scan(scan_row: dict, scan_id: int, token: str | None, res: _ScanResources) 
     diff = scm.get_diff(repo, number, inst)
     changed = _changed_files(pr, diff)
 
-    rule, rule_reason = triage_rules.classify(changed, diff)
-    rules = {"decision": rule, "reason": rule_reason}
-    audited = stages.bucket(scan_id, "skip_audit") < policy.skip_audit_sample
-    _rules_event(scan_id, rule, rule_reason, audited, changed)
-    if rule == "skip" and not audited:
-        return {"status": ScanStatus.skipped, "triage": {"decision": "skip", "source": "rules", "reason": rule_reason, "rules": rules}}
+    # Deterministic pre-pass, kept only as a cheap hint for the rules agent (no longer the decision-maker).
+    try:
+        hint_decision, hint_reason = triage_rules.classify(changed, diff)
+    except Exception:
+        log.warning("scan %s: deterministic rules hint failed; continuing without it", scan_id, exc_info=True)
+        hint_decision, hint_reason = "llm", None
+    rules_hint = f"the diff looks like noise only ({hint_reason})" if hint_decision == "skip" else None
     if queue.is_superseded(scan_id):
         raise Superseded()
 
@@ -901,24 +916,26 @@ def _scan(scan_row: dict, scan_id: int, token: str | None, res: _ScanResources) 
     ctx.shared = _shared_files(repo, pr, diff, changed)
 
     ctx.check()
-    triage, decision = _triage(ctx, rules, audited)
-    if decision == "skip":
+    rules_rec, rules_decision = _rules(ctx, rules_hint)
+    audited = stages.bucket(scan_id, "skip_audit") < policy.skip_audit_sample
+    if rules_decision == "skip" and not audited:
+        return {"status": ScanStatus.skipped,
+                "triage": {"decision": "skip", "source": "rules", "reason": rules_rec.get("reason"), "rules": rules_rec}}
+
+    triage, decision = _triage(ctx, rules_rec)
+    triage["audit_sample"] = audited
+    if decision == "skip" and not audited:
         return {"status": ScanStatus.skipped, "triage": triage}
+    if rules_decision == "skip" or decision == "skip":
+        triage["would_skip"] = True  # a gate would have skipped; the audit sample scans it anyway
+    if decision == "skip":
+        decision = "light"
 
     meta: dict[str, Any] = {"dropped": [], "complete": True, "errors": []}
     findings = _analyse(ctx, triage, decision, meta)
     ctx.check()
     res.findings = len(findings)
     return _write_results(ctx, triage, changed, meta, findings)
-
-
-def _rules_event(scan_id: int, rule: str, reason: str | None, audited: bool, changed: list[str]) -> None:
-    if rule == "skip":
-        msg = f"rules: skip ({reason})" + ("; audit sample, scanning anyway" if audited else "")
-    else:
-        msg = f"rules: no skip rule matched; the LLM triage decides ({len(changed)} changed file(s))"
-    timeline.emit(scan_id, "rules", msg, data={"decision": rule, "reason": reason, "audit_sample": audited,
-                                               "changed_files": changed[:100]})
 
 
 def _keep(scan_id: int, res: _ScanResources, minutes: int, token: str | None) -> bool:

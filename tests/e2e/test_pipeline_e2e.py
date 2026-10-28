@@ -88,6 +88,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict]:
         "version": "1", "workbench_image": "local", "max_hypotheses": 8, "static_verify_min_severity": "medium",
         "skip_audit_sample": 0.0, "experiments": [],
         "defaults": {
+            "rules": {**stage, "harness": "claude-code", "skills": ["rules"]},
             "triage": {**stage, "harness": "claude-code", "skills": ["triage"]},
             "hypothesise": {**stage, "harness": "opencode", "skills": ["taint-analysis", "business-logic"]},
             "static_verify": {**stage, "harness": "claude-code", "skills": ["static-validation"]},
@@ -145,9 +146,11 @@ def test_css_only_pr_is_skipped_by_rules(env: dict) -> None:
     row = _scan(env["sql"], scan_id)
     assert row["status"] == "skipped", row["error"]
     assert row["triage"]["source"] == "rules"
-    assert row["triage"]["reason"].startswith("noise_only")
-    assert env["scm"].fetched == []  # never downloaded source, never ran a stage
-    assert env["sql"].execute("SELECT count(*) AS n FROM stage_runs").fetchone()["n"] == 0
+    assert row["triage"]["rules"]["decision"] == "skip"
+    # The rules agent (not a deterministic filter) decides skip and stops the pipeline before triage:
+    # it is the only stage that runs.
+    runs = env["sql"].execute("SELECT stage FROM stage_runs").fetchall()
+    assert [r["stage"] for r in runs] == ["rules"]
 
 
 def test_sqli_pr_yields_likely_finding_and_valid_sarif(env: dict) -> None:
@@ -165,7 +168,7 @@ def test_sqli_pr_yields_likely_finding_and_valid_sarif(env: dict) -> None:
     by_stage: dict[str, list[dict]] = {}
     for r in runs:
         by_stage.setdefault(r["stage"], []).append(r)
-    assert set(by_stage) == {"triage", "hypothesise", "static_verify", "skeptic"}
+    assert set(by_stage) == {"rules", "triage", "hypothesise", "static_verify", "skeptic"}
     assert all(r["status"] == "ok" for r in runs), runs
     assert by_stage["hypothesise"][0]["harness"] == "opencode"
     assert len(by_stage["static_verify"]) == 2  # H3 dropped by the citation check before verification

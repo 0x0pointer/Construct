@@ -19,6 +19,15 @@ class Citation(BaseModel):
     quote: str = Field(description="Verbatim code at file:line (at least one full line)")
 
 
+# ----------------------------------------------------------------- 0. rules
+
+
+class RulesOutput(BaseModel):
+    decision: Literal["skip", "scan"] = Field(description=(
+        "skip: no conceivable security relevance (pure noise); scan: send the PR down the pipeline"))
+    reason: str = Field(description="One short sentence naming what drove the decision")
+
+
 # ---------------------------------------------------------------- 1. triage
 
 
@@ -105,6 +114,7 @@ class DynamicOutput(BaseModel):
 
 
 _MODELS: dict[Stage, type[BaseModel]] = {
+    Stage.rules: RulesOutput,
     Stage.triage: TriageOutput,
     Stage.hypothesise: HypothesesOutput,
     Stage.static_verify: StaticVerifyOutput,

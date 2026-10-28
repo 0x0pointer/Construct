@@ -45,8 +45,14 @@ HYPOTHESES = {
 }
 
 
-def stage_output(title: str, in_dir: Path | None) -> dict:
+def stage_output(title: str, in_dir: Path | None, prompt: str = "") -> dict:
     hyp = json.loads((in_dir / "hypothesis.json").read_text()) if in_dir and (in_dir / "hypothesis.json").is_file() else {}
+    if title == "RulesOutput":
+        # The deterministic pre-pass hint ("...looks like noise only...") is in the prompt only for
+        # noise-only diffs (the css-only case); application-code diffs get no hint -> scan.
+        noise = "noise only" in prompt.lower()
+        return {"decision": "skip" if noise else "scan",
+                "reason": "docs/styling/assets only" if noise else "changes application code"}
     if title == "TriageOutput":
         return {"decision": "full", "rationale": "New endpoint builds SQL from a query parameter.",
                 "risk_tags": ["sqli"], "focus_files": ["app.py"]}
@@ -82,7 +88,7 @@ def main() -> int:
     for line in (Path(os.environ["PRSEC_E2E_FIXTURES"]) / STREAMS[cli][0] / STREAMS[cli][1]).read_text().splitlines():
         print(line, flush=True)
     title = json.loads(Path(schema.group(1)).read_text()).get("title", "")
-    doc = stage_output(title, Path(hyp.group(1)) if hyp else None)
+    doc = stage_output(title, Path(hyp.group(1)) if hyp else None, prompt)
     Path(out.group(1)).write_text(json.dumps(doc))
     return 0
 

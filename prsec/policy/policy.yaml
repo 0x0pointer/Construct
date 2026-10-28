@@ -8,6 +8,12 @@ scan_drafts: true
 scan_forks: false
 
 defaults:
+  rules:                         # first-pass noise filter: skip obvious noise, else scan
+    harness: raw
+    model: agent-small
+    skills: [rules]
+    wall_clock_s: 90
+    usd_budget: 0.05
   triage:
     harness: raw
     model: agent-small
@@ -47,6 +53,11 @@ defaults:
     usd_budget: 4.0
 
 dynamic:
+  # Full designed pipeline (reference default). NOTE: the active dev pilot runs SAST-only
+  # (policy-dev.yaml sets enabled: false) because the dynamic agent authors a working exploit PoC,
+  # which OpenAI refuses under Daybreak Blue. Turn this off here too for an OpenAI-only deployment
+  # until red-team Daybreak access is available, or route the dynamic + env stages to a model that
+  # permits authorized exploit generation.
   enabled: true
   max_hypotheses: 3
   min_severity: medium

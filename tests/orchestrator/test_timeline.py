@@ -12,7 +12,8 @@ from .test_dynamic import EnvRunner, dyn, dyn_script  # noqa: F401  (fixture)
 from .test_pipeline import ROW, FakeQueue, FakeRunner, env, full_script, hyp, only  # noqa: F401  (fixture)
 
 STATIC_SCAN = [
-    "scan_started", "rules",
+    "scan_started",
+    "stage_started", "stage_finished", "rules",
     "stage_started", "stage_finished", "triage",
     "stage_started", "stage_finished", "hypotheses",
     "stage_started", "stage_finished", "static_verdict",
@@ -62,12 +63,12 @@ def test_scan_started_and_finished_messages(env, timeline):
 def test_stage_events_carry_harness_model_status_and_cost(env, timeline):
     env(script=full_script())
     pipeline.run_scan(ROW)
-    started = timeline.of("stage_started")[0]
+    started = [r for r in timeline.of("stage_started") if r["stage"] == "triage"][0]
     assert started["task_id"] == "101-triage"
     assert started["stage"] == "triage"
     assert started["data"]["harness"]
     assert started["data"]["model"]
-    finished = timeline.of("stage_finished")[0]
+    finished = [r for r in timeline.of("stage_finished") if r["stage"] == "triage"][0]
     assert finished["message"].startswith("triage ok in ")
     assert "$0.5000" in finished["message"]
     assert finished["data"]["usd"] == 0.5
@@ -110,16 +111,17 @@ def test_refuted_static_verdict_and_label(env, timeline):
 def test_rules_skip_is_explained(env, timeline):
     from .test_pipeline import CSS_DIFF
 
-    env(diff=CSS_DIFF)
+    env(diff=CSS_DIFF, script={"rules": lambda t: {"decision": "skip", "reason": "only CSS changed"}})
     pipeline.run_scan(ROW)
-    assert timeline.kinds() == ["scan_started", "rules", "scan_finished"]
-    assert timeline.of("rules")[0]["message"].startswith("rules: skip (noise_only:")
+    assert no_agent(timeline.kinds()) == ["scan_started", "stage_started", "stage_finished", "rules",
+                                          "env_destroyed", "scan_finished"]
+    assert timeline.of("rules")[0]["message"].startswith("rules: skip (llm): only CSS changed")
     assert timeline.of("scan_finished")[0]["message"].startswith("scan skipped in ")
 
 
 def test_scan_crash_emits_error(env, timeline, monkeypatch):
     s = env(script=full_script())
-    monkeypatch.setattr(pipeline.triage_rules, "classify", lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(pipeline, "_changed_files", lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
     pipeline.run_scan(ROW)
     assert only(s["q"])["status"] == ScanStatus.failed
     assert timeline.of("error")[0]["message"] == "scan failed: RuntimeError: boom"
@@ -359,10 +361,11 @@ def test_keep_not_recorded_cleans_up_as_usual(env, timeline, monkeypatch):
 
 
 def test_keep_before_anything_was_allocated_is_a_no_op(env, timeline, monkeypatch):
-    from .test_pipeline import CSS_DIFF
+    from prsec.config import RepoOverride
 
     q = KeepQueue(monkeypatch)
-    env(diff=CSS_DIFF, q=q)
+    # repo disabled -> the scan returns before any work dir / runner is allocated
+    env(policy_update={"repos": {"acme/*": RepoOverride(enabled=False)}}, q=q)
     pipeline.run_scan({**ROW, "debug": KEEP})
     assert q.kept == []
 

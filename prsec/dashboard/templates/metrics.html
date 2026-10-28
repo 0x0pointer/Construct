@@ -47,6 +47,23 @@
 {{ precision_table(m.precision_by_bug_class, 'Bug class') }}
 <p class="muted">Precision = TP / (TP + FP) over triaged findings; accepted (real, risk-accepted) is excluded.</p>
 
+<h2>By agent (30 days)</h2>
+<p class="muted" style="margin-top:0">One row per agent (pipeline stage): how reliably it runs, what it costs and how much work it does.</p>
+<table>
+  <thead><tr><th>Agent</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Failed</th>
+    <th class="num">Avg duration</th><th class="num">Avg cost</th><th class="num">Total cost</th>
+    <th class="num">Avg tokens</th><th class="num">Avg turns</th></tr></thead>
+  <tbody>
+  {% for r in m.per_stage %}
+    <tr><td><code>{{ r.stage }}</code></td><td class="num">{{ r.runs }}</td><td class="num">{{ r.ok_rate | pct }}</td>
+      <td class="num">{% if r.failed %}<span class="err">{{ r.failed }}</span>{% else %}0{% endif %}</td>
+      <td class="num">{{ r.avg_duration_s | dur }}</td><td class="num">{{ r.avg_cost | usd }}</td>
+      <td class="num">{{ r.total_cost | usd }}</td><td class="num">{{ r.avg_tokens | int }}</td>
+      <td class="num">{{ r.avg_turns | round(1) }}</td></tr>
+  {% else %}<tr><td colspan="9" class="muted">No stage runs.</td></tr>{% endfor %}
+  </tbody>
+</table>
+
 {% macro harness_row(r) %}
   <td class="num">{{ r.runs }}</td><td class="num">{{ r.ok_rate | pct }}</td>
   <td class="num">{{ r.avg_duration_s | dur }}</td><td class="num">{{ r.avg_cost | usd }}</td>
