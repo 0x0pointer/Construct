@@ -29,7 +29,8 @@ ACTIVE_STATUSES = frozenset({"queued", "running"})
 EVIDENCE_KINDS = frozenset({"replay", "dynamic_outcome", "label", "kept"})
 DATA_KEYS_MAX = 20
 DATA_VALUE_MAX = 300
-TEXT_PLAIN = "text/plain; charset=utf-8"
+# Stored artifacts are agent/PR-derived text: always served as text/plain, never sniffed as HTML.
+PLAIN_HEADERS = {"X-Content-Type-Options": "nosniff"}
 
 
 
@@ -337,7 +338,7 @@ def _artifact(uri: str | None, what: str) -> bytes:
 )
 def stage_transcript(stage_run_id: int) -> Response:
     body = _artifact(db.stage_run_transcript_uri(stage_run_id), "transcript")
-    return Response(body, media_type=TEXT_PLAIN)
+    return PlainTextResponse(body, headers=PLAIN_HEADERS)  # NOSONAR(S5131) text/plain + nosniff: never rendered as HTML
 
 
 @app.get(
@@ -350,7 +351,7 @@ def finding_evidence(finding_id: int) -> Response:
     if f is None:
         raise HTTPException(404, FINDING_NOT_FOUND)
     body = _artifact((f["data"] or {}).get("evidence_uri"), "evidence")
-    return Response(body, media_type=TEXT_PLAIN)
+    return PlainTextResponse(body, headers=PLAIN_HEADERS)  # NOSONAR(S5131) text/plain + nosniff: never rendered as HTML
 
 
 @app.get(
@@ -363,7 +364,7 @@ def finding_dynamic_evidence(finding_id: int) -> Response:
     if f is None:
         raise HTTPException(404, FINDING_NOT_FOUND)
     body = _artifact(((f["data"] or {}).get("dynamic") or {}).get("evidence_uri"), "dynamic evidence")
-    return Response(body, media_type=TEXT_PLAIN)
+    return PlainTextResponse(body, headers=PLAIN_HEADERS)  # NOSONAR(S5131) text/plain + nosniff: never rendered as HTML
 
 
 def run() -> None:

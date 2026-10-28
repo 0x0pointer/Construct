@@ -36,8 +36,9 @@ DEFAULT_ALLOW = (
     "plugins.gradle.org", "services.gradle.org",
 )
 HOSTNAME = re.compile(r"[a-z0-9]([a-z0-9-]{0,62}\.)*[a-z0-9-]{1,63}")
-METADATA_IPS = frozenset(ipaddress.ip_address(a) for a in (  # NOSONAR(S1313) cloud metadata endpoints: a blocklist, never dialled
-    "169.254.169.254", "169.254.170.2", "100.100.100.200", "192.0.0.192", "fd00:ec2::254"))
+# Cloud metadata endpoints: a blocklist, never dialled.
+_METADATA = ("169.254.169.254", "169.254.170.2", "100.100.100.200", "192.0.0.192", "fd00:ec2::254")  # NOSONAR(S1313)
+METADATA_IPS = frozenset(ipaddress.ip_address(a) for a in _METADATA)
 NAT64 = ipaddress.ip_network("64:ff9b::/96")
 CONNECT_PORTS = frozenset({443})
 HTTP_PORTS = frozenset({80})

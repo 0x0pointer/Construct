@@ -225,7 +225,7 @@ def create_app(runner: Any = None) -> FastAPI:
         try:
             checked = validate_env(scan_id, env_name, req)
         except EnvRefused as e:
-            log.warning("refused env %r for scan %s: %r", env_name, scan_id, str(e))  # %r: no CR/LF from the request
+            log.warning("refused env %r for scan %s: %r", env_name, scan_id, str(e))  # NOSONAR(S5145) %r escapes CR/LF
             raise HTTPException(403, str(e)) from None
         return runner.create_env(scan_id, env_name, checked)
 

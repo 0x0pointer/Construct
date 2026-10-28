@@ -34,26 +34,31 @@ def _digits_end(s: str, i: int) -> int:
     return i
 
 
+def _version_end(s: str, start: int) -> int | None:
+    r"""End of `\d+\.\d+\.\d+[\w.+-]*` matched at s[start] (a digit), or None."""
+    end = _digits_end(s, start)
+    for _ in range(2):  # two more `.\d+` groups
+        if end >= len(s) or s[end] != "." or _digits_end(s, end + 1) == end + 1:
+            return None
+        end = _digits_end(s, end + 1)
+    while end < len(s) and (s[end].isalnum() or s[end] in _VERSION_TAIL_PUNCT):
+        end += 1
+    return end
+
+
 def _find_version(s: str) -> str | None:
     r"""First match of `(?<!\d)\d+\.\d+\.\d+[\w.+-]*` in s, by a hand scan that is linear in len(s):
-    a match can only start at a digit-run start, and each digit run is visited by at most three
-    candidate starts (a regex search here is flagged for super-linear backtracking, S8786)."""
+    a match can only start at a digit-run start (a regex search here is flagged for super-linear
+    backtracking, S8786)."""
     i = 0
     while i < len(s):
         if not s[i].isdecimal():
             i += 1
             continue
-        start, end = i, _digits_end(s, i)
-        for _ in range(2):  # two more `.\d+` groups
-            nxt = _digits_end(s, end + 1) if end < len(s) and s[end] == "." else end
-            if nxt == end or nxt == end + 1:
-                break
-            end = nxt
-        else:
-            while end < len(s) and (s[end].isalnum() or s[end] in _VERSION_TAIL_PUNCT):
-                end += 1
-            return s[start:end]
-        i = _digits_end(s, start)  # next candidate is the next digit-run start
+        end = _version_end(s, i)
+        if end is not None:
+            return s[i:end]
+        i = _digits_end(s, i)  # next candidate is the next digit-run start
     return None
 
 
