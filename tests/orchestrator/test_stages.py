@@ -29,6 +29,20 @@ def test_task_shape_from_policy():
     assert choice.experiment is None
 
 
+def test_rules_stage_task():
+    p = _policy(experiments=[])
+    task, _ = stages.build_task(p, Stage.rules, 42, "acme/shop", context_files=["pr.json", "diff.patch"],
+                                prompt_ctx={"pr_number": 3, "rules_hint": "the diff looks like noise only (docs)"})
+    sp = p.defaults["rules"]
+    assert task.task_id == "42-rules"
+    assert task.harness == sp.harness == "raw"
+    assert task.model_alias == sp.model
+    assert task.skills == sp.skills == ["rules"]
+    assert task.output_schema == schema_for(Stage.rules)
+    assert "noise filter" in task.prompt_md.lower()
+    assert "the diff looks like noise only (docs)" in task.prompt_md  # the hint is rendered when present
+
+
 def test_task_id_with_hypothesis():
     p = _policy(experiments=[])
     task, _ = stages.build_task(p, "static_verify", 7, "a/b", context_files=["hypothesis.json"], hyp_id="H3",
@@ -87,7 +101,8 @@ def test_repo_override_wins_and_disables_experiment():
 
 
 def _static_usd(d, n):
-    return d["triage"].usd_budget + d["hypothesise"].usd_budget + n * d["static_verify"].usd_budget + n * d["skeptic"].usd_budget
+    return (d["rules"].usd_budget + d["triage"].usd_budget + d["hypothesise"].usd_budget
+            + n * d["static_verify"].usd_budget + n * d["skeptic"].usd_budget)
 
 
 def test_scan_budget():
@@ -107,7 +122,8 @@ def test_scan_budget_caps_dynamic_and_covers_replays():
     assert usd == pytest.approx(_static_usd(d, 4) + d["env"].usd_budget + d["dynamic"].usd_budget)
     from prsec.dynamic.envspec import MAX_HEALTH_S, MAX_INSTALL_S
     replays = (2 * p.dynamic.replay_runs + 1) * (MAX_INSTALL_S + MAX_HEALTH_S + p.dynamic.replay_timeout_s)
-    static_wall = d["triage"].wall_clock_s + d["hypothesise"].wall_clock_s + 4 * (d["static_verify"].wall_clock_s + d["skeptic"].wall_clock_s)
+    static_wall = (d["rules"].wall_clock_s + d["triage"].wall_clock_s + d["hypothesise"].wall_clock_s
+                   + 4 * (d["static_verify"].wall_clock_s + d["skeptic"].wall_clock_s))
     assert wall == static_wall + d["env"].wall_clock_s + d["dynamic"].wall_clock_s + replays
 
 

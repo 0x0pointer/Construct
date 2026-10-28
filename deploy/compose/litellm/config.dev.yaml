@@ -1,0 +1,42 @@
+# Dev-only LiteLLM gateway for the local pilot. OpenAI-only, no key-management DB:
+# Construct runs in passthrough mode (no master key in the worker), so the worker sends
+# PRSEC_GATEWAY_DEV_KEY as the bearer and this proxy accepts it as the master key.
+#
+# Start (standalone container):
+#   docker run -d --name prsec-dev-gateway -p 127.0.0.1:4000:4000 \
+#     -e OPENAI_API_KEY="$(cat deploy/compose/secrets/openai.key)" \
+#     -e LITELLM_MASTER_KEY=sk-prsec-dev \
+#     -v "$PWD/deploy/compose/litellm/config.dev.yaml:/app/config/config.yaml:ro" \
+#     ghcr.io/berriai/litellm:v1.105.5 --config /app/config/config.yaml --port 4000
+#
+# Change the heavy model here (one line) if the exact id differs from gpt-6.1-sol.
+model_list:
+  - model_name: agent-large          # heavy stages: hypothesise, static_verify, env, dynamic
+    litellm_params:
+      model: openai/gpt-6.1-sol
+      api_key: os.environ/OPENAI_API_KEY
+      timeout: 600
+    model_info: { family: openai }
+
+  - model_name: agent-small          # light: triage
+    litellm_params:
+      model: openai/gpt-6-luna
+      api_key: os.environ/OPENAI_API_KEY
+      timeout: 300
+    model_info: { family: openai }
+
+  - model_name: judge                # light: skeptic
+    litellm_params:
+      model: openai/gpt-6-luna
+      api_key: os.environ/OPENAI_API_KEY
+      timeout: 600
+    model_info: { family: openai }
+
+litellm_settings:
+  drop_params: true
+  request_timeout: 600
+  num_retries: 2
+  turn_off_message_logging: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

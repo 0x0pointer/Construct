@@ -1,0 +1,76 @@
+# Dev-mode policy for the local pilot (PRSEC_POLICY_PATH points here).
+# OpenAI-only, routed through a local LiteLLM gateway (see deploy/compose/litellm/config.dev.yaml):
+#   model alias -> real model
+#     agent-large  -> openai/gpt-6.1-sol   (the "Sol" heavy model)
+#     agent-small  -> openai/gpt-6-luna    (cheap)
+#     judge        -> openai/gpt-6-luna    (cheap)
+# Harnesses are OpenAI-native: `raw` (one-shot chat) for the light stages,
+# `codex` (agentic, reads the repo) for the heavy ones.
+version: "1"
+workbench_image: prsec/workbench-base:latest
+max_hypotheses: 8
+static_verify_min_severity: medium
+skip_audit_sample: 0.0
+scan_drafts: true
+scan_forks: false
+
+defaults:
+  rules:                       # first-pass noise filter -> cheap (Luna)
+    harness: raw
+    model: agent-small
+    skills: [rules]
+    wall_clock_s: 90
+    usd_budget: 0.05
+  triage:                      # light -> cheap
+    harness: raw
+    model: agent-small
+    skills: [triage]
+    wall_clock_s: 180
+    usd_budget: 0.25
+  hypothesise:                 # heavy -> Sol
+    harness: codex
+    model: agent-large
+    skills: [taint-analysis, business-logic, org]
+    wall_clock_s: 1200
+    usd_budget: 3.0
+  static_verify:               # heavy -> Sol
+    harness: codex
+    model: agent-large
+    skills: [static-validation, org]
+    wall_clock_s: 900
+    usd_budget: 1.5
+  skeptic:                     # light -> cheap
+    harness: raw
+    model: judge
+    skills: []
+    wall_clock_s: 180
+    usd_budget: 0.3
+  # phase 2 stages: skipped in dev (no container runner), findings stop at `likely`.
+  env:                         # heavy -> Sol
+    harness: codex
+    model: agent-large
+    skills: [env-building, mocking]
+    wall_clock_s: 600
+    usd_budget: 1.0
+  dynamic:                     # heavy -> Sol
+    harness: codex
+    model: agent-large
+    skills: [env-building, mocking, poc-authoring, oracles, org]
+    wall_clock_s: 1800
+    usd_budget: 4.0
+
+dynamic:
+  # SAST only (5 agents: rules, triage, hypothesise, static_verify, skeptic). The dynamic agent
+  # authors a working exploit PoC, which OpenAI refuses under Daybreak Blue ("flagged for possible
+  # cybersecurity risk"). Re-enable once we have red-team Daybreak access (or route the dynamic +
+  # env stages to a model that permits authorized exploit generation). Findings top out at `likely`.
+  enabled: false
+  max_hypotheses: 3
+  min_severity: medium
+  replay_runs: 2
+  base_replay: true
+  replay_timeout_s: 900
+  concurrency: 2
+
+experiments: []
+repos: {}

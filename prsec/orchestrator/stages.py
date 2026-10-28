@@ -128,7 +128,7 @@ def scan_budget(policy: Policy, repo: str, n_hypotheses: int) -> tuple[float, in
     usd = 0.0
     wall = 0
     models: set[str] = set()
-    plan = (("triage", 1), ("hypothesise", 1), ("static_verify", n_hypotheses), ("skeptic", n_hypotheses),
+    plan = (("rules", 1), ("triage", 1), ("hypothesise", 1), ("static_verify", n_hypotheses), ("skeptic", n_hypotheses),
             ("env", 1 if n_dyn else 0), ("dynamic", n_dyn))
     for stage, mult in plan:
         if stage not in policy.defaults or not mult:

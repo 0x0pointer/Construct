@@ -33,29 +33,55 @@
   </div>
 </div>
 
+{% set health_badge = {'ok': 'st-ok', 'failed': 'st-failed', 'partial': 'st-running'} %}
+<h2>Agents</h2>
+<p class="muted" style="margin-top:0">The agent pipeline for this scan, in order. Each row is one agent (fan-out stages collapse all per-hypothesis runs).</p>
+<table>
+  <thead><tr><th>Agent</th><th>Stage</th><th class="num">Runs</th><th>Status</th><th>Decision</th>
+    <th class="num">Tokens</th><th class="num">Turns</th><th class="num">Cost</th><th class="num">Duration</th></tr></thead>
+  <tbody>
+  {% for a in agents %}
+    <tr>
+      <td><strong>{{ a.role }}</strong></td>
+      <td><code>{{ a.stage }}</code></td>
+      <td class="num">{{ a.runs }}</td>
+      <td><span class="badge {{ health_badge.get(a.health, 'st-running') }}">{{ a.health }}{% if a.health == 'partial' %} {{ a.ok }}/{{ a.runs }}{% endif %}</span></td>
+      <td>{% for d in a.decisions %}<div>{{ d }}</div>{% else %}<span class="muted">-</span>{% endfor %}</td>
+      <td class="num">{{ a.tokens }}</td>
+      <td class="num">{{ a.turns or '-' }}</td>
+      <td class="num">{{ a.cost | usd }}</td>
+      <td class="num">{{ a.duration_s | dur }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="9" class="muted">No agent runs.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
 {% include "_timeline.html" %}
 
 <h2>Stage runs</h2>
 <table>
-  <thead><tr><th>Stage</th><th>Task</th><th>Harness</th><th>Version</th><th>Model</th><th>Status</th>
-    <th class="num">Attempts</th><th class="num">Tokens in/out</th><th class="num">Cost</th><th class="num">Duration</th><th>Errors</th></tr></thead>
+  <thead><tr><th>Agent</th><th>Task</th><th>Harness</th><th>Model</th><th>Status</th><th>Decision</th>
+    <th class="num">Attempts</th><th class="num">Tokens in/out</th><th class="num">Turns</th><th class="num">Cost</th><th class="num">Duration</th><th>Errors</th></tr></thead>
   <tbody>
   {% for r in scan.stage_runs %}
     <tr>
-      <td>{{ r.stage }}</td>
+      <td>{{ r.role }}<br><span class="muted" style="font-size:11px">{{ r.stage }}{% if r.harness_version %} · {{ r.harness_version }}{% endif %}</span></td>
       <td><code>{{ r.task_id }}</code>{% if r.transcript_uri %}<br><a class="muted" href="/stage-runs/{{ r.id }}/transcript">transcript</a>{% endif %}</td>
       <td>{{ r.harness }}</td>
-      <td>{{ r.harness_version or '-' }}</td>
       <td>{{ r.model }}</td>
       <td><span class="badge st-{{ r.status }}">{{ r.status }}</span></td>
+      <td>{{ r.summary or '-' }}</td>
       <td class="num">{{ r.attempts }}</td>
       <td class="num">{{ r.usage.tokens_in or 0 }} / {{ r.usage.tokens_out or 0 }}</td>
+      <td class="num">{{ r.turns or '-' }}</td>
       <td class="num">{{ r.usage.usd | usd }}</td>
       <td class="num">{{ r.duration_s | dur }}</td>
       <td>{% for e in r.errors %}<div class="err">{{ e }}</div>{% endfor %}</td>
     </tr>
   {% else %}
-    <tr><td colspan="11" class="muted">No stage runs.</td></tr>
+    <tr><td colspan="12" class="muted">No stage runs.</td></tr>
   {% endfor %}
   </tbody>
 </table>

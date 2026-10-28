@@ -19,7 +19,7 @@ an attacker could reach. A wrong `skip` hides a vulnerability; a wrong `light` o
   glance at a changed file's surroundings (`sed -n '1,80p' <file>`), but triage must not turn into
   a review: spend at most a few reads.
 
-Deterministic rules have already removed the obvious noise (docs-only, lockfile bumps, pure
+A fast first-pass rules agent has already removed the obvious noise (docs-only, lockfile bumps, pure
 CSS/assets, generated code, formatting-only diffs). What reaches you is ambiguous by definition.
 
 ## Decision

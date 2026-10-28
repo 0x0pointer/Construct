@@ -39,6 +39,27 @@ def test_scan_detail(client, seeded):
     assert client.get("/scans/999999").status_code == 404
 
 
+def test_scan_detail_agent_observability(client, seeded):
+    s1, _ = seeded["scans"]
+    r = client.get(f"/scans/{s1}")
+    assert r.status_code == 200
+    # Agents panel: friendly role names and the decision summary derived from each agent's output.
+    assert "Agents" in r.text
+    assert "Hypothesise" in r.text
+    assert "Static verify" in r.text
+    assert "2 hypothesis(es): H1, H2" in r.text  # hypothesise decision from its output
+    assert "Turns" in r.text  # per-agent effort column
+
+
+def test_metrics_per_agent_rollup(client, seeded):
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    assert "By agent" in r.text
+    assert "Avg turns" in r.text
+    assert "hypothesise" in r.text  # a per-stage row
+    assert "static_verify" in r.text
+
+
 def test_findings_filters(client, seeded):
     r = client.get("/findings")
     assert r.status_code == 200

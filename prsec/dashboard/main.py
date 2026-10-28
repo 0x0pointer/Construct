@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 
 from prsec.adapters.sinks import sarif_store
 from prsec.db import findings as db
+from prsec.models import Stage
 from prsec.obs import events as obs_events
 from prsec.obs.logging import setup_logging
 
@@ -56,6 +57,81 @@ def _fmt_json(v: Any) -> str:
 TEMPLATES.env.filters.update(usd=_fmt_usd, dur=_fmt_dur, pct=_fmt_pct, tojson_pretty=_fmt_json)
 
 app = FastAPI(title="PRSec dashboard", docs_url=None, redoc_url=None)
+
+# ---------------------------------------------------- per-agent observability
+
+# Friendly names and canonical pipeline order (single source of truth: the Stage enum).
+STAGE_ROLES = {
+    "rules": "Rules gate", "triage": "Triage", "hypothesise": "Hypothesise",
+    "static_verify": "Static verify", "skeptic": "Skeptic", "env": "Env builder", "dynamic": "Dynamic",
+}
+STAGE_ORDER = {s.value: i for i, s in enumerate(Stage)}
+
+
+def _stage_summary(stage: str | None, output: Any) -> str:
+    """One-line, human-readable decision for an agent stage, derived from its structured output."""
+    if not isinstance(output, dict):
+        return ""
+    g = output.get
+    if stage == "rules":
+        return " — ".join(x for x in (g("decision"), g("reason")) if x)
+    if stage == "triage":
+        tags = g("risk_tags") or []
+        return str(g("decision") or "") + (f" · {', '.join(tags)}" if tags else "")
+    if stage == "hypothesise":
+        hyps = g("hypotheses") or []
+        ids = ", ".join(h.get("id", "") for h in hyps if isinstance(h, dict))
+        return f"{len(hyps)} hypothesis(es)" + (f": {ids}" if ids else "")
+    if stage == "static_verify":
+        return " · ".join(str(x) for x in (g("verdict"), g("severity"),
+                                           f"reachable={g('reachable')}" if g("reachable") else None) if x)
+    if stage == "skeptic":
+        return ("refuted" if g("refuted") else "upheld") + (f" ({g('confidence')})" if g("confidence") else "")
+    if stage == "env":
+        return "envspec written" if g("envspec") else str(g("notes") or "")[:80]
+    if stage == "dynamic":
+        return " — ".join(x for x in (g("outcome"), g("reason")) if x)
+    return ""
+
+
+def _turns(usage: Any) -> int:
+    return int((usage or {}).get("turns") or 0) if isinstance(usage, dict) else 0
+
+
+def _enrich_stage_runs(stage_runs: list[dict[str, Any]]) -> None:
+    """Attach a friendly role name, decision summary and turn count to each stage run (in place)."""
+    for r in stage_runs:
+        st = r.get("stage")
+        r["role"] = STAGE_ROLES.get(st, st)
+        r["summary"] = _stage_summary(st, r.get("output"))
+        r["turns"] = _turns(r.get("usage"))
+
+
+def _agent_pipeline(stage_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Per-agent rollup for one scan: one row per canonical stage, in pipeline order.
+
+    Fan-out stages (static_verify, skeptic run per hypothesis) collapse into a single agent row
+    whose decisions list every run's verdict.
+    """
+    agents: dict[str, dict[str, Any]] = {}
+    for r in stage_runs:
+        st = r.get("stage") or "?"
+        a = agents.setdefault(st, {"stage": st, "role": STAGE_ROLES.get(st, st), "runs": 0, "ok": 0,
+                                   "failed": 0, "cost": 0.0, "tokens": 0, "turns": 0, "duration_s": 0.0,
+                                   "decisions": []})
+        usage = r.get("usage") if isinstance(r.get("usage"), dict) else {}
+        a["runs"] += 1
+        a["ok" if r.get("status") == "ok" else "failed"] += 1
+        a["cost"] += float(usage.get("usd") or 0)
+        a["tokens"] += int(usage.get("tokens_in") or 0) + int(usage.get("tokens_out") or 0)
+        a["turns"] += _turns(usage)
+        a["duration_s"] += float(r.get("duration_s") or 0)
+        if summary := _stage_summary(st, r.get("output")):
+            a["decisions"].append(summary)
+    rows = sorted(agents.values(), key=lambda a: STAGE_ORDER.get(a["stage"], 99))
+    for a in rows:
+        a["health"] = "ok" if a["failed"] == 0 else ("failed" if a["ok"] == 0 else "partial")
+    return rows
 
 
 def _user(request: Request) -> str | None:
@@ -115,8 +191,12 @@ def scan_detail(request: Request, scan_id: int):
     scan = db.get_scan(scan_id)
     if scan is None:
         raise HTTPException(404, SCAN_NOT_FOUND)
+    stage_runs = scan.get("stage_runs") or []
+    _enrich_stage_runs(stage_runs)
+    agents = _agent_pipeline(stage_runs)
     events = obs_events.list_events(scan_id, after_id=0, limit=TIMELINE_INITIAL)
-    return _render(request, "scan.html", scan=scan, tl=_timeline_ctx(scan, events, 0, set(), TIMELINE_INITIAL))
+    return _render(request, "scan.html", scan=scan, agents=agents,
+                   tl=_timeline_ctx(scan, events, 0, set(), TIMELINE_INITIAL))
 
 
 @app.get("/scans/{scan_id}/events", response_class=HTMLResponse, responses={404: {"description": "Scan not found"}})

@@ -75,6 +75,7 @@ class ScanStatus(StrEnum):
 
 
 class Stage(StrEnum):
+    rules = "rules"  # first-pass noise filter: skip obvious noise, else scan (replaces deterministic rules)
     triage = "triage"
     hypothesise = "hypothesise"
     static_verify = "static_verify"

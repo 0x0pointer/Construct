@@ -15,7 +15,7 @@ from prsec.stages.outputs import HypothesesOutput, StaticVerifyOutput, TriageOut
 
 SKILLS = Path(__file__).resolve().parents[2] / "prsec-skills"
 CASES = SKILLS / "evals" / "cases"
-SKILL_NAMES = ["triage", "taint-analysis", "business-logic", "static-validation", "org"]
+SKILL_NAMES = ["rules", "triage", "taint-analysis", "business-logic", "static-validation", "org"]
 REQUIRED_REFS = [
     "sqli", "nosqli", "xss", "ssrf", "idor", "bfla", "mass-assignment", "path-traversal", "cmdi",
     "ssti", "deserialization", "open-redirect", "crypto-misuse", "authn-session", "race-condition",
@@ -37,7 +37,8 @@ def test_skill_layout(name: str) -> None:
     fm = yaml.safe_load(fm_text)
     assert fm["name"] == name
     assert 0 < len(fm["description"]) <= 1024
-    assert "prsec-cite check" in body
+    if name != "rules":  # the rules stage is a binary skip/scan gate and emits no citations
+        assert "prsec-cite check" in body
 
 
 def test_static_validation_references_cover_required_classes() -> None:

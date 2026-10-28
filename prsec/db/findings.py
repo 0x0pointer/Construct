@@ -17,7 +17,7 @@ from psycopg import Connection
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from prsec.models import Finding
+from prsec.models import Finding, Stage
 from prsec.sarif.fingerprint import normalise_file
 
 TRIAGE_STATES = ("new", "tp", "fp", "accepted")
@@ -43,6 +43,18 @@ def _conn() -> Iterator[Connection]:
 
 
 # --------------------------------------------------------------------- write
+
+
+def _no_nul(v):
+    """Postgres text/JSONB cannot store U+0000; agent and tool output sometimes contains it,
+    so strip it recursively from everything bound into the findings write."""
+    if isinstance(v, str):
+        return v.replace("\x00", "")
+    if isinstance(v, dict):
+        return {k: _no_nul(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_no_nul(x) for x in v]
+    return v
 
 
 _UPSERT = """
@@ -77,19 +89,20 @@ def upsert_findings(scan_id: int, repo: str, pr: int, findings: list[Finding], s
                 _UPSERT,
                 {
                     "repo": repo,
-                    "fingerprint": f.fingerprint,
-                    "bug_class": f.bug_class,
-                    "vuln_class": f.vuln_class,
-                    "title": f.title,
+                    "fingerprint": _no_nul(f.fingerprint),
+                    "bug_class": _no_nul(f.bug_class),
+                    "vuln_class": _no_nul(f.vuln_class),
+                    "title": _no_nul(f.title),
                     "severity": str(f.severity),
                     "label": str(f.label),
                     "introduced": f.introduced,
-                    "sink_file": f.sink.file,
+                    "sink_file": _no_nul(f.sink.file),
                     "sink_line": f.sink.line,
                     "scan_id": scan_id,
                     "pr": pr,
-                    "data": Jsonb(f.model_dump(mode="json")),
+                    "data": Jsonb(_no_nul(f.model_dump(mode="json"))),
                 },
+
             ).fetchone()
             seen.append(row["id"])
             conn.execute(
@@ -312,8 +325,25 @@ def metrics() -> dict[str, Any]:
             GROUP BY {cols} ORDER BY {cols}"""
         per_harness = conn.execute(harness_sql.format(cols="harness")).fetchall()
         per_stage_harness = conn.execute(harness_sql.format(cols="stage, harness, model")).fetchall()
-        for r in [*per_harness, *per_stage_harness]:
+        # Per-agent health, one row per canonical stage (the 5 agents + phase-2 stages): how often
+        # each agent succeeds, what it costs, and how much work (tokens, turns) it does.
+        per_stage = conn.execute(
+            """SELECT stage,
+                      count(*) AS runs,
+                      count(*) FILTER (WHERE status = 'ok') AS ok,
+                      count(*) FILTER (WHERE status <> 'ok') AS failed,
+                      avg(duration_s)::float AS avg_duration_s,
+                      COALESCE(sum((usage->>'usd')::float), 0)::float AS total_cost,
+                      COALESCE(avg((usage->>'usd')::float), 0)::float AS avg_cost,
+                      COALESCE(avg((usage->>'tokens_in')::float + (usage->>'tokens_out')::float), 0)::float AS avg_tokens,
+                      COALESCE(avg((usage->>'turns')::float), 0)::float AS avg_turns
+               FROM stage_runs WHERE created_at > now() - interval '30 days'
+               GROUP BY stage"""
+        ).fetchall()
+        for r in [*per_harness, *per_stage_harness, *per_stage]:
             r["ok_rate"] = round(r["ok"] / r["runs"], 3) if r["runs"] else None
+        order = {s.value: i for i, s in enumerate(Stage)}
+        per_stage.sort(key=lambda r: order.get(r["stage"], 99))
         by_bug_class = precision_by("bug_class")
         by_label = precision_by("label")
 
@@ -331,5 +361,6 @@ def metrics() -> dict[str, Any]:
         "precision_by_bug_class": by_bug_class,
         "precision_by_label": by_label,
         "per_harness": per_harness,
+        "per_stage": per_stage,
         "per_stage_harness": per_stage_harness,
     }

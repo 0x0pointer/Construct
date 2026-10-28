@@ -9,7 +9,7 @@ FORBIDDEN = re.compile(
     r"subagent|sub-agent|task tool|todo|slash command|claude|codex|opencode|\bpi\b|anthropic|openai|mcp|agents\.md",
     re.I,
 )
-STAGES = ["triage", "hypothesise", "static_verify", "skeptic"]
+STAGES = ["rules", "triage", "hypothesise", "static_verify", "skeptic"]
 
 
 def _ctx(has_tools: bool) -> dict:
