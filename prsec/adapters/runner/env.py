@@ -50,8 +50,13 @@ def under_root(path: str, root: Path, what: str) -> Path:
     """Resolve `path` (following symlinks) and require it strictly below `root`."""
     if not Path(path).is_absolute():
         raise EnvRefused(f"{what} must be an absolute path")
-    resolved = Path(path).resolve()
     root = root.resolve()
+    try:
+        # Non-strict resolve: a missing path gets the same answer as an existing one, so the
+        # refusal says nothing about the host filesystem beyond the configured root.
+        resolved = Path(path).resolve()  # NOSONAR(S6549) bearer-auth caller, uniform refusal; containment checked below
+    except (OSError, RuntimeError):  # symlink loop
+        raise EnvRefused(f"{what} is outside {root}") from None
     if resolved == root or not resolved.is_relative_to(root):
         raise EnvRefused(f"{what} is outside {root}")
     return resolved

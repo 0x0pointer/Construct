@@ -30,7 +30,7 @@ def default_spec_path() -> Path:
 
 def load_envspec(path: Path) -> EnvSpec:
     """Reads an EnvSpec (JSON or YAML; a bare EnvOutput with an `envspec` key works too)."""
-    doc = yaml.safe_load(path.read_text())
+    doc = yaml.safe_load(path.read_text())  # NOSONAR(S8707) runs in the agent's own sandbox, no privilege boundary
     if isinstance(doc, dict) and "envspec" in doc and "start" not in doc:
         doc = doc["envspec"]
     return EnvSpec.model_validate(doc)

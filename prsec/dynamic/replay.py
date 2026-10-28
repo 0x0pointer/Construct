@@ -594,19 +594,19 @@ def _safe_stop(runner: AppRunner) -> None:
 
 
 def _load_request(path: Path) -> ReplayRequest:
-    return ReplayRequest.model_validate_json(path.read_text())
+    return ReplayRequest.model_validate_json(path.read_text())  # NOSONAR(S8707) in-container CLI: the launcher passes the fixed /work/in path; any other path stays inside the same disposable container, no privilege boundary
 
 
 def _run_id_of(path: Path) -> str:
     try:
-        return str(json.loads(path.read_text()).get("run_id") or "unknown")
+        return str(json.loads(path.read_text()).get("run_id") or "unknown")  # NOSONAR(S8707) see _load_request
     except (OSError, ValueError, AttributeError):
         return "unknown"
 
 
 def _write(out: Path, model: BaseModel) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(model.model_dump_json(indent=2))
+    out.write_text(model.model_dump_json(indent=2))  # NOSONAR(S8707) see _load_request
 
 
 def main(argv: list[str] | None = None) -> int:

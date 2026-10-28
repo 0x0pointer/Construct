@@ -36,7 +36,7 @@ DEFAULT_ALLOW = (
     "plugins.gradle.org", "services.gradle.org",
 )
 HOSTNAME = re.compile(r"[a-z0-9]([a-z0-9-]{0,62}\.)*[a-z0-9-]{1,63}")
-METADATA_IPS = frozenset(ipaddress.ip_address(a) for a in (
+METADATA_IPS = frozenset(ipaddress.ip_address(a) for a in (  # NOSONAR(S1313) cloud metadata endpoints: a blocklist, never dialled
     "169.254.169.254", "169.254.170.2", "100.100.100.200", "192.0.0.192", "fd00:ec2::254"))
 NAT64 = ipaddress.ip_network("64:ff9b::/96")
 CONNECT_PORTS = frozenset({443})
@@ -207,7 +207,7 @@ async def _pump(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, idle
             await writer.drain()
         if writer.can_write_eof():
             writer.write_eof()
-    except (TimeoutError, ConnectionError, OSError):
+    except OSError:  # TimeoutError and ConnectionError are OSError subclasses
         writer.close()
 
 
@@ -238,7 +238,7 @@ class EgressProxy:
             raise Denied(403, "host not on allowlist")
         try:
             ips = await asyncio.wait_for(self.resolver(req.host, req.port), CONNECT_TIMEOUT_S)
-        except (OSError, TimeoutError) as e:
+        except OSError as e:  # includes TimeoutError
             raise Denied(502, f"resolve failed: {e}") from e
         blocked = [ip for ip in ips if address_blocked(ip)]
         if not ips or blocked:
@@ -251,7 +251,7 @@ class EgressProxy:
             try:
                 reader, writer = await asyncio.wait_for(self.connector(ip, port), CONNECT_TIMEOUT_S)
                 return ip, reader, writer
-            except (OSError, TimeoutError) as e:
+            except OSError as e:  # includes TimeoutError
                 last = e
         raise Denied(502, f"connect failed: {last}")
 
@@ -331,14 +331,14 @@ async def _refuse(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, d:
         if writer.can_write_eof():
             writer.write_eof()
         await asyncio.wait_for(reader.read(MAX_HEAD), 1.0)
-    except (TimeoutError, ConnectionError, OSError):
+    except OSError:  # TimeoutError and ConnectionError are OSError subclasses
         pass
 
 
 async def _close(writer: asyncio.StreamWriter) -> None:
     try:
         await writer.drain()
-    except (ConnectionError, OSError):
+    except OSError:
         pass
     writer.close()
 

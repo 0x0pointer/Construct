@@ -96,8 +96,9 @@ def test_unhealthy_app_times_out(workbench: Workbench) -> None:  # noqa: F811
 
 
 def test_missing_workdir(workbench: Workbench) -> None:  # noqa: F811
+    runner = workbench.runner(workdir="nope")
     with pytest.raises(EnvError, match="workdir"):
-        workbench.runner(workdir="nope").prepare()
+        runner.prepare()
 
 
 def test_missing_src(tmp_path: Path) -> None:
@@ -131,8 +132,9 @@ def test_up_refuses_a_port_held_by_an_untracked_process(workbench: Workbench) ->
     with socket.socket() as held:
         held.bind(("127.0.0.1", workbench.port))
         held.listen()
+        runner = workbench.runner()
         with pytest.raises(EnvError, match="already in use"):
-            workbench.runner().up()
+            runner.up()
 
 
 def test_reset_discards_app_copy(workbench: Workbench) -> None:  # noqa: F811

@@ -481,6 +481,20 @@ def _code_slices(ctx: Ctx, cits: list[Citation]) -> str:
     return "\n".join(parts)
 
 
+def _provenance(
+    ctx: Ctx, h: Hypothesis, hyp_run: Ran, sv: Ran | None, sk: Ran | None, dyn: DynamicEvidence | None,
+) -> dict[str, Any]:
+    provenance: dict[str, Any] = {"hypothesise": hyp_run.provenance(ctx)}
+    if sv:
+        provenance["static_verify"] = sv.provenance(ctx)
+    if sk:
+        provenance["skeptic"] = sk.provenance(ctx)
+    if dyn and dyn.provenance:
+        provenance["dynamic"] = dyn.provenance
+    provenance["introduced_by_diff_claim"] = h.introduced_by_diff
+    return provenance
+
+
 def _finding(
     ctx: Ctx, h: Hypothesis, hyp_run: Ran, sv: Ran | None, sk: Ran | None, label: Label, reason: str,
     dyn: DynamicEvidence | None = None,
@@ -490,14 +504,6 @@ def _finding(
     description = h.description + f"\n\nImpact: {h.impact}"
     if static:
         description += f"\n\nStatic verification ({static.verdict}, reachable={static.reachable}): {static.reasoning}"
-    provenance = {"hypothesise": hyp_run.provenance(ctx)}
-    if sv:
-        provenance["static_verify"] = sv.provenance(ctx)
-    if sk:
-        provenance["skeptic"] = sk.provenance(ctx)
-    if dyn and dyn.provenance:
-        provenance["dynamic"] = dyn.provenance
-    provenance["introduced_by_diff_claim"] = h.introduced_by_diff
     return Finding(
         fingerprint=fingerprint(h.bug_class, h.sink.file, enclosing_symbol(ctx.src, h.sink.file, h.sink.line), h.entry_point),
         scan_id=ctx.scan_id,
@@ -520,7 +526,7 @@ def _finding(
         guards=[f"{'effective' if g.effective else 'ineffective'}: {g.description}" for g in static.guards] if static else list(h.assumed_guards),
         remediation=static.remediation if static else None,
         evidence_uri=(sv.evidence_uri if sv else None) or hyp_run.evidence_uri,
-        provenance=provenance,
+        provenance=_provenance(ctx, h, hyp_run, sv, sk, dyn),
         dynamic=dyn.model_dump(mode="json", by_alias=True) if dyn else None,
     )
 

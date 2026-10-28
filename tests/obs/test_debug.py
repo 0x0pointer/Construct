@@ -45,8 +45,9 @@ def test_parse_scan():
 
 
 def test_parse_requires_subcommand():
+    parser = debug.build_parser()
     with pytest.raises(SystemExit):
-        debug.build_parser().parse_args([])
+        parser.parse_args([])
 
 
 def test_rerun_stage_with_fake_harness(work, capsys):

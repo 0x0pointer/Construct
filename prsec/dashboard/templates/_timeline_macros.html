@@ -10,33 +10,32 @@
   {%- endif -%}
 {%- endmacro %}
 
-{% macro event_row(ev) -%}
-<li class="tl-ev lv-{{ ev.level }}" data-id="{{ ev.id }}">
+{# Rows are emitted together with their list (attrs = the <ol>'s attributes), so every <li> sits in
+   its <ol> in this file. The HTMX poll passes hx-swap-oob="beforeend:#..." as attrs: htmx appends the
+   list's children to the target, so the wrapper itself never reaches the page. #}
+{% macro agent_list(evs, attrs) -%}
+<ol{{ attrs|xmlattr }}>{% for ev in evs %}<li class="tl-agent-ev lv-{{ ev.level }}" data-id="{{ ev.id }}">
+  <time datetime="{{ ev.iso }}" title="{{ ev.iso }}">{{ ev.clock }}</time>
+  <span class="tl-msg">{{ ev.message }}</span>
+  {{ kv_list(ev) }}
+</li>{% endfor %}</ol>
+{%- endmacro %}
+
+{# Agent groups start open while the scan runs, so the agent can be followed live. #}
+{% macro item_list(items, live, attrs) -%}
+<ol{{ attrs|xmlattr }}>{% for it in items %}{% if it.type == 'group' %}
+<li class="tl-group">
+  <details{% if live %} open{% endif %}>
+    <summary>agent activity · {{ it.stage or 'stage' }}{% if it.task_id %} <code>{{ it.task_id }}</code>{% endif %}
+      {% if it.transcript_id %}<a class="muted" href="/stage-runs/{{ it.transcript_id }}/transcript">transcript</a>{% endif %}</summary>
+    {{ agent_list(it.events, {'class': 'tl-agent', 'id': it.dom_id}) }}
+  </details>
+</li>
+{% else %}{% set ev = it.ev %}<li class="tl-ev lv-{{ ev.level }}" data-id="{{ ev.id }}">
   <time datetime="{{ ev.iso }}" title="{{ ev.iso }}">{{ ev.clock }}</time>
   <span class="tl-kind">{{ ev.kind }}</span>
   <span class="tl-where">{{ ev.stage or '' }}{% if ev.hypothesis_id %}{% if ev.stage %}/{% endif %}{{ ev.hypothesis_id }}{% endif %}</span>
   <span class="tl-msg">{{ ev.message }}{{ links(ev) }}</span>
   {{ kv_list(ev) }}
-</li>
-{%- endmacro %}
-
-{% macro agent_row(ev) -%}
-<li class="tl-agent-ev lv-{{ ev.level }}" data-id="{{ ev.id }}">
-  <time datetime="{{ ev.iso }}" title="{{ ev.iso }}">{{ ev.clock }}</time>
-  <span class="tl-msg">{{ ev.message }}</span>
-  {{ kv_list(ev) }}
-</li>
-{%- endmacro %}
-
-{# Agent groups start open while the scan runs, so the agent can be followed live. #}
-{% macro item(it, live=False) -%}
-{% if it.type == 'group' %}
-<li class="tl-group">
-  <details{% if live %} open{% endif %}>
-    <summary>agent activity · {{ it.stage or 'stage' }}{% if it.task_id %} <code>{{ it.task_id }}</code>{% endif %}
-      {% if it.transcript_id %}<a class="muted" href="/stage-runs/{{ it.transcript_id }}/transcript">transcript</a>{% endif %}</summary>
-    <ol class="tl-agent" id="{{ it.dom_id }}">{% for ev in it.events %}{{ agent_row(ev) }}{% endfor %}</ol>
-  </details>
-</li>
-{% else %}{{ event_row(it.ev) }}{% endif %}
+</li>{% endif %}{% endfor %}</ol>
 {%- endmacro %}

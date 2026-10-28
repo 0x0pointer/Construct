@@ -71,7 +71,7 @@ def detect_proxy(host: str = PROXY_HOST, sink: str = SINK_HOST) -> str | None:
         sink_ip = socket.gethostbyname(sink)
     except OSError:
         sink_ip = None
-    return None if ip == sink_ip else f"http://{host}:{PROXY_PORT}"
+    return None if ip == sink_ip else f"http://{host}:{PROXY_PORT}"  # NOSONAR(S5332) forward proxy on the isolated scan network; HTTPS is tunnelled via CONNECT
 
 
 # ------------------------------------------------------------------ canaries
@@ -88,7 +88,7 @@ def new_canaries(app_root: Path) -> Canaries:
     return Canaries(
         token=token,
         host=host,
-        url=f"http://{host}/{token}",
+        url=f"http://{host}/{token}",  # NOSONAR(S5332) canary resolves to the in-network sink, which only records plain HTTP
         file=str(state_dir(app_root) / "canary" / f"sentinel-{token}.txt"),
         file_content=f"prsec-sentinel-{secrets.token_hex(16)}",
     )

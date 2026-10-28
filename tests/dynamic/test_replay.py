@@ -253,8 +253,9 @@ def test_null_or_empty_json_extract_is_refused(doc: dict[str, Any]) -> None:
 
     from prsec.dynamic.poc import Extract
     from prsec.dynamic.replay import PocEngine
+    extract, resp = Extract(json="x"), httpx.Response(200, json=doc)
     with pytest.raises(ValueError, match="empty or null"):
-        PocEngine._extract_one(Extract(json="x"), httpx.Response(200, json=doc))
+        PocEngine._extract_one(extract, resp)
 
 
 def test_env_failure_is_reported(workbench: Workbench) -> None:  # noqa: F811
@@ -340,14 +341,16 @@ def test_resolve_url_refuses_other_hosts(url: str) -> None:
 
 
 def test_login_step_names_must_be_unique_across_users() -> None:
+    users = {"alice": user("x"), "bob": user("x")}
     with pytest.raises(ValueError, match="unique"):
-        poc(users={"alice": user("x"), "bob": user("x")}, steps=[{"name": "s", "path": "/"}],
+        poc(users=users, steps=[{"name": "s", "path": "/"}],
             oracles=[{"type": "response_status", "step": "s", "status": [200]}])
 
 
 def test_main_step_may_not_reuse_a_login_step_name() -> None:
+    users = {"alice": user("alice")}
     with pytest.raises(ValueError, match="unique"):
-        poc(users={"alice": user("alice")}, steps=[{"name": "alice_login", "path": "/"}],
+        poc(users=users, steps=[{"name": "alice_login", "path": "/"}],
             oracles=[{"type": "response_status", "step": "alice_login", "status": [200]}])
 
 

@@ -17,7 +17,6 @@ returns either an iterable of Events or a `(output, events, usage)` tuple.
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -26,8 +25,36 @@ from typing import Iterable, Iterator, Protocol, runtime_checkable
 
 from prsec.models import Event, StageTask, Usage
 
-# possessive quantifiers + a digit-run lookbehind keep the search linear (same leftmost match)
-_VERSION_RE = re.compile(r"(?<!\d)\d++\.\d++\.\d++[\w.+-]*+")
+_VERSION_TAIL_PUNCT = frozenset("_.+-")
+
+
+def _digits_end(s: str, i: int) -> int:
+    while i < len(s) and s[i].isdecimal():
+        i += 1
+    return i
+
+
+def _find_version(s: str) -> str | None:
+    r"""First match of `(?<!\d)\d+\.\d+\.\d+[\w.+-]*` in s, by a hand scan that is linear in len(s):
+    a match can only start at a digit-run start, and each digit run is visited by at most three
+    candidate starts (a regex search here is flagged for super-linear backtracking, S8786)."""
+    i = 0
+    while i < len(s):
+        if not s[i].isdecimal():
+            i += 1
+            continue
+        start, end = i, _digits_end(s, i)
+        for _ in range(2):  # two more `.\d+` groups
+            nxt = _digits_end(s, end + 1) if end < len(s) and s[end] == "." else end
+            if nxt == end or nxt == end + 1:
+                break
+            end = nxt
+        else:
+            while end < len(s) and (s[end].isalnum() or s[end] in _VERSION_TAIL_PUNCT):
+                end += 1
+            return s[start:end]
+        i = _digits_end(s, start)  # next candidate is the next digit-run start
+    return None
 
 
 @dataclass(frozen=True)
@@ -108,8 +135,7 @@ def cli_version(cli: str) -> str | None:
     if cp.returncode != 0:
         return None
     out = cp.stdout.strip() or cp.stderr.strip()
-    m = _VERSION_RE.search(out)
-    return m.group(0) if m else (out or None)
+    return _find_version(out) or out or None
 
 
 def copy_skills(task: StageTask, dest: Path) -> None:

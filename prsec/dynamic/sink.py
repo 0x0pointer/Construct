@@ -36,7 +36,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from pydantic import TypeAdapter
@@ -55,7 +55,6 @@ IO_TIMEOUT_S = 30.0
 REQUESTS_LOG = "requests.jsonl"
 MAX_LOG_BYTES = 32 * 1024 * 1024  # the JSONL mirror lives on the shared host work root: stop mirroring here
 
-T = TypeVar("T")
 
 # ------------------------------------------------------------------- DNS
 
@@ -149,7 +148,7 @@ class _DnsProtocol(asyncio.DatagramProtocol):
 # ------------------------------------------------------- reloadable config
 
 
-class JsonFile(Generic[T]):
+class JsonFile[T]:
     """A JSON file re-parsed whenever its mtime/size changes. A broken file keeps the last good value."""
 
     def __init__(self, path: Path | None, parse: Callable[[Any], T], empty: T) -> None:

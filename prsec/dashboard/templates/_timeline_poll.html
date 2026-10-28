@@ -1,6 +1,6 @@
-{% from "_timeline_macros.html" import item, agent_row %}
+{% from "_timeline_macros.html" import item_list, agent_list %}
 {% include "_timeline_poller.html" %}
 {% if tl['items'] %}<p id="timeline-empty" hx-swap-oob="delete"></p>
-<ol hx-swap-oob="beforeend:#timeline-events">{% for it in tl['items'] %}{{ item(it, tl.live) }}{% endfor %}</ol>{% endif %}
-{% for dom_id, evs in tl.appended.items() %}<ol hx-swap-oob="beforeend:#{{ dom_id }}">{% for ev in evs %}{{ agent_row(ev) }}{% endfor %}</ol>
+{{ item_list(tl['items'], tl.live, {'hx-swap-oob': 'beforeend:#timeline-events'}) }}{% endif %}
+{% for dom_id, evs in tl.appended.items() %}{{ agent_list(evs, {'hx-swap-oob': 'beforeend:#' ~ dom_id}) }}
 {% endfor %}

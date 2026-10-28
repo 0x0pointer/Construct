@@ -17,13 +17,15 @@ import json
 import logging
 import os
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import Executor, Future
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import Any
 
-_CTX: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar("prsec_log_ctx", default={})  # noqa: B039 never mutated
+# Read-only default; bind() always sets a fresh dict, so no context ever shares a mutable value.
+_CTX: contextvars.ContextVar[Mapping[str, Any]] = contextvars.ContextVar("prsec_log_ctx", default=MappingProxyType({}))
 
 # Bound fields in a fixed order (others follow alphabetically).
 FIELD_ORDER = ("scan_id", "task_id", "stage", "hypothesis_id", "env", "debug")
@@ -70,7 +72,7 @@ def child_log_env() -> dict[str, str]:
     return {"PRSEC_LOG_LEVEL": level} if level else {}
 
 
-def _ordered_fields(ctx: dict[str, Any]) -> list[tuple[str, Any]]:
+def _ordered_fields(ctx: Mapping[str, Any]) -> list[tuple[str, Any]]:
     first = [(k, ctx[k]) for k in FIELD_ORDER if k in ctx]
     rest = sorted((k, v) for k, v in ctx.items() if k not in FIELD_ORDER)
     return first + rest

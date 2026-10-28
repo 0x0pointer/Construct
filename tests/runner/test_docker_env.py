@@ -176,8 +176,10 @@ def test_proxy_alias_is_fixed(client, work):
 def test_missing_gateway_is_fatal_and_cleans_up(client, work):
     net = client.networks.create.return_value
     net.connect.side_effect = NotFound("no gateway")
+    runner = _runner(client)
+    req = _req(work, packages=False)
     with pytest.raises(RuntimeError, match="'gw' not found"):
-        _runner(client).create_env(42, "h1", _req(work, packages=False))
+        runner.create_env(42, "h1", req)
     labels = client.containers.list.call_args.kwargs["filters"]["label"]
     assert labels == ["prsec.scan_id=42", "prsec.env=h1"]
 
@@ -195,16 +197,20 @@ def test_missing_proxy_is_not_fatal(client, work):
     {"env_dir": "/etc"},
 ])
 def test_refused_requests_start_nothing(client, work, bad):
+    runner = _runner(client)
+    req = _req(work, **bad)
     with pytest.raises(EnvRefused):
-        _runner(client).create_env(42, "h1", _req(work, **bad))
+        runner.create_env(42, "h1", req)
     client.containers.run.assert_not_called()
     client.networks.create.assert_not_called()
 
 
 @pytest.mark.parametrize("env", ["H1", "a-b", "", "x" * 17, "../x"])
 def test_bad_env_name_refused(client, work, env):
+    runner = _runner(client)
+    req = _req(work)
     with pytest.raises(EnvRefused):
-        _runner(client).create_env(42, env, _req(work))
+        runner.create_env(42, env, req)
 
 
 def test_unhealthy_service_is_reported_not_fatal(client, work):
@@ -267,8 +273,9 @@ def test_workbench_joins_env_with_sink_dns_and_app_dir(client, env_spec, tmp_pat
 
 
 def test_workbench_in_missing_env_fails(client, env_spec):
+    runner = DockerRunner(client)
     with pytest.raises(RuntimeError, match="does not exist"):
-        DockerRunner(client).container_kwargs(env_spec, ["x"])
+        runner.container_kwargs(env_spec, ["x"])
 
 
 def test_run_replay_uses_fixed_entrypoint_and_parses_result(client, env_spec, tmp_path):
@@ -352,8 +359,9 @@ def test_symlinked_resolv_conf_is_never_mounted(client, env_spec, tmp_path):
     (env_dir / "resolv.conf").symlink_to(tmp_path / "host-secret")
     client.networks.get.side_effect = None
     client.networks.get.return_value = _env_net(env_dir, resolv=False)
+    runner = DockerRunner(client)
     with pytest.raises(EnvRefused, match="resolv.conf"):
-        DockerRunner(client).container_kwargs(env_spec, ["x"])
+        runner.container_kwargs(env_spec, ["x"])
 
 
 def test_symlinked_sink_dir_is_refused(client, work):
@@ -361,8 +369,10 @@ def test_symlinked_sink_dir_is_refused(client, work):
     env_dir.mkdir(parents=True)
     (work / "elsewhere").mkdir()
     (env_dir / "sink").symlink_to(work / "elsewhere")
+    runner = _runner(client)
+    req = _req(work)
     with pytest.raises(EnvRefused, match="sink dir"):
-        _runner(client).create_env(42, "h1", _req(work))
+        runner.create_env(42, "h1", req)
     assert not (work / "elsewhere" / "stubs.json").exists()
 
 
@@ -464,16 +474,20 @@ def test_sink_that_exits_fails_create_env_and_cleans_up(client, work):
         return ct
 
     client.containers.run.side_effect = run
+    runner = _runner(client)
+    req = _req(work)
     with pytest.raises(RuntimeError, match="did not start"):
-        _runner(client).create_env(42, "h1", _req(work))
+        runner.create_env(42, "h1", req)
     assert len(client.started) == 1
 
 
 @pytest.mark.parametrize("name", ["00-init.sh", "01-seed.js"])
 def test_script_seed_files_are_refused(client, work, name):
     (work / "scan-42" / "seed" / name).write_text("x")
+    runner = _runner(client)
+    req = _req(work)
     with pytest.raises(EnvRefused, match="not allowed"):
-        _runner(client).create_env(42, "h1", _req(work))
+        runner.create_env(42, "h1", req)
     client.containers.run.assert_not_called()
 
 
@@ -485,5 +499,6 @@ def test_sql_seed_files_are_accepted(client, work):
 
 def test_mongo_takes_no_seed_files(client, work):
     req = _req(work, services=[ServiceRequest(name="docs", kind="mongo", seed_dir=str(work / "scan-42" / "seed"))])
+    runner = _runner(client)
     with pytest.raises(EnvRefused, match="takes no seed files"):
-        _runner(client).create_env(42, "h1", req)
+        runner.create_env(42, "h1", req)

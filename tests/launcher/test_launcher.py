@@ -253,8 +253,9 @@ def test_runner_turns_refusal_into_stage_failure(client, docker, roots):
 
 
 def test_runner_network_errors_raise(client, roots):
+    runner = _runner_against(client, token="wrong")
     with pytest.raises(LauncherError):
-        _runner_against(client, token="wrong").create_scan_network(7)
+        runner.create_scan_network(7)
 
 
 # ------------------------------------------------------------------ phase 2: dynamic envs
@@ -400,8 +401,9 @@ def test_runner_env_round_trip(client, docker, roots):
 
 def test_runner_env_refusal_raises(client, docker, roots):
     req = EnvRequest(env_dir="/etc")
+    runner = _runner_against(client)
     with pytest.raises(LauncherError, match="403"):
-        _runner_against(client).create_env(7, "h1", req)
+        runner.create_env(7, "h1", req)
 
 
 def test_runner_replay_round_trip(client, docker, roots):

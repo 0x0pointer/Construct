@@ -91,8 +91,10 @@ def test_local_runner_has_no_dynamic_envs(tmp_path):
     from prsec.dynamic.results import EnvRequest
 
     runner = LocalRunner()
+    req = EnvRequest(env_dir=str(tmp_path))
     with pytest.raises(NotImplementedError, match="runner_unsupported"):
-        runner.create_env(7, "h1", EnvRequest(env_dir=str(tmp_path)))
+        runner.create_env(7, "h1", req)
     runner.destroy_env(7, "h1")  # no-op
+    spec = spec_for(tmp_path)
     with pytest.raises(NotImplementedError, match="runner_unsupported"):
-        runner.run_replay(spec_for(tmp_path))
+        runner.run_replay(spec)

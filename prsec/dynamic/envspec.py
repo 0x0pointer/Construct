@@ -12,7 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 SERVICE_NAME = re.compile(r"[a-z][a-z0-9-]{0,30}")
-ENV_KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
+ENV_KEY = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")  # NOSONAR(S6353) ASCII-only on purpose; \w would admit Unicode
 # Names a service may not take: they are resolved to infrastructure by the sink's DNS.
 RESERVED_NAMES = frozenset({"sink", "llm-gateway", "egress-proxy", "localhost", "app"})
 

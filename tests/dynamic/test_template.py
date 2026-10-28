@@ -61,10 +61,12 @@ def test_unknown_placeholders_raise(ctx: TemplateContext, text: str, message: st
 
 
 def test_user_placeholder_without_user(ctx: TemplateContext) -> None:
+    no_user = ctx.for_user(None)
     with pytest.raises(TemplateError, match="outside a step"):
-        render_str("${USER.id}", ctx.for_user(None))
+        render_str("${USER.id}", no_user)
 
 
 def test_canary_without_canaries() -> None:
+    ctx = TemplateContext(base_url="http://x")
     with pytest.raises(TemplateError, match="no canaries"):
-        render_str("${CANARY.token}", TemplateContext(base_url="http://x"))
+        render_str("${CANARY.token}", ctx)

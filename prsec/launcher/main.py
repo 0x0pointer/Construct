@@ -143,7 +143,8 @@ def validate(req: RunRequest) -> WorkbenchSpec:
     dynamic = _check_dynamic(req, s.work_root)
     if req.image not in allowed_images():
         raise Refused(f"image {req.image!r} is not a workbench image in the policy")
-    if Path(req.skills_dir).resolve() != s.skills_dir.resolve():
+    # Same refusal whether or not the path exists, so nothing about the host layout leaks.
+    if Path(req.skills_dir).resolve() != s.skills_dir.resolve():  # NOSONAR(S6549) bearer-auth caller, uniform refusal
         raise Refused(f"skills_dir must be {s.skills_dir}")
     if req.timeout_s > max_timeout_s():
         raise Refused(f"timeout_s exceeds {max_timeout_s()}")
@@ -196,7 +197,8 @@ def _check_replay_env(spec: WorkbenchSpec, runner: Any) -> None:
         raise Refused(f"replay env {spec.env_name!r} has the LLM gateway attached")
 
 
-AUTH_403 = {401: {"description": "Invalid token"}, 403: {"description": "Outside the recipe"}}
+INVALID_TOKEN = {"description": "Invalid token"}
+OUTSIDE_RECIPE = {"description": "Outside the recipe"}
 
 
 def create_app(runner: Any = None) -> FastAPI:
@@ -207,27 +209,27 @@ def create_app(runner: Any = None) -> FastAPI:
     def healthz() -> dict[str, bool]:
         return {"ok": True}
 
-    @app.post("/scans/{scan_id}/network", responses={401: {"description": "Invalid token"}})
+    @app.post("/scans/{scan_id}/network", responses={401: INVALID_TOKEN, 422: {"description": "Negative scan_id"}})
     def create_network(scan_id: int, _: Auth, runner: Docker) -> dict[str, str]:
         if scan_id < 0:
             raise HTTPException(422, "scan_id must be >= 0")
         return {"network": runner.create_scan_network(scan_id)}
 
-    @app.delete("/scans/{scan_id}", responses={401: {"description": "Invalid token"}})
+    @app.delete("/scans/{scan_id}", responses={401: INVALID_TOKEN})
     def destroy(scan_id: int, _: Auth, runner: Docker) -> dict[str, bool]:
         runner.destroy_scan(scan_id)
         return {"ok": True}
 
-    @app.post("/scans/{scan_id}/envs/{env_name}", responses={**AUTH_403})
+    @app.post("/scans/{scan_id}/envs/{env_name}", responses={401: INVALID_TOKEN, 403: OUTSIDE_RECIPE})
     def create_env(scan_id: int, env_name: str, req: EnvRequest, _: Auth, runner: Docker) -> EnvInfo:
         try:
             checked = validate_env(scan_id, env_name, req)
         except EnvRefused as e:
-            log.warning("refused env %s for scan %s: %s", env_name, scan_id, e)
+            log.warning("refused env %r for scan %s: %r", env_name, scan_id, str(e))  # %r: no CR/LF from the request
             raise HTTPException(403, str(e)) from None
         return runner.create_env(scan_id, env_name, checked)
 
-    @app.delete("/scans/{scan_id}/envs/{env_name}", responses={**AUTH_403})
+    @app.delete("/scans/{scan_id}/envs/{env_name}", responses={401: INVALID_TOKEN, 403: OUTSIDE_RECIPE})
     def destroy_env(scan_id: int, env_name: str, _: Auth, runner: Docker) -> dict[str, bool]:
         try:
             check_env_name(env_name)
@@ -236,13 +238,13 @@ def create_app(runner: Any = None) -> FastAPI:
         runner.destroy_env(scan_id, env_name)
         return {"ok": True}
 
-    @app.post("/run", responses={**AUTH_403})
+    @app.post("/run", responses={401: INVALID_TOKEN, 403: OUTSIDE_RECIPE})
     def run(req: RunRequest, _: Auth, runner: Docker) -> RunResponse:
         try:
             spec = validate(req)
             _check_replay_env(spec, runner)
         except EnvRefused as e:
-            log.warning("refused run for scan %s task %s: %s", req.scan_id, req.task.task_id, e)
+            log.warning("refused run for scan %s task %r: %r", req.scan_id, req.task.task_id, str(e))
             raise HTTPException(403, str(e)) from None
         if spec.mode == "replay":
             command, entrypoint = REPLAY_COMMAND, REPLAY_ENTRYPOINT

@@ -33,7 +33,7 @@ class PocFileError(Exception):
 
 def load_poc_file(path: Path) -> PoC:
     try:
-        doc = yaml.safe_load(path.read_text())  # YAML is a superset of JSON
+        doc = yaml.safe_load(path.read_text())  # NOSONAR(S8707) agent's own sandbox, no privilege boundary (YAML parses JSON too)
     except OSError as e:
         raise PocFileError([f"cannot read {path}: {e}"]) from None
     except yaml.YAMLError as e:
