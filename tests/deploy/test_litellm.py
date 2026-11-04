@@ -258,24 +258,26 @@ def test_decide_relay_async_and_no_key_for_self_hosted(hooks) -> None:
 ])
 def test_decide_relay_refuses_anything_but_one_json_body(hooks, messages, status) -> None:
     seen: list = []
+    relay, response = _relay(hooks, {}, seen), _response()
     with pytest.raises(hooks.CustomLLMError) as exc:
-        _relay(hooks, {}, seen).completion(model="m", messages=messages, api_base="https://x.invalid/d",
-                                           api_key="k", model_response=_response())
+        relay.completion(model="m", messages=messages, api_base="https://x.invalid/d", api_key="k",
+                         model_response=response)
     assert exc.value.status_code == status
     assert not seen
 
 
 @pytest.mark.parametrize("api_base", [None, "", "file:///etc/passwd", "spark:8001/v1/decide"])
 def test_decide_relay_needs_an_http_endpoint(hooks, api_base) -> None:
+    relay, messages, response = _relay(hooks, {}, []), _user({}), _response()
     with pytest.raises(hooks.CustomLLMError) as exc:
-        _relay(hooks, {}, []).completion(model="m", messages=_user({}), api_base=api_base, api_key="k",
-                                         model_response=_response())
+        relay.completion(model="m", messages=messages, api_base=api_base, api_key="k", model_response=response)
     assert exc.value.status_code == 500
 
 
 def test_decide_relay_maps_provider_errors(hooks) -> None:
+    relay, messages, response = _relay(hooks, {"error": "rate limited"}, [], status=429), _user({}), _response()
     with pytest.raises(hooks.CustomLLMError) as exc:
-        _relay(hooks, {"error": "rate limited"}, [], status=429).completion(
-            model="m", messages=_user({}), api_base="https://x.invalid/d", api_key="k", model_response=_response())
+        relay.completion(model="m", messages=messages, api_base="https://x.invalid/d", api_key="k",
+                         model_response=response)
     assert exc.value.status_code == 429
     assert "rate limited" in str(exc.value)

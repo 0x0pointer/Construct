@@ -7,6 +7,7 @@ for dynamic cases, `reference/envspec.json` + `reference/poc.yaml`. The base sta
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from dataclasses import dataclass
@@ -143,27 +144,41 @@ def _patch_path(raw: str, prefix: str) -> str | None:
     return path[len(prefix):] if path.startswith(prefix) else path
 
 
+def _hunk_line(line: str, i: int) -> str:
+    """A hunk body line with its ' '/'-'/'+' prefix; a bare empty line is unchanged context."""
+    if line[:1] in (" ", "-", "+"):
+        return line
+    if line in ("\n", ""):
+        return " " + line
+    raise ValueError(f"malformed hunk line {i + 1}: {line[:60]!r}")
+
+
 def _hunk_body(lines: list[str], i: int, old_n: int, new_n: int) -> tuple[list[str], int]:
     """The body of one hunk (line counts from its header), keeping each line's newline; a
     '\\ No newline at end of file' marker strips the newline of the line before it."""
     body: list[str] = []
     seen_old = seen_new = 0
     while i < len(lines) and (seen_old < old_n or seen_new < new_n or lines[i].startswith("\\")):
-        line = lines[i]
-        if line.startswith("\\"):
+        if lines[i].startswith("\\"):
             if body:
                 body[-1] = body[-1].rstrip("\n")
-        elif line[:1] in (" ", "-", "+") or line in ("\n", ""):
-            line = line if line[:1] in (" ", "-", "+") else " " + line
+        else:
+            line = _hunk_line(lines[i], i)
             seen_old += line[0] in " -"
             seen_new += line[0] in " +"
             body.append(line)
-        else:
-            raise ValueError(f"malformed hunk line {i + 1}: {line[:60]!r}")
         i += 1
     if seen_old != old_n or seen_new != new_n:
         raise ValueError("hunk shorter than its header says")
     return body, i
+
+
+def _hunk(lines: list[str], i: int, header: re.Match[str]) -> tuple[Hunk, int]:
+    """The hunk whose header is lines[i], and the index after it (a count left out of the header is 1)."""
+    old_n = int(header.group(2)) if header.group(2) is not None else 1
+    new_n = int(header.group(4)) if header.group(4) is not None else 1
+    body, end = _hunk_body(lines, i + 1, old_n, new_n)
+    return (int(header.group(3)), new_n, body), end
 
 
 def parse_patch(text: str) -> list[tuple[str | None, str | None, list[Hunk]]]:
@@ -181,10 +196,8 @@ def parse_patch(text: str) -> list[tuple[str | None, str | None, list[Hunk]]]:
         if m:
             if not files:
                 raise ValueError("hunk before any file header")
-            old_n = int(m.group(2)) if m.group(2) is not None else 1
-            new_n = int(m.group(4)) if m.group(4) is not None else 1
-            body, i = _hunk_body(lines, i + 1, old_n, new_n)
-            files[-1][2].append((int(m.group(3)), new_n, body))
+            hunk, i = _hunk(lines, i, m)
+            files[-1][2].append(hunk)
             continue
         if line.startswith(("rename ", "Binary files", "GIT binary patch")):
             raise ValueError(f"unsupported patch content: {line.strip()[:60]}")
@@ -220,10 +233,12 @@ def _reverse_file(root: Path, old_path: str | None, new_path: str | None, hunks:
 
 
 def _inside(root: Path, rel: str) -> Path:
-    target = (root / rel).resolve()
-    if not rel or not target.is_relative_to(root.resolve()):
+    """`rel` (a path from the patch) under `root`, symlinks resolved; one that leaves it is refused."""
+    base = os.path.realpath(root)
+    target = os.path.realpath(os.path.join(base, rel))
+    if not rel or target == base or os.path.commonpath([base, target]) != base:
         raise ValueError(f"patch path {rel!r} leaves the case repository")
-    return target
+    return Path(target)
 
 
 class CaseSCM:

@@ -132,6 +132,9 @@ def test_reverse_patch_added_deleted_and_no_newline(tmp_path):
 @pytest.mark.parametrize(("files", "diff", "why"), [
     ({"app.py": "other\n"}, "--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n-old\n+new\n", "does not match"),
     ({"app.py": "new\n"}, "--- a/../escape.py\n+++ b/../escape.py\n@@ -1 +1 @@\n-old\n+new\n", "leaves the case"),
+    ({"app.py": "new\n"}, "--- /tmp/escape.py\n+++ /tmp/escape.py\n@@ -1 +1 @@\n-old\n+new\n", "leaves the case"),
+    ({"app.py": "new\n"}, "--- a/../gone.py\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n", "leaves the case"),
+    ({"app.py": "new\n"}, "--- a/.\n+++ b/.\n@@ -1 +1 @@\n-old\n+new\n", "leaves the case"),
     ({"b.py": "x\n"}, "--- a/a.py\n+++ b/b.py\n@@ -1 +1 @@\n-x\n+x\n", "renames"),
 ])
 def test_reverse_patch_refuses(tmp_path, files, diff, why):
