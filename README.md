@@ -31,6 +31,8 @@ Pick the path you need. Each one builds on the previous one.
 | [1. Run the tests](#1-run-the-tests) | proof the code works on your machine | Python 3.12, Docker |
 | [2. Scan a real PR from your laptop](#2-scan-a-real-pr-from-your-laptop) | a real scan, results on a local dashboard | path 1 + a GitHub App + LLM access |
 | [3. Deploy for the whole org](#3-deploy-for-the-whole-org) | automatic scans on every PR | a Linux VM with a DNS name |
+| [4. Local pilot and evals](#4-local-pilot-and-evals) | the full pipeline, dynamic phase included, on a self-hosted model, scored against the eval corpus | path 1 + a model server (vLLM etc.) |
+| [5. Kubernetes](#5-kubernetes) | the whole stack in a cluster, every agent stage and replay as a pod | kind locally; a managed cluster with RWX storage |
 
 ### 1. Run the tests
 
@@ -162,6 +164,55 @@ Follow the scan on the dashboard at `https://<your domain>/` (after you log in) 
 recorded outbound requests on their page.
 
 To stop: `make down` (data volumes are kept).
+
+### 4. Local pilot and evals
+
+Runs the whole pipeline, **dynamic validation included**, with the Docker runner on your laptop
+and a self-hosted model (here a DGX Spark serving Qwen through vLLM), then scores the result
+against the labelled eval corpus in `prsec-skills/evals/cases`. No GitHub App is needed: eval scans
+use the `evals` SCM, which serves each case as a PR.
+
+```bash
+make local-up                     # Postgres, LiteLLM gateway -> the Spark, egress proxy (Docker)
+make local-worker                 # in its own terminal: prsec-worker with PRSEC_RUNNER=docker
+make local-dashboard              # in its own terminal: http://127.0.0.1:8081
+make eval                         # queue every case, wait, score; TAG=dynamic or CASES="a b" to narrow
+```
+
+- **Model route.** `deploy/compose/litellm/config.spark.yaml` maps the aliases to the Spark.
+  `make local-up` resolves `SPARK_HOST` (default `spark-efb9.local`) to an IP, because containers
+  cannot resolve mDNS names. Change the host or ports there.
+- **Policy.** `policy-spark.yaml`: opencode for the agentic stages, `raw` for the one-shot ones,
+  dynamic validation on, and wall clocks sized for ~16 tok/s.
+- **Report.** `prsec-eval` writes `work/evals/<run>/report.md` (and `report.json`): pass/fail per case,
+  precision and recall per bug class, how many expected findings were `reproduced`, and the
+  rules-arm comparison (see `shadows` under [policy.yaml](#policyyaml)). `prsec-eval score <scan ids>`
+  re-scores finished scans.
+- **Without a model.** `make test-dynamic` replays every dynamic case's reference PoC in real Docker
+  environments, with no agent and no LLM. It is the fastest check that the dynamic machinery works.
+
+### 5. Kubernetes
+
+The whole stack runs in one cluster, deployed by the Helm chart in `deploy/helm/construct`. The
+launcher starts every agent stage, dynamic environment and replay as a pod (`K8sRunner`), with a
+ServiceAccount limited to the `prsec-scans` namespace. That namespace is default-deny,
+Pod Security `baseline`, and guarded by an admission policy that allows only the launcher's recipe.
+There is no Docker socket anywhere. The design, including what maps to what and the storage
+requirements, is in [docs/design/k8s.md](docs/design/k8s.md).
+
+```bash
+make kind-deploy                  # kind cluster + data volume (work/kind) + images + helm install
+make test-k8s                     # isolation probes and the reference replays, on the cluster
+make kind-eval TAG=dynamic        # the eval corpus through the in-cluster worker
+make kind-dashboard               # http://127.0.0.1:8082
+```
+
+On a managed cluster, install the chart with your own values:
+- `storage.volume`: an RWX source (EFS, Filestore, Azure Files, NFS) holding `work/`, `skills/current`
+  and `harness/<name>/current`;
+- `externalDatabaseUrl` if you use managed Postgres;
+- `launcher.runtimeClassName` for gVisor or Kata;
+- `ingress`.
 
 ### Following a scan and debugging
 
@@ -327,6 +378,9 @@ These are the main ideas. The approved architecture plan has the full rationale.
 | `prsec/` | the Python package (api, orchestrator, adapters, launcher, sandbox entrypoint, sarif, dashboard, db) |
 | `prsec/dynamic/` | dynamic validation: EnvSpec, PoC, mock catalog, app runner, replay, sink, egress proxy |
 | `prsec/obs/` | logging, the scan timeline, `prsec-trace` and `prsec-debug` |
+| `prsec/evals/` | eval cases as PRs (the `evals` SCM), scoring, `prsec-eval`, reference replays |
+| `deploy/helm/construct/` | Helm chart: the whole stack on Kubernetes (`K8sRunner`) |
+| `deploy/kind/`, `deploy/local/` | kind cluster and values; the local pilot's host environment |
 | `docs/design/` | design notes (dynamic validation) |
 | `prsec/policy/policy.yaml` | central scan policy (harness + model per stage, budgets, experiments, per-repo overrides) |
 | `prsec-skills/` | the methodology (SKILL.md skills), its own repo in production |
@@ -371,6 +425,13 @@ Caveats from the LiteLLM docs, for the pinned `v1.105.5`:
   for them, and its `tool_permission` guardrail only sees `function` tools. So
   `litellm/prsec_hooks.py` strips them in a pre-call hook on every route. Harness
   adapters also disable their web tools.
+- **Minted keys reach only the routes Construct uses** (`prsec.gateway.ALLOWED_ROUTES`, LiteLLM
+  `allowed_routes`): the chat, messages and responses routes, model listing and `/key/info`. No
+  pass-through route: LiteLLM also serves raw provider pass-throughs (`/anthropic/*`,
+  `/openai_passthrough/*`, `/vertex_ai/*`, ...) to any valid key. Those would expose each provider's
+  full API with the gateway's credentials, including provider-run web fetch and search, past both the
+  alias allowlist and the server-tool stripping. Dev mode's pass-through master key is not restricted
+  this way, which is one more reason it is dev only.
 - Message logging is off (`turn_off_message_logging`), and so are prompts in spend logs.
   Spend per virtual key gives per-scan cost.
 
@@ -382,7 +443,18 @@ set `PRSEC_POLICY_FILE` to use a file outside the repo. It sets:
 
 - per stage, under `defaults`: `harness`, `model` alias, `skills`, `wall_clock_s`,
   `usd_budget` and an optional `max_turns`
-- `experiments`: shadow A/B of harnesses for a stage, as a sampled fraction of scans
+- `experiments`: A/B of harnesses for a stage, as a sampled fraction of scans (the arm replaces the default)
+- `shadows`: a second agent that runs **next to** a stage on the same inputs, recorded and compared
+  but never deciding. Supported for `rules` today. Each arm has `stage`, `name`, `harness`, `model`
+  and `sample`. The arm's call and whether it agrees appear on the scan timeline, in the scan's triage
+  record and in `prsec-eval`'s "Rules arms" table. The decision harnesses ask a calibrated decision
+  model whether the PR has any security relevance, and skip only below `PRSEC_DECIDE_SCAN_THRESHOLD`
+  (default 0.10). There are two: `openai-decide` (the OpenAI Decisions API, used by the default
+  policy) and `jev-decide` (self-hosted AutoTrust JEV-27B System 1, used by the local Spark policy).
+  Neither is a chat model, so the gateway serves each as an ordinary alias through the `prsec-decide`
+  relay in `litellm/prsec_hooks.py` (`model: prsec-decide/<model>`, `api_base: <the endpoint>`).
+  A minted key reaches one only when its `models` include the alias. A key-authenticated LiteLLM
+  pass-through route would need LiteLLM Enterprise's `allowed_passthrough_routes` on every key.
 - `repos`: glob-keyed overrides (`enabled: false`, or per-stage harness and model changes,
   or `workbench_image`)
 - global knobs: `max_hypotheses`, `static_verify_min_severity`, `skip_audit_sample`,
@@ -438,6 +510,9 @@ make test-db     # starts postgres:16 on :55432 (container prsec-test-pg) and ru
 .venv/bin/pytest -m docker          # needs a Docker daemon (runner, compose config, a real dynamic env)
 make conformance  # harness conformance suite, offline tier (all adapters, stub CLIs)
 make test-e2e     # pipeline end to end: Postgres queue + LocalRunner + scripted harness
+make test-dynamic # dynamic eval cases: reference PoCs replayed in real Docker envs, head and base (no LLM)
+make test-k8s     # K8sRunner on the kind cluster: isolation probes + reference replays (after make kind-deploy)
+make eval         # the eval corpus through the real pipeline and models (local pilot, see path 4)
 make conformance-live LIVE_HARNESSES=claude-code   # real harness CLIs + LLM (dev-mode login)
 ```
 

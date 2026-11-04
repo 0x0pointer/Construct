@@ -18,7 +18,7 @@ SKILLS = Path(__file__).resolve().parents[2] / "prsec-skills"
 CASES = SKILLS / "evals" / "cases"
 DYNAMIC_SKILLS = ["env-building", "mocking", "poc-authoring", "oracles"]
 POC_REFS = ["sqli", "idor", "bfla", "ssrf", "path-traversal", "cmdi", "xss", "business-logic"]
-DYNAMIC_CASES = ["idor-two-users", "negative-quantity"]
+DYNAMIC_CASES = ["idor-two-users", "negative-quantity", "ssrf-webhook-test"]
 YAML_BLOCK_RE = re.compile(r"```yaml\n(.*?)\n```", re.S)
 JSON_BLOCK_RE = re.compile(r"```json\n(.*?)\n```", re.S)
 
@@ -172,6 +172,7 @@ def test_dynamic_case_bug_classes() -> None:
     by_id = {c: json.loads((CASES / c / "expected.json").read_text()) for c in DYNAMIC_CASES}
     assert by_id["idor-two-users"]["expected_findings"][0]["bug_class"] == "idor"
     assert by_id["negative-quantity"]["expected_findings"][0]["bug_class"] == "value-tampering"
+    assert by_id["ssrf-webhook-test"]["expected_findings"][0]["bug_class"] == "ssrf"
 
 
 def test_idor_case_reference_logs_in_two_users() -> None:
@@ -183,6 +184,19 @@ def test_idor_case_reference_logs_in_two_users() -> None:
 def test_negative_quantity_reference_uses_json_compare() -> None:
     poc = PoC.model_validate(yaml.safe_load((CASES / "negative-quantity" / "reference" / "poc.yaml").read_text()))
     assert [o.type for o in poc.oracles].count("json_compare") == 1
+
+
+def test_ssrf_case_reference_uses_canary_and_seeded_postgres() -> None:
+    """The one reference case that exercises the sink (canary_hit) and a seeded catalog service."""
+    case = CASES / "ssrf-webhook-test"
+    poc = PoC.model_validate(yaml.safe_load((case / "reference" / "poc.yaml").read_text()))
+    assert [o.type for o in poc.oracles] == ["canary_hit"]
+    spec = EnvSpec.model_validate_json((case / "reference" / "envspec.json").read_text())
+    [db] = spec.services
+    assert db.kind == "postgres"
+    assert db.seed == ["schema.sql", "seed.sql"]
+    assert all((case / "repo" / f).is_file() for f in db.seed)
+    assert f"@{db.name}:" in spec.env["DATABASE_URL"]
 
 
 def test_sqli_new_endpoint_allows_reproduced() -> None:

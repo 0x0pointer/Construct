@@ -140,8 +140,20 @@ def _candidates(
                 and static.verdict in _SURVIVING and pipeline._SEV_RANK[static.severity] >= floor):
             eligible.append((h, static))
     eligible.sort(key=lambda p: pipeline._SEV_RANK[p[1].severity], reverse=True)
-    meta["dynamic"]["not_selected"] = [h.id for h, _ in eligible[pol.max_hypotheses:]]
-    return eligible[:pol.max_hypotheses]
+    # One dynamic attempt per flaw: a hypothesis at the same sink line and entry point as a stronger
+    # (or earlier) one is another framing of it; its finding merges into that one (pipeline._dedupe).
+    seen: dict[tuple[str, int, str], str] = {}
+    unique, duplicates = [], {}
+    for h, static in eligible:
+        key = pipeline.same_flaw(h.sink.file, h.sink.line, h.entry_point)
+        if key in seen:
+            duplicates[h.id] = seen[key]
+            continue
+        seen[key] = h.id
+        unique.append((h, static))
+    meta["dynamic"]["same_flaw"] = duplicates
+    meta["dynamic"]["not_selected"] = [h.id for h, _ in unique[pol.max_hypotheses:]]
+    return unique[:pol.max_hypotheses]
 
 
 # ---------------------------------------------------------------- env stage
@@ -539,15 +551,17 @@ def _skip_all(
 
 
 def _candidates_event(
-    ctx: pipeline.Ctx, cands: list[tuple[Hypothesis, StaticVerifyOutput]], not_selected: list[str]
+    ctx: pipeline.Ctx, cands: list[tuple[Hypothesis, StaticVerifyOutput]], not_selected: list[str],
+    same_flaw: dict[str, str] | None = None,
 ) -> None:
     if not cands:
         ctx.emit("dynamic_outcome", "dynamic validation: no static survivor qualifies (verdict, severity floor)")
         return
     over = f"; over the cap: {', '.join(not_selected)}" if not_selected else ""
+    dup = "; same flaw as another candidate: " + ", ".join(f"{d} (= {k})" for d, k in same_flaw.items()) if same_flaw else ""
     ctx.emit("dynamic_outcome", f"dynamic validation of {len(cands)} hypothesis(es): "
-             f"{', '.join(h.id for h, _ in cands)}{over}",
-             data={"candidates": [h.id for h, _ in cands], "not_selected": not_selected})
+             f"{', '.join(h.id for h, _ in cands)}{over}{dup}",
+             data={"candidates": [h.id for h, _ in cands], "not_selected": not_selected, "same_flaw": same_flaw or {}})
 
 
 def _gate(ctx: pipeline.Ctx) -> str | None:
@@ -569,7 +583,7 @@ def run_dynamic(
     meta["dynamic"] = {}
     cands = _candidates(ctx, survivors, meta)
     meta["dynamic"]["candidates"] = [h.id for h, _ in cands]
-    _candidates_event(ctx, cands, meta["dynamic"]["not_selected"])
+    _candidates_event(ctx, cands, meta["dynamic"]["not_selected"], meta["dynamic"]["same_flaw"])
     if not cands:
         return {}
     gate = _gate(ctx)

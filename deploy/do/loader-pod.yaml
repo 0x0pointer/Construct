@@ -1,0 +1,19 @@
+# One-off pod that prepares the shared volume (make do-data): work/, skills/<ver> + skills/current,
+# harness/<name>/current. It runs as uid 10001 (the prsec and workbench images' user), not root: DO's
+# NFS squashes root to nobody (65534), which can neither chown nor leave dirs that 10001 may write.
+apiVersion: v1
+kind: Pod
+metadata: {name: construct-data-loader, labels: {app.kubernetes.io/part-of: construct}}
+spec:
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  containers:
+    - name: loader
+      image: IMAGE_REPO:IMAGE_TAG
+      command: [sleep, "3600"]
+      securityContext: {runAsUser: 10001, runAsGroup: 10001, runAsNonRoot: true, allowPrivilegeEscalation: false}
+      volumeMounts: [{name: data, mountPath: /var/lib/prsec}]
+      resources: {requests: {cpu: 50m, memory: 64Mi, ephemeral-storage: 64Mi}, limits: {memory: 256Mi, ephemeral-storage: 2Gi}}
+  volumes:
+    - name: data
+      persistentVolumeClaim: {claimName: prsec-data}

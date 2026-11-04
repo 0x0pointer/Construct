@@ -70,6 +70,7 @@ class Caps:
     max_turns: bool  # honours a turn limit flag
     mcp: bool  # supports MCP (never required by prsec)
     subprocess: bool = True  # False for in-process adapters (raw)
+    stages: frozenset[str] | None = None  # the only stages this adapter can serve (jev-decide: rules); None = any
 
 
 @dataclass(frozen=True)

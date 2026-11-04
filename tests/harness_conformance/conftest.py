@@ -44,7 +44,8 @@ def shipped_adapter_names() -> list[str]:
     """Adapters PRSec ships. Other suites register test-only fakes (tests/sandbox/fakeharness.py) in the
     same global registry; benching those would overwrite their CLI script with the stub shim."""
     return [n for n in adapter_names()
-            if type(get_adapter(n)).__module__.startswith("prsec.adapters.harness.")]
+            if type(get_adapter(n)).__module__.startswith("prsec.adapters.harness.")
+            and get_adapter(n).caps.stages is None]  # stage-specific adapters (jev-decide) have their own tests
 
 
 def cli_name(adapter: HarnessAdapter) -> str | None:

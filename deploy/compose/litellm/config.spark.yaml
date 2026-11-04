@@ -1,0 +1,87 @@
+# Local LiteLLM gateway that routes every alias to a self-hosted model on a DGX Spark (vLLM,
+# OpenAI-compatible). Dev/pilot only: no key-management DB, so the worker passes
+# PRSEC_GATEWAY_DEV_KEY through as the bearer and this proxy accepts it as the master key
+# (per-task budgets are not enforced; the Spark costs nothing per token anyway).
+#
+#   SPARK_API_BASE     the vLLM server's /v1 URL, e.g. http://192.0.2.10:8000/v1
+#   ANTHROPIC_API_KEY  optional: enables the *-anthropic aliases for side-by-side evals
+#
+# `make local-up` starts it as the fixed-name prsec-llm-gateway container that DockerRunner
+# attaches to every scan network (workbenches reach it as http://llm-gateway:4000).
+#
+# The model (Qwen3.6-27B) thinks before answering by default. At ~16 tok/s decode that is pure
+# latency for the one-shot classifier stages (rules, triage: agent-small), so it is switched off
+# there; the reasoning-heavy aliases (agent-large, judge) keep it. *-think / *-fast pin either mode
+# for A/B evals.
+model_list:
+  - model_name: agent-large
+    litellm_params: &think
+      model: hosted_vllm/agent-smith   # vLLM --served-model-name (os.environ/ only works for a whole value)
+      api_base: os.environ/SPARK_API_BASE
+      api_key: "none"   # vLLM runs without --api-key on the LAN
+      timeout: 900      # ~16 tok/s decode: long agent turns take minutes
+    model_info: { family: spark }
+  - model_name: judge
+    litellm_params: *think
+    model_info: { family: spark }
+  - model_name: agent-small
+    litellm_params: &fast
+      model: hosted_vllm/agent-smith
+      api_base: os.environ/SPARK_API_BASE
+      api_key: "none"
+      timeout: 600
+      extra_body: { chat_template_kwargs: { enable_thinking: false } }
+    model_info: { family: spark }
+  - model_name: agent-large-think
+    litellm_params: *think
+    model_info: { family: spark }
+  - model_name: agent-large-fast
+    litellm_params: *fast
+    model_info: { family: spark }
+
+  # AutoTrust JEV-27B (Apache-2.0 decision model) System 1 (serve_decide.py's POST /v1/decide on a second
+  # vLLM on the Spark) for the jev-decide rules shadow arm, through the prsec-decide relay (prsec_hooks.py).
+  # `spark` resolves to the Spark (compose extra_hosts); api_key "none": the relay sends no credentials.
+  - model_name: rules-jev
+    litellm_params:
+      model: prsec-decide/jev-27b
+      api_base: http://spark:8001/v1/decide
+      api_key: "none"
+      timeout: 120
+    model_info: { family: jev }
+  # The OpenAI Decisions API (POST /v1/decisions) for the openai-decide rules shadow arm, through the
+  # prsec-decide relay (prsec_hooks.py): an alias like any model, so only a key minted for it may call it.
+  # Named after the Decisions model so the policy reads the same with and without a gateway.
+  - model_name: gpt-6-luna
+    litellm_params:
+      model: prsec-decide/gpt-6-luna
+      api_base: https://api.openai.com/v1/decisions
+      api_key: os.environ/OPENAI_API_KEY
+      timeout: 60
+    model_info: { family: openai-decisions }
+
+  # Optional: Anthropic for the harness x model comparison (needs ANTHROPIC_API_KEY).
+  - model_name: agent-large-anthropic
+    litellm_params:
+      model: anthropic/claude-opus-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      timeout: 600
+    model_info: { family: anthropic }
+  - model_name: agent-small-anthropic
+    litellm_params:
+      model: anthropic/claude-haiku-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+      timeout: 300
+    model_info: { family: anthropic }
+
+litellm_settings:
+  drop_params: true
+  request_timeout: 900
+  num_retries: 1
+  turn_off_message_logging: true
+  callbacks: prsec_hooks.strip_server_tools
+  custom_provider_map:                         # decision models (JEV System 1, OpenAI Decisions) as aliases
+    - {provider: prsec-decide, custom_handler: prsec_hooks.decide_relay}
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

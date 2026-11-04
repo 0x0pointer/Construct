@@ -15,6 +15,9 @@ ALLOWED_CAPS = frozenset({"CHOWN", "SETUID", "SETGID", "DAC_OVERRIDE", "FOWNER"}
 class CatalogEntry(BaseModel):
     image: str
     port: int
+    # Other ports clients use (mailpit's web API). Docker reaches every port of the container; a
+    # Kubernetes Service forwards only the ports it declares (port + extra_ports).
+    extra_ports: list[int] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     seed_path: str | None = None
     # Only data files: the images' entrypoints also execute *.sh (and mongo *.js) from seed_path,

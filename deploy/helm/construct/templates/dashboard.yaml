@@ -1,0 +1,57 @@
+# AppSec only: put it behind SSO (oauth2-proxy / the Ingress's auth) before exposing it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  labels: {{- include "construct.labels" (dict "name" "dashboard" "root" .) | nindent 4 }}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: dashboard}}
+  template:
+    metadata:
+      labels: {{- include "construct.labels" (dict "name" "dashboard" "root" .) | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      {{- include "construct.pullSecrets" . | nindent 6 }}
+      securityContext: {{- include "construct.podSecurity" . | nindent 8 }}
+      containers:
+        - name: dashboard
+          image: {{ .Values.images.prsec }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: [prsec-dashboard]
+          env:
+            {{- include "construct.prsecEnv" . | nindent 12 }}
+            - {name: PRSEC_DASHBOARD_PORT, value: "8081"}
+          ports: [{containerPort: 8081}]
+          readinessProbe: {httpGet: {path: /healthz, port: 8081}, periodSeconds: 5}
+          securityContext: {{- include "construct.containerSecurity" . | nindent 12 }}
+          volumeMounts: {{- include "construct.prsecMounts" . | nindent 12 }}
+          resources: {requests: {memory: 128Mi, cpu: 50m, ephemeral-storage: 64Mi}, limits: {memory: 512Mi, ephemeral-storage: 512Mi}}
+      volumes: {{- include "construct.prsecVolumes" . | nindent 8 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  labels: {{- include "construct.labels" (dict "name" "dashboard" "root" .) | nindent 4 }}
+spec:
+  selector: {app.kubernetes.io/name: dashboard}
+  ports: [{port: 8081, targetPort: 8081}]
+{{- if .Values.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: construct
+  labels: {app.kubernetes.io/part-of: construct}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    - host: {{ required "ingress.host is required" .Values.ingress.host }}
+      http:
+        paths:
+          - {path: /webhooks, pathType: Prefix, backend: {service: {name: api, port: {number: 8080}}}}
+          - {path: /, pathType: Prefix, backend: {service: {name: dashboard, port: {number: 8081}}}}
+{{- end }}

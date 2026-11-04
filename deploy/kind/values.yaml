@@ -1,0 +1,32 @@
+# Local kind overrides for deploy/helm/construct (make kind-deploy). The Spark gateway config and
+# the Spark's address come from the make target (--set-file / --set).
+# Locally built images (make images): tagged latest, loaded into the node by make kind-load. The
+# Spark policy's workbench_image is prsec/workbench-base:latest, and the admission policy allows these.
+images:
+  prsec: prsec/prsec:latest
+  workbench: prsec/workbench-base:latest
+
+storage:
+  size: 50Gi
+  volume:
+    hostPath: {path: /var/lib/prsec, type: Directory}
+
+postgres:
+  storage: 2Gi
+
+# The Spark gateway config has no key database: dev pass-through on a trusted local model.
+gateway:
+  keyDatabase:
+    enabled: false
+
+worker:
+  concurrency: 2
+  debounceS: 0
+  reconcileIntervalS: 86400   # no GitHub App here: eval scans are queued by prsec-eval
+
+launcher:
+  workbench:
+    memory: 3Gi
+    cpus: "2"
+
+skillsVersion: local

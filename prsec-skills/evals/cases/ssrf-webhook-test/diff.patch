@@ -1,0 +1,28 @@
+diff --git a/app.py b/app.py
+--- a/app.py
++++ b/app.py
+@@ -1,4 +1,5 @@
+ import os
++import urllib.request
+ 
+ import psycopg
+ from flask import Flask, g, jsonify, request, session
+@@ -56,3 +57,18 @@ def add_webhook():
+         "INSERT INTO webhooks (user_id, url) VALUES (%s, %s) RETURNING id, url", (g.user_id, url)
+     ).fetchone()
+     return jsonify(row), 201
++
++
++@app.post("/api/webhooks/<int:hook_id>/test")
++@login_required
++def test_webhook(hook_id):
++    row = db().execute(
++        "SELECT url FROM webhooks WHERE id = %s AND user_id = %s", (hook_id, g.user_id)
++    ).fetchone()
++    if row is None:
++        return jsonify(error="not found"), 404
++    try:
++        with urllib.request.urlopen(row["url"], data=b'{"event": "ping"}', timeout=5) as resp:
++            return jsonify(delivered=True, status=resp.status)
++    except OSError as e:
++        return jsonify(delivered=False, error=str(e)), 502

@@ -1,0 +1,25 @@
+{
+  "id": "ssrf-webhook-test",
+  "description": "New webhook test-ping endpoint POSTs to the stored, user-chosen URL with no restriction on the destination (internal hosts, metadata, other services). Dynamically reproduced: the canary URL registered as a webhook is requested by the server. The app runs against the postgres catalog service, seeded from schema.sql and seed.sql.",
+  "stack": "python-flask",
+  "known_false_positive": false,
+  "tags": ["dynamic", "service-postgres", "canary"],
+  "triage": {"acceptable": ["full"]},
+  "expected_findings": [
+    {
+      "bug_class": "ssrf",
+      "vuln_class": "technical",
+      "sink_file": "app.py",
+      "sink_lines": [70, 72],
+      "entry_point": "POST /api/webhooks/<hook_id>/test",
+      "static_verdicts": ["confirmed_static", "plausible"],
+      "labels": ["reproduced", "likely"],
+      "min_severity": "medium",
+      "introduced": true
+    }
+  ],
+  "must_not_find": [
+    {"bug_class": "sqli", "sink_file": "app.py", "reason": "every query binds its values as parameters"},
+    {"bug_class": "idor", "sink_file": "app.py", "sink_lines": [65, 67], "reason": "test_webhook loads the webhook by id AND the session user_id"}
+  ]
+}

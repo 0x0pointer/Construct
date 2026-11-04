@@ -1,0 +1,68 @@
+# The only component with Kubernetes rights (K8sRunner, scans namespace only). No Docker socket.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: launcher
+  labels: {{- include "construct.labels" (dict "name" "launcher" "root" .) | nindent 4 }}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: launcher}}
+  template:
+    metadata:
+      labels: {{- include "construct.labels" (dict "name" "launcher" "root" .) | nindent 8 }}
+      annotations: {checksum/policy: {{ .Values.policy | sha256sum }}}
+    spec:
+      serviceAccountName: construct-launcher
+      # No automounted token: an explicit, short-lived projected one (rotated by the kubelet; the
+      # kubernetes client re-reads it), at the standard path in-cluster config reads.
+      automountServiceAccountToken: false
+      {{- include "construct.pullSecrets" . | nindent 6 }}
+      securityContext: {{- include "construct.podSecurity" . | nindent 8 }}
+      containers:
+        - name: launcher
+          image: {{ .Values.images.prsec }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          command: [prsec-launcher]
+          env:
+            {{- include "construct.prsecEnv" . | nindent 12 }}
+            - {name: PRSEC_LAUNCHER_PORT, value: "8090"}
+            - name: PRSEC_LAUNCHER_TOKEN
+              valueFrom: {secretKeyRef: {name: construct-secrets, key: launcherToken}}
+            - {name: PRSEC_LAUNCHER_BACKEND, value: k8s}
+            - {name: PRSEC_K8S_NAMESPACE, value: {{ .Values.scansNamespace }}}
+            - {name: PRSEC_K8S_CONTROL_NAMESPACE, value: {{ .Release.Namespace }}}
+            - {name: PRSEC_K8S_DATA_ROOT, value: {{ .Values.storage.dataRoot }}}
+            - {name: PRSEC_K8S_DATA_CLAIM, value: {{ .Values.storage.claimName }}}
+            - {name: PRSEC_K8S_PULL_POLICY, value: {{ .Values.images.pullPolicy }}}
+            - {name: PRSEC_K8S_PULL_SECRETS, value: {{ join "," (.Values.images.pullSecrets | default list) | quote }}}
+            - {name: PRSEC_K8S_RUNTIME_CLASS, value: {{ .Values.launcher.runtimeClassName | quote }}}
+            - {name: PRSEC_K8S_MEM, value: {{ .Values.launcher.workbench.memory | quote }}}
+            - {name: PRSEC_K8S_CPUS, value: {{ .Values.launcher.workbench.cpus | quote }}}
+            - {name: PRSEC_K8S_TMP_SIZE, value: {{ .Values.launcher.workbench.tmpSize | quote }}}
+            - {name: PRSEC_K8S_SERVICE_MEM, value: {{ .Values.launcher.service.memory | quote }}}
+            - {name: PRSEC_K8S_SERVICE_CPUS, value: {{ .Values.launcher.service.cpus | quote }}}
+            - {name: PRSEC_SINK_IMAGE, value: {{ .Values.images.prsec }}}
+          ports: [{containerPort: 8090}]
+          readinessProbe: {httpGet: {path: /healthz, port: 8090}, periodSeconds: 5}
+          securityContext: {{- include "construct.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            {{- include "construct.prsecMounts" . | nindent 12 }}
+            - {name: kube-api-access, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}
+          resources: {requests: {memory: 128Mi, cpu: 50m, ephemeral-storage: 64Mi}, limits: {memory: 512Mi, ephemeral-storage: 512Mi}}
+      volumes:
+        {{- include "construct.prsecVolumes" . | nindent 8 }}
+        - name: kube-api-access
+          projected:
+            sources:
+              - serviceAccountToken: {path: token, expirationSeconds: 3600}
+              - configMap: {name: kube-root-ca.crt, items: [{key: ca.crt, path: ca.crt}]}
+              - downwardAPI: {items: [{path: namespace, fieldRef: {fieldPath: metadata.namespace}}]}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: launcher
+  labels: {{- include "construct.labels" (dict "name" "launcher" "root" .) | nindent 4 }}
+spec:
+  selector: {app.kubernetes.io/name: launcher}
+  ports: [{port: 8090, targetPort: 8090}]

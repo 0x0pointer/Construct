@@ -14,8 +14,12 @@ def get_runner(name: str | None = None) -> Runner:
         from prsec.adapters.runner.launcher import LauncherRunner
 
         return LauncherRunner()
+    if name == "k8s":
+        from prsec.adapters.runner.k8s import K8sRunner
+
+        return K8sRunner()
     if name == "local":
         from prsec.adapters.runner.local import LocalRunner
 
         return LocalRunner()
-    raise ValueError(f"unknown runner {name!r}; known: docker, launcher, local")
+    raise ValueError(f"unknown runner {name!r}; known: docker, k8s, launcher, local")

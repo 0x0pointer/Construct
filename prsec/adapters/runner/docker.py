@@ -19,7 +19,16 @@ from pathlib import Path
 from typing import Any
 
 from prsec.adapters.protocols import WorkbenchSpec
-from prsec.adapters.runner.common import GRACE_S, RESULT_FILE, load_result, tail, write_nofollow, write_task
+from prsec.adapters.runner.common import (
+    GRACE_S,
+    RESULT_FILE,
+    harness_mount,
+    load_result,
+    tail,
+    workbench_env,
+    write_nofollow,
+    write_task,
+)
 from prsec.adapters.runner.env import (
     EGRESS_ALIAS,
     LABEL_ENV,
@@ -66,10 +75,6 @@ def network_name(scan_id: int) -> str:
 
 def container_name(task_id: str) -> str:
     return f"prsec-wb-{re.sub(r'[^a-zA-Z0-9_.-]', '_', task_id)[:100]}-{secrets.token_hex(3)}"
-
-
-def harness_mount(harness: str) -> str:
-    return f"/opt/harness/{harness}/current"
 
 
 def _give_to_nonroot(d: Path, uid_remapped: bool) -> None:
@@ -187,25 +192,15 @@ class DockerRunner:
 
     def container_kwargs(self, spec: WorkbenchSpec, command: list[str], entrypoint: list[str] | None = None) -> dict[str, Any]:
         t = spec.task
-        home = f"{t.out_dir.rstrip('/')}/.home"
         volumes: dict[str, dict[str, str]] = {
             str(spec.src_dir): {"bind": t.workdir, "mode": "ro"},
             str(spec.skills_dir): {"bind": t.skills_dir, "mode": "ro"},
             str(spec.in_dir): {"bind": t.in_dir, "mode": "rw"},
             str(spec.out_dir): {"bind": t.out_dir, "mode": "rw"},
         }
-        env = {
-            **spec.env,
-            "HOME": home,
-            "XDG_CONFIG_HOME": f"{home}/.config",
-            "XDG_CACHE_HOME": f"{home}/.cache",
-            # '/tmp' is inside the container: the per-container tmpfs below, never a shared host dir.
-            "TMPDIR": "/tmp",  # NOSONAR(S5443)
-            "PRSEC_CITE_ROOT": t.workdir,
-        }
+        env = workbench_env(spec)
         if spec.harness_volume:
             volumes[str(spec.harness_volume)] = {"bind": harness_mount(t.harness), "mode": "ro"}
-            env["PRSEC_HARNESS_HOME"] = harness_mount(t.harness)
         kw: dict[str, Any] = {
             "image": spec.image,
             "command": command,

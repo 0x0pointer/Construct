@@ -1,0 +1,56 @@
+# The launcher is the only identity that can start containers: pods, services, configmaps and
+# networkpolicies in the scans namespace, plus reading the gateway/egress Services' ClusterIPs here.
+# Every other service runs without a token (automountServiceAccountToken: false).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: construct-launcher
+  labels: {app.kubernetes.io/part-of: construct}
+{{- include "construct.pullSecrets" . }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: construct-launcher
+  namespace: {{ .Values.scansNamespace }}
+  labels: {app.kubernetes.io/part-of: construct}
+rules:
+  - apiGroups: [""]
+    resources: [pods, services, configmaps]
+    verbs: [get, list, watch, create, delete]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [get, list, watch, create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: construct-launcher
+  namespace: {{ .Values.scansNamespace }}
+  labels: {app.kubernetes.io/part-of: construct}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: construct-launcher}
+subjects:
+  - {kind: ServiceAccount, name: construct-launcher, namespace: {{ .Release.Namespace }}}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: construct-launcher-lookup
+  labels: {app.kubernetes.io/part-of: construct}
+rules:
+  - apiGroups: [""]
+    resources: [services]
+    resourceNames: [llm-gateway, egress-proxy]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: construct-launcher-lookup
+  labels: {app.kubernetes.io/part-of: construct}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: construct-launcher-lookup}
+subjects:
+  - {kind: ServiceAccount, name: construct-launcher, namespace: {{ .Release.Namespace }}}

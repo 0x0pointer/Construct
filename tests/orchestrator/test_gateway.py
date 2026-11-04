@@ -25,7 +25,23 @@ def test_mint_key(gw_settings):
     req = route.calls.last.request
     assert req.headers["authorization"] == "Bearer sk-master"
     body = json.loads(req.content)
-    assert body == {"max_budget": 5.1235, "duration": "3600s", "models": ["agent-large", "judge"], "metadata": {"scan_id": 12}}
+    assert body == {"max_budget": 5.1235, "duration": "3600s", "models": ["agent-large", "judge"],
+                    "allowed_routes": list(gateway.ALLOWED_ROUTES), "metadata": {"scan_id": 12}}
+
+
+def test_minted_keys_cannot_reach_provider_passthroughs():
+    """LiteLLM matches allowed_routes exactly or as a '/' prefix: no raw provider route may slip through."""
+    def allowed(route: str) -> bool:
+        return any(route == a or route.startswith(a + "/") for a in gateway.ALLOWED_ROUTES)
+
+    for ok in ("/v1/chat/completions", "/v1/messages", "/v1/messages/count_tokens", "/v1/responses", "/key/info"):
+        assert allowed(ok), ok
+    for blocked in ("/anthropic/v1/messages", "/openai/v1/responses", "/openai_passthrough/v1/responses",
+                    "/vertex_ai/v1/projects/x", "/gemini/v1beta/models", "/bedrock/model/x/invoke", "/key/generate",
+                    "/key/delete", "/user/new", "/v1/files", "/v1/batches", "/v1/realtime", "/mcp/tools/call",
+                    # custom pass-throughs: OSS LiteLLM lets only the master key call an auth: true one
+                    "/jev/v1/decide", "/openai-decisions/v1/decisions"):
+        assert not allowed(blocked), blocked
 
 
 @respx.mock

@@ -181,9 +181,22 @@ def _auth(authorization: Annotated[str | None, Header()] = None) -> None:
     _require_token(authorization)
 
 
+def backend() -> Any:
+    """The runner behind the launcher: PRSEC_LAUNCHER_BACKEND=docker (default, the Docker socket) or k8s
+    (K8sRunner, a ServiceAccount limited to the scans namespace)."""
+    name = os.environ.get("PRSEC_LAUNCHER_BACKEND", "docker").strip().lower()
+    if name == "k8s":
+        from prsec.adapters.runner.k8s import K8sRunner
+
+        return K8sRunner()
+    if name != "docker":
+        raise ValueError(f"unknown PRSEC_LAUNCHER_BACKEND {name!r}; known: docker, k8s")
+    return DockerRunner()
+
+
 def _docker(request: Request) -> Any:
     if request.app.state.runner is None:
-        request.app.state.runner = DockerRunner()
+        request.app.state.runner = backend()
     return request.app.state.runner
 
 
@@ -284,7 +297,7 @@ def run() -> None:
     from prsec.obs.logging import setup_logging
 
     setup_logging("launcher")
-    app.state.runner = app.state.runner or DockerRunner()
+    app.state.runner = app.state.runner or backend()
     start_reaper(app.state.runner)
 
     # Loopback by default; the service image sets PRSEC_LAUNCHER_HOST=0.0.0.0 inside the container,
