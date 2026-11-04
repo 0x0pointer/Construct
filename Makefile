@@ -154,11 +154,20 @@ KIND_CTX := kind-$(KIND_CLUSTER)
 KUBECTL := kubectl --context $(KIND_CTX)
 HELM := helm --kube-context $(KIND_CTX)
 
-kind-up: ## create the local kind cluster
+CALICO_VERSION ?= v3.32.3
+CALICO_MANIFEST := work/calico-$(CALICO_VERSION).yaml
+
+kind-up: ## create the local kind cluster with Calico (NetworkPolicy enforced in the dataplane)
 	@mkdir -p "$(KIND_DATA)"
 	@if kind get clusters 2>/dev/null | grep -qx "$(KIND_CLUSTER)"; then echo "kind cluster $(KIND_CLUSTER) exists"; else \
 	  sed 's|$${PRSEC_KIND_DATA}|$(KIND_DATA)|' deploy/kind/cluster.yaml.tmpl > work/kind-cluster.yaml && \
-	  kind create cluster --config work/kind-cluster.yaml --wait 180s; fi
+	  kind create cluster --config work/kind-cluster.yaml; fi
+	@test -s $(CALICO_MANIFEST) || curl -fsSL -o $(CALICO_MANIFEST) \
+	  https://raw.githubusercontent.com/projectcalico/calico/$(CALICO_VERSION)/manifests/calico.yaml
+	@sed -e 's|# - name: CALICO_IPV4POOL_CIDR|- name: CALICO_IPV4POOL_CIDR|' \
+	     -e 's|#   value: "192.168.0.0/16"|  value: "10.244.0.0/16"|' $(CALICO_MANIFEST) | $(KUBECTL) apply -f - >/dev/null
+	$(KUBECTL) -n kube-system rollout status ds/calico-node --timeout=300s
+	$(KUBECTL) wait --for=condition=Ready nodes --all --timeout=300s
 
 kind-data: ## prepare the data volume (work/kind): work dir, skills as version 'local', harness volumes
 	mkdir -p "$(KIND_DATA)/work" "$(KIND_DATA)/skills/local" "$(KIND_DATA)/harness"

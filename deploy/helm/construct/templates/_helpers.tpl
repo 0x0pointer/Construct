@@ -53,10 +53,12 @@ capabilities: {drop: [ALL]}
   value: {{ printf "%s/harness" .Values.storage.dataRoot }}
 - name: PRSEC_SARIF_DIR
   value: {{ printf "%s/work/artifacts" .Values.storage.dataRoot }}
+{{- if .Values.github.appId }}
 - name: PRSEC_GITHUB_APP_ID
   value: {{ .Values.github.appId | quote }}
 - name: PRSEC_GITHUB_PRIVATE_KEY_PATH
   value: /run/secrets/github/app.pem
+{{- end }}
 {{- end }}
 
 {{/* The volumes every prsec service mounts: policy, data volume, github key, tmp. */}}

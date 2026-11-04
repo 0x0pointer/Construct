@@ -66,7 +66,8 @@ def _spec(scan_id: int, work: Path, network: str | None = None, env_name: str | 
 
 
 def _probe(runner, spec: WorkbenchSpec, args: dict) -> dict:
-    code, logs, killed = runner.run_container(spec, ["python3", "-c", PROBE, json.dumps(args)], 120)
+    # The workbench image's entrypoint is prsec-stage: override it, as the replay does with prsec-replay.
+    code, logs, killed = runner.run_container(spec, ["-c", PROBE, json.dumps(args)], 120, entrypoint=["python3"])
     assert code == 0 and not killed, logs
     return json.loads((Path(spec.out_dir) / "probe.json").read_text())
 
@@ -89,6 +90,23 @@ def test_static_stage_reaches_only_the_gateway(k8s, kube_ready, scan):
     assert r["gateway_by_ip"] == "reachable", r
     for blocked in ("internet", "cluster_dns", "egress_by_ip", "dns_example"):
         assert str(r[blocked]).startswith("error"), (blocked, r)
+
+
+def test_isolation_holds_under_concurrency(k8s, kube_ready, scan):
+    """kindnet's NetworkPolicy queue failed open under load (pods reached the internet through a deny-all
+    policy); the cluster's CNI must hold with several scan pods starting and connecting at once."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    scan_id, work = scan
+    ips = _ips(kube_ready)
+    net = k8s.create_scan_network(scan_id)
+    specs = [_spec(scan_id, work / f"p{i}", network=net) for i in range(4)]
+    with ThreadPoolExecutor(max_workers=len(specs)) as pool:
+        results = list(pool.map(lambda sp: _probe(k8s, sp, ips), specs))
+    for r in results:
+        assert r["gateway_by_name"] == 200, r
+        for blocked in ("internet", "cluster_dns", "egress_by_ip"):
+            assert str(r[blocked]).startswith("error"), (blocked, r)
 
 
 def test_no_network_stage_reaches_nothing(k8s, kube_ready, scan):

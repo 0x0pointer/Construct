@@ -80,6 +80,14 @@ node pools).
 cluster and every managed cluster must be checked by a test: a workbench pod must not reach the
 internet, cluster DNS or another scan's pods, and a replay pod must not reach the gateway.
 
+That test has already caught one problem. kind's default CNI, kindnet (v0.29 alpha), enforces policy
+through a userspace packet queue that **failed open under load**: while replays ran, scan pods
+reached `1.1.1.1:443` and cluster DNS even under a deny-all policy, and on a quiet cluster they did
+not. The kind cluster therefore runs **Calico** (`make kind-up`), which enforces policy in the
+dataplane. `test_isolation_holds_under_concurrency` starts several scan pods at once, and two full
+`make test-k8s` runs in parallel (14/14) passed on Calico. Run the same tests on a managed cluster
+before trusting its CNI.
+
 ## Tests
 
 - **Unit:** `K8sRunner` against a fake Kubernetes API. Assert the generated objects: security
