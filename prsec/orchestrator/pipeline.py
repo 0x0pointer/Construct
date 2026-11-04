@@ -61,7 +61,7 @@ from prsec.obs import events as timeline
 from prsec.obs.logging import bind, child_log_env, submit_with_context
 from prsec.orchestrator import dynamic, stages, verdict
 from prsec.orchestrator.symbols import enclosing_symbol
-from prsec.sarif.fingerprint import fingerprint
+from prsec.sarif.fingerprint import fingerprint, normalise_entry_point, normalise_file
 from prsec.stages.outputs import (
     Citation,
     HypothesesOutput,
@@ -532,13 +532,40 @@ def _finding(
     )
 
 
+def same_flaw(file: str, line: int, entry_point: str | None) -> tuple[str, int, str]:
+    """One flaw, whatever bug class each framing gave it: the same sink line reached through the same
+    entry point (e.g. an SQL injection, and the tenancy bypass that injection allows filed as idor)."""
+    return normalise_file(file), int(line), normalise_entry_point(entry_point)
+
+
 def _dedupe(findings: list[Finding]) -> list[Finding]:
+    """Same fingerprint: keep the strongest. Then same flaw across bug classes (`same_flaw`): keep the
+    strongest (ties: the first, i.e. the earlier hypothesis) and record the others on it as `merged`."""
     best: dict[str, Finding] = {}
     for f in findings:
         cur = best.get(f.fingerprint)
         if cur is None or (_LABEL_RANK[f.label], _SEV_RANK[f.severity]) > (_LABEL_RANK[cur.label], _SEV_RANK[cur.severity]):
             best[f.fingerprint] = f
-    return list(best.values())
+    kept: dict[tuple[str, int, str], Finding] = {}
+    merged: dict[tuple[str, int, str], list[Finding]] = {}
+    for f in best.values():
+        key = same_flaw(f.sink.file, f.sink.line, f.entry_point)
+        cur = kept.get(key)
+        if cur is None:
+            kept[key] = f
+            continue
+        if (_LABEL_RANK[f.label], _SEV_RANK[f.severity]) > (_LABEL_RANK[cur.label], _SEV_RANK[cur.severity]):
+            kept[key], f = f, cur
+        merged.setdefault(key, []).append(f)
+    out = []
+    for key, f in kept.items():
+        others = merged.get(key)
+        if others:
+            info = [{"hypothesis_id": o.hypothesis_id, "bug_class": o.bug_class, "title": o.title, "label": str(o.label)}
+                    for o in others]
+            f = f.model_copy(update={"provenance": {**f.provenance, "merged": info}})
+        out.append(f)
+    return out
 
 
 def _changed_files(pr: PRInfo, diff: str) -> list[str]:
