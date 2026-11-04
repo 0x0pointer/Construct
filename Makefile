@@ -290,4 +290,4 @@ do-report: ## the latest DO eval's log tail and report (once written)
 do-down: ## delete the DO cluster (with its volumes and load balancers) and the NFS share; DOCR images stay
 	doctl kubernetes cluster delete $(DO_CLUSTER) --dangerous --force
 	@id=$$(doctl nfs list --region $(DO_REGION) --format ID,Name --no-header | awk '$$2=="$(DO_CLUSTER)"{print $$1}'); \
-	[ -z "$$id" ] || doctl nfs delete --id $$id --region $(DO_REGION) --force
+	[ -z "$$id" ] || doctl nfs delete --id $$id --region $(DO_REGION)
