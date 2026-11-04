@@ -40,7 +40,7 @@ spec:
             exec: {command: [pg_isready, -h, 127.0.0.1, -U, prsec, -d, prsec]}
             periodSeconds: 3
           volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
-          resources: {requests: {memory: 256Mi, cpu: 100m}, limits: {memory: 1Gi}}
+          resources: {requests: {memory: 256Mi, cpu: 100m, ephemeral-storage: 64Mi}, limits: {memory: 1Gi, ephemeral-storage: 1Gi}}
       volumes:
         - name: data
           persistentVolumeClaim: {claimName: postgres-data}

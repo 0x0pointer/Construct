@@ -38,5 +38,5 @@ spec:
             - {name: PRSEC_SINK_IMAGE, value: {{ .Values.images.prsec }}}
           securityContext: {{- include "construct.containerSecurity" . | nindent 12 }}
           volumeMounts: {{- include "construct.prsecMounts" . | nindent 12 }}
-          resources: {requests: {memory: 256Mi, cpu: 100m}, limits: {memory: 1Gi}}
+          resources: {requests: {memory: 256Mi, cpu: 100m, ephemeral-storage: 64Mi}, limits: {memory: 1Gi, ephemeral-storage: 1Gi}}
       volumes: {{- include "construct.prsecVolumes" . | nindent 8 }}

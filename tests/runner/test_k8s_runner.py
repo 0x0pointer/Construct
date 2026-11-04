@@ -122,14 +122,17 @@ def test_static_workbench_pod_is_hardened(root):
     pod = runner(kube).workbench_pod(spec(root), ["/work/in/task.json"], ["prsec-stage"])
     ps = pod["spec"]
     [c] = ps["containers"]
-    assert ps["automountServiceAccountToken"] is False and ps["enableServiceLinks"] is False
-    assert ps["restartPolicy"] == "Never" and ps["shareProcessNamespace"] is True
+    assert ps["automountServiceAccountToken"] is False
+    assert ps["enableServiceLinks"] is False
+    assert ps["restartPolicy"] == "Never"
+    assert ps["shareProcessNamespace"] is True
     assert ps["securityContext"] == {"runAsNonRoot": True, "runAsUser": 10001, "runAsGroup": 10001,
                                      "seccompProfile": {"type": "RuntimeDefault"}}
     assert c["securityContext"] == {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
                                     "capabilities": {"drop": ["ALL"]}}
     assert (c["command"], c["args"]) == (["prsec-stage"], ["/work/in/task.json"])
-    assert ps["dnsPolicy"] == "None" and ps["dnsConfig"]["nameservers"] == [DEAD_DNS]
+    assert ps["dnsPolicy"] == "None"
+    assert ps["dnsConfig"]["nameservers"] == [DEAD_DNS]
     assert ps["hostAliases"] == [{"ip": GW_IP, "hostnames": ["llm-gateway"]}]
     labels = pod["metadata"]["labels"]
     assert (labels["prsec.net"], labels["prsec.llm"], labels["prsec.scan_id"]) == ("scan-7", "1", "7")
@@ -137,9 +140,11 @@ def test_static_workbench_pod_is_hardened(root):
     assert mounts["/work/src"] == {"name": "data", "mountPath": "/work/src", "subPath": "work/7-x/src", "readOnly": True}
     assert mounts["/skills"]["subPath"] == "skills/v1"  # the 'current' symlink resolved: kubelet refuses symlinks
     assert mounts["/opt/harness/opencode/current"]["subPath"] == "harness/opencode/1.0"
-    assert mounts["/work/out"].get("readOnly") is None and mounts["/work/in"].get("readOnly") is None
+    assert mounts["/work/out"].get("readOnly") is None
+    assert mounts["/work/in"].get("readOnly") is None
     env = {e["name"]: e["value"] for e in c["env"]}
-    assert env["HOME"] == "/work/out/.home" and env["PRSEC_HARNESS_HOME"] == "/opt/harness/opencode/current"
+    assert env["HOME"] == "/work/out/.home"
+    assert env["PRSEC_HARNESS_HOME"] == "/opt/harness/opencode/current"
     assert {"name": "tmp", "emptyDir": {"medium": "Memory", "sizeLimit": "1Gi"}} in ps["volumes"]
     assert "runtimeClassName" not in ps
 
@@ -149,14 +154,16 @@ def test_runtime_class_and_no_network(root, monkeypatch):
     pod = runner(FakeKube()).workbench_pod(spec(root, network=None), ["x"], None)
     assert pod["spec"]["runtimeClassName"] == "gvisor"
     assert pod["metadata"]["labels"]["prsec.net"] == "none"  # only the namespace's default deny applies
-    assert "hostAliases" not in pod["spec"] and "command" not in pod["spec"]["containers"][0]
+    assert "hostAliases" not in pod["spec"]
+    assert "command" not in pod["spec"]["containers"][0]
 
 
 def test_paths_outside_the_data_volume_are_refused(root, tmp_path):
     s = spec(root)
     s.src_dir = tmp_path / "elsewhere"
+    r = runner(FakeKube())
     with pytest.raises(RuntimeError, match="not under the data volume"):
-        runner(FakeKube()).workbench_pod(s, ["x"], None)
+        r.workbench_pod(s, ["x"], None)
 
 
 def test_scan_network_policy_allows_only_the_gateway(root):
@@ -176,8 +183,9 @@ def test_scan_network_policy_allows_only_the_gateway(root):
 def test_scan_network_fails_without_a_gateway(root):
     kube = FakeKube()
     kube.control = {}
+    r = runner(kube)
     with pytest.raises(RuntimeError, match="llm-gateway not found"):
-        runner(kube).create_scan_network(7)
+        r.create_scan_network(7)
 
 
 def test_run_workbench_reads_the_result_and_deletes_the_pod(root):
@@ -192,7 +200,8 @@ def test_run_workbench_reads_the_result_and_deletes_the_pod(root):
 
     kube.on_create = workbench
     result = runner(kube).run_workbench(s)
-    assert result.status == StageStatus.ok and result.output == {"a": 1}
+    assert result.status == StageStatus.ok
+    assert result.output == {"a": 1}
     assert (s.in_dir / "task.json").is_file()
     assert (s.out_dir / "workbench.log").read_text().startswith("log of wb-7-hypothesise-")
     assert not [k for k in kube.objs if k[0] == "pod"]  # deleted after the run
@@ -212,7 +221,8 @@ def test_fatal_waiting_reason_fails_fast(root, reason):
     kube = FakeKube(pod_status=lambda body: {"phase": "Pending", "containerStatuses": [
         {"state": {"waiting": {"reason": reason, "message": "nope"}}}]})
     code, logs, killed = runner(kube).run_container(spec(root), ["x"], 30)
-    assert (code, killed) == (None, False) and reason in logs
+    assert (code, killed) == (None, False)
+    assert reason in logs
 
 
 def test_pod_that_never_starts_fails_after_the_start_budget(root):
@@ -221,7 +231,9 @@ def test_pod_that_never_starts_fails_after_the_start_budget(root):
     r = runner(kube)
     r.start_s = 0.05
     code, logs, killed = r.run_container(spec(root), ["x"], 30)
-    assert (code, killed) == (None, False) and "did not start" in logs and "ImagePullBackOff" in logs
+    assert (code, killed) == (None, False)
+    assert "did not start" in logs
+    assert "ImagePullBackOff" in logs
 
 
 # ------------------------------------------------------------------ dynamic envs
@@ -249,7 +261,8 @@ def test_create_env_builds_services_first_and_a_complete_hosts_map(root):
     assert hosts == {"sink": sink_ip, "db": kube.only("service", "-db")["spec"]["clusterIP"],
                      "mail": kube.only("service", "-mail")["spec"]["clusterIP"],
                      "llm-gateway": GW_IP, "egress-proxy": EGRESS_IP}
-    assert info.sink_ip == sink_ip and info.hosts == hosts
+    assert info.sink_ip == sink_ip
+    assert info.hosts == hosts
     assert info.services == {"db": "healthy", "mail": "healthy"}
     assert [p["port"] for p in kube.only("service", "-mail")["spec"]["ports"]] == [1025, 8025]  # extra_ports
     assert cm["metadata"]["annotations"]["prsec/sink-ip"] == sink_ip
@@ -300,8 +313,9 @@ def test_env_workbench_uses_the_sink_as_dns(root):
 
 
 def test_workbench_in_a_missing_env_is_refused(root):
+    r, s = runner(FakeKube()), spec(root, network=None, env_name="h9")
     with pytest.raises(RuntimeError, match="does not exist"):
-        runner(FakeKube()).workbench_pod(spec(root, network=None, env_name="h9"), ["x"], None)
+        r.workbench_pod(s, ["x"], None)
 
 
 def test_replay_refuses_an_env_with_the_gateway(root):
@@ -311,7 +325,8 @@ def test_replay_refuses_an_env_with_the_gateway(root):
     s = spec(root, network=None, env_name="h1")
     s.mode = "replay"
     res = r.run_replay(s)
-    assert not res.env_ok and "LLM gateway" in res.env_error
+    assert not res.env_ok
+    assert "LLM gateway" in res.env_error
 
 
 def test_sink_that_never_gets_ready_fails_the_env_and_cleans_up(root):
@@ -320,8 +335,9 @@ def test_sink_that_never_gets_ready_fails_the_env_and_cleans_up(root):
         return {"phase": "Running", "containerStatuses": [{"state": {"running": {}}}],
                 "conditions": [{"type": "Ready", "status": "True" if ready else "False"}]}
     kube = FakeKube(pod_status=status)
+    r, req = runner(kube), env_req(root)
     with pytest.raises(RuntimeError, match="sink did not start"):
-        runner(kube).create_env(7, "h1", env_req(root))
+        r.create_env(7, "h1", req)
     assert kube.objs == {}
 
 
@@ -331,7 +347,8 @@ def test_unhealthy_service_is_reported_not_fatal(root):
         return {"phase": "Running", "containerStatuses": [{"state": {"running": {}}}],
                 "conditions": [{"type": "Ready", "status": "True" if ok else "False"}]}
     info = runner(FakeKube(pod_status=status)).create_env(7, "h1", env_req(root))
-    assert info.services["mail"] == "healthy" and info.services["db"].startswith("unhealthy")
+    assert info.services["mail"] == "healthy"
+    assert info.services["db"].startswith("unhealthy")
 
 
 def test_destroy_env_scan_and_reaper(root, monkeypatch):
@@ -345,7 +362,8 @@ def test_destroy_env_scan_and_reaper(root, monkeypatch):
     assert any("env-7-h2" in n for _, n in kube.objs)
     monkeypatch.setattr(k8s_mod.time, "time", lambda: 1793786400.0 + 5 * 3600)  # 5 h after creation
     removed = r.reap_envs(4 * 3600)
-    assert removed and not any("env-7-h2" in n for _, n in kube.objs)
+    assert removed
+    assert not any("env-7-h2" in n for _, n in kube.objs)
     assert ("networkpolicy", "prsec-scan-7") in kube.objs  # the scan's own policy is not an env object
     r.destroy_scan(7)
     assert kube.objs == {}

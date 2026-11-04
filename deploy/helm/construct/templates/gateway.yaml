@@ -41,7 +41,7 @@ spec:
             periodSeconds: 5
             failureThreshold: 30
           volumeMounts: [{name: config, mountPath: /app/config, readOnly: true}]
-          resources: {requests: {memory: 512Mi, cpu: 200m}, limits: {memory: 2Gi}}
+          resources: {requests: {memory: 512Mi, cpu: 200m, ephemeral-storage: 256Mi}, limits: {memory: 2Gi, ephemeral-storage: 2Gi}}
           securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
       volumes:
         - name: config

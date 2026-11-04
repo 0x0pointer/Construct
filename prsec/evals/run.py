@@ -102,31 +102,36 @@ def _reported(res: dict[str, Any], verdicts: dict[str, str]) -> Reported:
     )
 
 
+def timeline_facts(events: list[dict[str, Any]]) -> dict[str, dict[str, str]]:
+    """From the scan's timeline: hypotheses (id -> bug class), static verdicts, drop reasons, dynamic outcomes."""
+    facts: dict[str, dict[str, str]] = {"hypotheses": {}, "verdicts": {}, "dropped": {}, "dynamic": {}}
+    for ev in events:
+        data, hid, kind = ev.get("data") or {}, ev.get("hypothesis_id"), ev["kind"]
+        if kind == "hypotheses":
+            facts["hypotheses"].update({h["id"]: h.get("bug_class", "") for h in data.get("hypotheses") or []})
+        elif not hid:
+            continue
+        elif kind == "static_verdict" and data.get("verdict"):
+            facts["verdicts"][hid] = data["verdict"]
+        elif kind == "hypothesis_dropped":
+            facts["dropped"][hid] = str(data.get("reason") or "dropped")
+        elif kind == "dynamic_outcome" and data.get("outcome"):
+            facts["dynamic"][hid] = data["outcome"]
+    return facts
+
+
 def observe(scan_id: int) -> tuple[dict[str, Any], Observed]:
     """The scan row and what the scan produced (SARIF results + timeline facts)."""
     row = _scan_row(scan_id)
     if row is None:
         raise RuntimeError(f"no scan {scan_id}")
-    hypotheses: dict[str, str] = {}
-    verdicts: dict[str, str] = {}
-    dropped: dict[str, str] = {}
-    dynamic: dict[str, str] = {}
-    for ev in _events(scan_id):
-        data, hid = ev.get("data") or {}, ev.get("hypothesis_id")
-        if ev["kind"] == "hypotheses":
-            hypotheses.update({h["id"]: h.get("bug_class", "") for h in data.get("hypotheses") or []})
-        elif ev["kind"] == "static_verdict" and hid and data.get("verdict"):
-            verdicts[hid] = data["verdict"]
-        elif ev["kind"] == "hypothesis_dropped" and hid:
-            dropped[hid] = str(data.get("reason") or "dropped")
-        elif ev["kind"] == "dynamic_outcome" and hid and data.get("outcome"):
-            dynamic[hid] = data["outcome"]
+    facts = timeline_facts(_events(scan_id))
     started, finished = row.get("started_at"), row.get("finished_at")
     obs = Observed(
         scan_id=scan_id, status=row["status"], triage=_triage(row),
-        findings=[_reported(r, verdicts) for r in _sarif_results(row.get("sarif_uri"))],
-        hypotheses=hypotheses, dropped=dropped, dynamic=dynamic, rules=_rules_arms(row), error=row.get("error"),
-        cost_usd=float(row.get("cost_usd") or 0),
+        findings=[_reported(r, facts["verdicts"]) for r in _sarif_results(row.get("sarif_uri"))],
+        hypotheses=facts["hypotheses"], dropped=facts["dropped"], dynamic=facts["dynamic"], rules=_rules_arms(row),
+        error=row.get("error"), cost_usd=float(row.get("cost_usd") or 0),
         duration_s=(finished - started).total_seconds() if started and finished else None,
     )
     return row, obs
@@ -205,7 +210,7 @@ def select(cases: list[Case], ids: list[str], tag: str | None) -> list[Case]:
 
 def _cmd_list(_: argparse.Namespace) -> int:
     for c in list_cases(CaseSCM().root):
-        flags = ", ".join(t for t in c.tags) or "-"
+        flags = ", ".join(c.tags) or "-"
         print(f"{c.id:28} {'dynamic' if c.dynamic else 'static ':8} {flags}")
     return 0
 

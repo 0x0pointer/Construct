@@ -681,7 +681,10 @@ def _shadow_compared(ctx: Ctx, entry: dict[str, Any], decision: str) -> dict[str
     """Mark whether a shadow arm agreed with the stage's decision and put it on the timeline."""
     got = entry.get("decision")
     entry["agrees"] = None if got is None else got == decision
-    verdict_text = "no decision" if got is None else f"{got}, {'agrees' if entry['agrees'] else 'DISAGREES'} with {decision}"
+    if got is None:
+        verdict_text = "no decision"
+    else:
+        verdict_text = f"{got}, {'agrees' if entry['agrees'] else 'DISAGREES'} with {decision}"
     ctx.emit("rules", f"rules shadow {entry['name']} ({entry['model']}): {verdict_text}: {str(entry.get('reason') or '')[:240]}",
              level="info" if entry["agrees"] is not False else "warning",
              data={"shadow": entry["name"], "model": entry["model"], "harness": entry["harness"], "decision": got,

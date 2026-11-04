@@ -150,3 +150,19 @@ def test_rules_arms_read_from_scanned_and_skipped_records():
     assert _rules_arms(scanned) == {"primary": "scan", "jev": "skip"}
     assert _rules_arms(skipped) == {"primary": "skip"}
     assert _rules_arms({"triage": None}) == {}
+
+
+def test_timeline_facts():
+    from prsec.evals.run import timeline_facts
+
+    facts = timeline_facts([
+        {"kind": "hypotheses", "hypothesis_id": None, "data": {"hypotheses": [{"id": "H1", "bug_class": "sqli"},
+                                                                              {"id": "H2", "bug_class": "idor"}]}},
+        {"kind": "static_verdict", "hypothesis_id": "H1", "data": {"verdict": "confirmed_static"}},
+        {"kind": "hypothesis_dropped", "hypothesis_id": "H2", "data": {"reason": "static_refuted"}},
+        {"kind": "dynamic_outcome", "hypothesis_id": "H1", "data": {"outcome": "reproduced"}},
+        {"kind": "dynamic_outcome", "hypothesis_id": None, "data": {"candidates": ["H1"]}},  # the summary event
+        {"kind": "static_verdict", "hypothesis_id": "H3", "data": {}},                        # no verdict: ignored
+    ])
+    assert facts == {"hypotheses": {"H1": "sqli", "H2": "idor"}, "verdicts": {"H1": "confirmed_static"},
+                     "dropped": {"H2": "static_refuted"}, "dynamic": {"H1": "reproduced"}}

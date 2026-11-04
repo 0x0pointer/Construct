@@ -57,8 +57,9 @@ def test_scm_serves_head_and_base(tmp_path):
 @pytest.mark.parametrize("repo", ["github/idor-two-users", "evals/../evals/idor-two-users", "evals/IDOR",
                                   "evals/", "evals/no-such-case", "evals/idor-two-users/repo"])
 def test_scm_refuses_other_repos(repo):
+    scm = CaseSCM(ROOT)
     with pytest.raises(CaseError):
-        CaseSCM(ROOT).get_pr(repo, 1)
+        scm.get_pr(repo, 1)
 
 
 def test_registered_as_evals_scm(monkeypatch):
@@ -73,7 +74,8 @@ def test_bad_diff_and_missing_files(tmp_path):
     for name, text in (("pr.json", '{"title": "t"}'), ("expected.json", "{}"),
                        ("diff.patch", "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n")):
         (broken / name).write_text(text)
+    case = load_case(broken)
     with pytest.raises(CaseError, match="does not reverse-apply"):
-        base_source(load_case(broken), tmp_path / "base")
+        base_source(case, tmp_path / "base")
     with pytest.raises(CaseError, match="missing"):
         load_case(tmp_path / "nothing-here")

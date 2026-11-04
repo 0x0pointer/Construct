@@ -68,7 +68,8 @@ def _spec(scan_id: int, work: Path, network: str | None = None, env_name: str | 
 def _probe(runner, spec: WorkbenchSpec, args: dict) -> dict:
     # The workbench image's entrypoint is prsec-stage: override it, as the replay does with prsec-replay.
     code, logs, killed = runner.run_container(spec, ["-c", PROBE, json.dumps(args)], 120, entrypoint=["python3"])
-    assert code == 0 and not killed, logs
+    assert code == 0, logs
+    assert not killed, logs
     return json.loads((Path(spec.out_dir) / "probe.json").read_text())
 
 
@@ -127,7 +128,8 @@ def test_dynamic_env_dns_sink_and_isolation(k8s, kube_ready, scan):
                {**ips, "resolve": ["cache", "api.not-in-the-catalog.example"], "canary": token})
     assert r["resolve_cache"] == info.hosts["cache"], r
     assert r["resolve_api.not-in-the-catalog.example"] == info.sink_ip, r
-    assert r["canary_http"] == 200 and r["canary_hits"] >= 1, r
+    assert r["canary_http"] == 200, r
+    assert r["canary_hits"] >= 1, r
     for blocked in ("internet", "cluster_dns", "gateway_by_ip", "egress_by_ip"):
         assert str(r[blocked]).startswith("error"), (blocked, r)  # llm=False, packages=False
 

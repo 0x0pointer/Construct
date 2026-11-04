@@ -135,8 +135,18 @@ def score_case(case: Case, obs: Observed, aliases: dict[str, str]) -> CaseScore:
         s.checks.append(Check("scan", False, f"status {obs.status}" + (f": {obs.error}" if obs.error else "")))
     acceptable = (exp.get("triage") or {}).get("acceptable") or []
     s.checks.append(Check("triage", obs.triage in acceptable, f"{obs.triage} (acceptable: {', '.join(acceptable)})"))
+    remaining = _score_expected(s, exp, list(obs.findings), aliases)
+    _score_false_positives(s, exp, remaining, aliases)
+    s.checks.extend(_refutation_checks(exp, obs, aliases))
+    want = rules_expected(exp)
+    s.rules = {arm: (None if got is None or want is None else got == want) for arm, got in obs.rules.items()}
+    s.passed = all(c.ok for c in s.checks)  # rules arms are reported, never part of pass/fail
+    return s
 
-    remaining = list(obs.findings)
+
+def _score_expected(s: CaseScore, exp: dict[str, Any], findings: list[Reported], aliases: dict[str, str]) -> list[Reported]:
+    """Match every expected finding (TP / FN and its field checks); returns the findings nothing matched."""
+    remaining = list(findings)
     for n, e in enumerate(exp.get("expected_findings") or []):
         cls = canonical(e["bug_class"], aliases)
         reproducible = REPRODUCED in e.get("labels", [])
@@ -153,7 +163,10 @@ def score_case(case: Case, obs: Observed, aliases: dict[str, str]) -> CaseScore:
         s.reproduced += int(reproducible and hit.label == REPRODUCED)
         s.checks.append(Check(f"finding[{n}] {e['bug_class']}", True, f"{hit.hypothesis_id} at {hit.file}:{hit.line}"))
         s.checks.extend(_finding_checks(e, hit, n))
+    return remaining
 
+
+def _score_false_positives(s: CaseScore, exp: dict[str, Any], remaining: list[Reported], aliases: dict[str, str]) -> None:
     for f in remaining:
         s.fp += 1
         _tally(s.by_class, canonical(f.bug_class, aliases), "fp")
@@ -162,20 +175,18 @@ def score_case(case: Case, obs: Observed, aliases: dict[str, str]) -> CaseScore:
         s.checks.append(Check(f"false positive {f.bug_class}", False,
                               f"{f.hypothesis_id} at {f.file}:{f.line}, label {f.label}: {why}"))
 
+
+def _refutation_checks(exp: dict[str, Any], obs: Observed, aliases: dict[str, str]) -> list[Check]:
+    """Every hypothesis raised in an expected-refutation class must have been dropped."""
+    checks = []
     for r in exp.get("expected_refutations") or []:
         cls = canonical(r["bug_class"], aliases)
         raised = sorted(h for h, c in obs.hypotheses.items() if canonical(c, aliases) == cls)
         survived = [h for h in raised if h not in obs.dropped]
-        detail = (f"raised {', '.join(raised)}; dropped: "
-                  f"{', '.join(f'{h} ({obs.dropped[h]})' for h in raised if h in obs.dropped) or 'none'}")
-        s.checks.append(Check(f"refutation {r['bug_class']}", not survived,
-                              detail if raised else "not raised (fine: nothing to refute)"))
-
-    want = rules_expected(exp)
-    s.rules = {arm: (None if got is None or want is None else got == want) for arm, got in obs.rules.items()}
-
-    s.passed = all(c.ok for c in s.checks)  # rules arms are reported, never part of pass/fail
-    return s
+        dropped = ", ".join(f"{h} ({obs.dropped[h]})" for h in raised if h in obs.dropped) or "none"
+        detail = f"raised {', '.join(raised)}; dropped: {dropped}" if raised else "not raised (fine: nothing to refute)"
+        checks.append(Check(f"refutation {r['bug_class']}", not survived, detail))
+    return checks
 
 
 def rules_expected(exp: dict[str, Any]) -> str | None:
@@ -186,52 +197,68 @@ def rules_expected(exp: dict[str, Any]) -> str | None:
     return "scan" if acceptable and "skip" not in acceptable else None
 
 
-def summarize(scores: list[CaseScore]) -> dict[str, Any]:
-    tp, fp, fn = (sum(getattr(s, k) for s in scores) for k in ("tp", "fp", "fn"))
-    by_class: dict[str, dict[str, int]] = {}
+def _by_class(scores: list[CaseScore]) -> dict[str, dict[str, int]]:
+    out: dict[str, dict[str, int]] = {}
     for s in scores:
         for cls, t in s.by_class.items():
-            agg = by_class.setdefault(cls, {"tp": 0, "fp": 0, "fn": 0})
+            agg = out.setdefault(cls, {"tp": 0, "fp": 0, "fn": 0})
             for k in agg:
                 agg[k] += t[k]
-    exp_rep = sum(s.expected_reproducible for s in scores)
-    rules: dict[str, dict[str, int]] = {}
+    return dict(sorted(out.items()))
+
+
+def _rules_bucket(ok: bool | None) -> str:
+    if ok is None:
+        return "none"
+    return "right" if ok else "wrong"
+
+
+def _rules_arms(scores: list[CaseScore]) -> dict[str, dict[str, int]]:
+    out: dict[str, dict[str, int]] = {}
     for s in scores:
         for arm, ok in s.rules.items():
-            t = rules.setdefault(arm, {"right": 0, "wrong": 0, "none": 0})
-            t["right" if ok else "none" if ok is None else "wrong"] += 1
+            out.setdefault(arm, {"right": 0, "wrong": 0, "none": 0})[_rules_bucket(ok)] += 1
+    return dict(sorted(out.items(), key=lambda kv: (kv[0] != "primary", kv[0])))
+
+
+def _ratio(num: int, den: int) -> float | None:
+    return round(num / den, 3) if den else None
+
+
+def summarize(scores: list[CaseScore]) -> dict[str, Any]:
+    tp, fp, fn = (sum(getattr(s, k) for s in scores) for k in ("tp", "fp", "fn"))
     return {
         "cases": len(scores),
         "passed": sum(s.passed for s in scores),
         "tp": tp, "fp": fp, "fn": fn,
-        "precision": round(tp / (tp + fp), 3) if tp + fp else None,
-        "recall": round(tp / (tp + fn), 3) if tp + fn else None,
+        "precision": _ratio(tp, tp + fp),
+        "recall": _ratio(tp, tp + fn),
         "reproduced": sum(s.reproduced for s in scores),
-        "expected_reproducible": exp_rep,
-        "by_class": dict(sorted(by_class.items())),
-        "rules": dict(sorted(rules.items(), key=lambda kv: (kv[0] != "primary", kv[0]))),
+        "expected_reproducible": sum(s.expected_reproducible for s in scores),
+        "by_class": _by_class(scores),
+        "rules": _rules_arms(scores),
         "cost_usd": round(sum(s.cost_usd for s in scores), 4),
         "duration_s": round(sum(s.duration_s or 0 for s in scores), 1),
     }
 
 
-def render_markdown(scores: list[CaseScore], summary: dict[str, Any], meta: dict[str, Any]) -> str:
-    def pct(v: float | None) -> str:
-        return "n/a" if v is None else f"{v:.0%}"
+def _pct(v: float | None) -> str:
+    return "n/a" if v is None else f"{v:.0%}"
 
+
+def _md_header(summary: dict[str, Any], meta: dict[str, Any]) -> list[str]:
     out = [f"# Eval run {meta.get('run', '')}".rstrip(), ""]
-    for k in ("policy", "skills_version", "runner", "started_at"):
-        if meta.get(k):
-            out.append(f"- **{k}:** {meta[k]}")
-    out += [
+    out += [f"- **{k}:** {meta[k]}" for k in ("policy", "skills_version", "runner", "started_at") if meta.get(k)]
+    return out + [
         "",
-        f"**{summary['passed']}/{summary['cases']} cases passed** · precision {pct(summary['precision'])} · "
-        f"recall {pct(summary['recall'])} · reproduced {summary['reproduced']}/{summary['expected_reproducible']} · "
+        f"**{summary['passed']}/{summary['cases']} cases passed** · precision {_pct(summary['precision'])} · "
+        f"recall {_pct(summary['recall'])} · reproduced {summary['reproduced']}/{summary['expected_reproducible']} · "
         f"cost ${summary['cost_usd']:.2f} · {summary['duration_s'] / 60:.0f} min",
-        "",
-        "| Case | Scan | Result | TP | FP | FN | Reproduced | Minutes |",
-        "|---|---|---|---|---|---|---|---|",
     ]
+
+
+def _md_cases(scores: list[CaseScore]) -> list[str]:
+    out = ["", "| Case | Scan | Result | TP | FP | FN | Reproduced | Minutes |", "|---|---|---|---|---|---|---|---|"]
     for s in scores:
         mins = f"{s.duration_s / 60:.1f}" if s.duration_s is not None else "?"
         out.append(f"| {s.case_id} | {s.scan_id} | {'pass' if s.passed else 'FAIL'} | {s.tp} | {s.fp} | {s.fn} | "
@@ -240,17 +267,30 @@ def render_markdown(scores: list[CaseScore], summary: dict[str, Any], meta: dict
     if failed:
         out += ["", "## Failed checks", ""]
         for s in failed:
-            out.append(f"**{s.case_id}** (scan {s.scan_id})")
-            out += [f"- {c.name}: {c.detail}" for c in s.checks if not c.ok]
-            out.append("")
-    if summary.get("rules"):
-        out += ["", "## Rules arms (skip/scan call per case; shadow arms never decide)", "",
-                "| Arm | Right | Wrong | No decision |", "|---|---|---|---|"]
-        out += [f"| {arm} | {t['right']} | {t['wrong']} | {t['none']} |" for arm, t in summary["rules"].items()]
-        wrong = [(s.case_id, arm) for s in scores for arm, ok in s.rules.items() if ok is False]
-        if wrong:
-            out += ["", "Wrong calls: " + ", ".join(f"{arm} on {cid}" for cid, arm in wrong)]
-    if summary["by_class"]:
-        out += ["", "## By bug class", "", "| Bug class | TP | FP | FN |", "|---|---|---|---|"]
-        out += [f"| {cls} | {t['tp']} | {t['fp']} | {t['fn']} |" for cls, t in summary["by_class"].items()]
+            out += [f"**{s.case_id}** (scan {s.scan_id})", *[f"- {c.name}: {c.detail}" for c in s.checks if not c.ok], ""]
+    return out
+
+
+def _md_rules(scores: list[CaseScore], rules: dict[str, dict[str, int]]) -> list[str]:
+    if not rules:
+        return []
+    out = ["", "## Rules arms (skip/scan call per case; shadow arms never decide)", "",
+           "| Arm | Right | Wrong | No decision |", "|---|---|---|---|"]
+    out += [f"| {arm} | {t['right']} | {t['wrong']} | {t['none']} |" for arm, t in rules.items()]
+    wrong = [(s.case_id, arm) for s in scores for arm, ok in s.rules.items() if ok is False]
+    if wrong:
+        out += ["", "Wrong calls: " + ", ".join(f"{arm} on {cid}" for cid, arm in wrong)]
+    return out
+
+
+def _md_classes(by_class: dict[str, dict[str, int]]) -> list[str]:
+    if not by_class:
+        return []
+    return ["", "## By bug class", "", "| Bug class | TP | FP | FN |", "|---|---|---|---|",
+            *[f"| {cls} | {t['tp']} | {t['fp']} | {t['fn']} |" for cls, t in by_class.items()]]
+
+
+def render_markdown(scores: list[CaseScore], summary: dict[str, Any], meta: dict[str, Any]) -> str:
+    out = [*_md_header(summary, meta), *_md_cases(scores), *_md_rules(scores, summary.get("rules") or {}),
+           *_md_classes(summary["by_class"])]
     return "\n".join(out).rstrip() + "\n"

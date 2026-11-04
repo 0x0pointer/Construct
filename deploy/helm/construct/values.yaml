@@ -9,8 +9,8 @@
 # deploy/kind/values.yaml holds the local kind overrides (`make kind-deploy`).
 
 images:
-  prsec: prsec/prsec:latest              # api, worker, launcher, dashboard, egress proxy, and the env sink
-  workbench: prsec/workbench-base:latest  # must equal the policy's workbench_image
+  prsec: prsec/prsec:0.1.0               # api, worker, launcher, dashboard, egress proxy, and the env sink
+  workbench: prsec/workbench-base:0.1.0   # must equal the policy's workbench_image (pin a version, never latest)
   gateway: ghcr.io/berriai/litellm:v1.105.5@sha256:f6f3e4b4ba4a50912740dd33ec332269428d0ced71920f617a96dd59282b378e
   postgres: postgres:16.15-alpine
   pullPolicy: IfNotPresent

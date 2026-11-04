@@ -102,9 +102,9 @@ def test_shadow_policy_validation():
         ShadowArm(stage="triage", name="x", harness="raw", model="m")
     with pytest.raises(ValidationError):
         ShadowArm(stage="rules", name="Bad Name", harness="raw", model="m")
-    base = load_policy().model_dump()
+    twice = {**load_policy().model_dump(), "shadows": [JEV.model_dump(), JEV.model_dump()]}
     with pytest.raises(ValidationError, match="unique"):
-        Policy.model_validate({**base, "shadows": [JEV.model_dump(), JEV.model_dump()]})
+        Policy.model_validate(twice)
 
 
 def test_shadow_policy_inherits_stage_limits():
@@ -119,7 +119,8 @@ def test_scan_budget_allows_the_shadow_model():
     policy = load_policy().model_copy(update={"shadows": []})
     usd, wall, models = stages.scan_budget(policy, "acme/shop", 2)
     usd2, wall2, models2 = stages.scan_budget(policy.model_copy(update={"shadows": [JEV]}), "acme/shop", 2)
-    assert "rules-jev" in models2 and "rules-jev" not in models
+    assert "rules-jev" in models2
+    assert "rules-jev" not in models
     assert usd2 == pytest.approx(usd + policy.stage("rules").usd_budget)
     assert wall2 == wall  # runs alongside rules, same wall clock
 

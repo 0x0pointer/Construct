@@ -89,6 +89,7 @@ capabilities: {drop: [ALL]}
     {{- include "construct.prsecEnv" . | nindent 4 }}
   securityContext:
     {{- include "construct.containerSecurity" . | nindent 4 }}
+  resources: {requests: {memory: 64Mi, cpu: 50m, ephemeral-storage: 16Mi}, limits: {memory: 256Mi, ephemeral-storage: 128Mi}}
 {{- end }}
 
 {{/* 'a', 'b' (CEL string list items) */}}

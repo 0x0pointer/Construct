@@ -69,7 +69,8 @@ def test_jev_request_goes_through_the_gateway_route(tmp_path):
     assert req.headers["authorization"] == "Bearer sk-task"
     body = json.loads(req.content)
     assert (body["kind"], body["question"]) == ("noul", QUESTION)
-    assert "Add webhook test ping" in body["state"] and "+ import os" in body["state"]
+    assert "Add webhook test ping" in body["state"]
+    assert "+ import os" in body["state"]
     assert out == {"decision": "scan", "reason": "JEV System 1: P(security-relevant)=0.950; scans at >= 0.10"}
     assert json.loads((tmp_path / "out" / "output.json").read_text()) == out
     assert (usage.tokens_in, usage.turns) == (1200, 1)
@@ -98,11 +99,13 @@ def test_jev_named_options():
 def test_jev_dev_mode(tmp_path, monkeypatch):
     monkeypatch.delenv("PRSEC_JEV_DECIDE_URL", raising=False)
     out, events, _ = jev([0.5, 0.5]).run_inprocess(task(tmp_path), None, "")
-    assert out is None and "PRSEC_JEV_DECIDE_URL" in events[-1].text
+    assert out is None
+    assert "PRSEC_JEV_DECIDE_URL" in events[-1].text
     seen = []
     monkeypatch.setenv("PRSEC_JEV_DECIDE_URL", "http://spark:8001/v1/decide")
     out, _, _ = jev([0.5, 0.5], seen=seen).run_inprocess(task(tmp_path / "b"), None, "")
-    assert str(seen[0].url) == "http://spark:8001/v1/decide" and out["decision"] == "scan"
+    assert str(seen[0].url) == "http://spark:8001/v1/decide"
+    assert out["decision"] == "scan"
 
 
 # ------------------------------------------------------------------ openai-decide
@@ -130,13 +133,15 @@ def test_openai_request_shape_and_predicate(tmp_path):
 ])
 def test_openai_refusal_and_bad_answers_are_no_decision(tmp_path, answer, error):
     out, events, _ = openai(answer).run_inprocess(task(tmp_path), GW, "")
-    assert out is None and error in events[-1].text
+    assert out is None
+    assert error in events[-1].text
 
 
 def test_openai_dev_mode_uses_the_public_endpoint_with_a_key(tmp_path, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     out, events, _ = openai(predicate(0.5)).run_inprocess(task(tmp_path), None, "")
-    assert out is None and "OPENAI_API_KEY" in events[-1].text
+    assert out is None
+    assert "OPENAI_API_KEY" in events[-1].text
     seen = []
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
     monkeypatch.delenv("PRSEC_OPENAI_DECIDE_URL", raising=False)
@@ -148,7 +153,8 @@ def test_openai_dev_mode_uses_the_public_endpoint_with_a_key(tmp_path, monkeypat
 def test_http_errors_are_no_decision(tmp_path):
     a = OpenAIDecideAdapter(transport=httpx.MockTransport(respond({"error": "x"}, status=429)))
     out, events, _ = a.run_inprocess(task(tmp_path), GW, "")
-    assert out is None and events[-1].kind.value == "error"
+    assert out is None
+    assert events[-1].kind.value == "error"
 
 
 # ------------------------------------------------------------------ shared
@@ -158,7 +164,8 @@ def test_state_is_truncated_diff_last(tmp_path):
     t = task(tmp_path, diff="x" * 200_000, files="".join(f"f{i}.py\n" for i in range(250)))
     state = build_state(t, 10_000)
     assert len(state) < 11_000
-    assert "f0.py" in state and "and 50 more" in state
+    assert "f0.py" in state
+    assert "and 50 more" in state
     assert state.index("Changed files") < state.index("Diff:")
 
 

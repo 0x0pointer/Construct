@@ -41,7 +41,10 @@ def test_admission_allows_exactly_the_catalog_and_our_images(docs):
     chart_values = yaml.safe_load((CHART / "values.yaml").read_text())
     assert sorted(chart_values["admission"]["catalogImages"]) == sorted(e.image for e in load_catalog().services.values())
     expr = get(docs, "ValidatingAdmissionPolicy", "construct-scan-pods")["spec"]["variables"][0]["expression"]
-    for image in ["prsec/workbench-base:latest", "prsec/prsec:latest", *chart_values["admission"]["catalogImages"]]:
+    images = chart_values["images"]
+    assert not images["prsec"].endswith(":latest")
+    assert not images["workbench"].endswith(":latest")
+    for image in [images["workbench"], images["prsec"], *chart_values["admission"]["catalogImages"]]:
         assert f"'{image}'" in expr
     binding = get(docs, "ValidatingAdmissionPolicyBinding", "construct-scan-pods")
     assert binding["spec"]["validationActions"] == ["Deny"]
@@ -91,7 +94,8 @@ def test_launcher_runs_k8s_backend_with_matching_names(docs):
     env = {e["name"]: e.get("value") for e in pod(docs, "launcher")["containers"][0]["env"]}
     assert env["PRSEC_LAUNCHER_BACKEND"] == "k8s"
     assert (env["PRSEC_K8S_NAMESPACE"], env["PRSEC_K8S_CONTROL_NAMESPACE"]) == ("prsec-scans", "prsec")
-    assert env["PRSEC_K8S_DATA_CLAIM"] == "prsec-data" and env["PRSEC_WORK_ROOT"] == "/var/lib/prsec/work"
+    assert env["PRSEC_K8S_DATA_CLAIM"] == "prsec-data"
+    assert env["PRSEC_WORK_ROOT"] == "/var/lib/prsec/work"
     worker = {e["name"]: e.get("value") for e in pod(docs, "worker")["containers"][0]["env"]}
     assert (worker["PRSEC_RUNNER"], worker["PRSEC_LAUNCHER_URL"]) == ("launcher", "http://launcher:8090")
 
@@ -101,10 +105,29 @@ def test_control_pods_are_hardened(docs):
         spec = pod(docs, name)
         assert spec["securityContext"]["runAsNonRoot"] is True, name
         c = spec["containers"][0]["securityContext"]
-        assert c["readOnlyRootFilesystem"] is True and c["allowPrivilegeEscalation"] is False, name
+        assert c["readOnlyRootFilesystem"] is True, name
+        assert c["allowPrivilegeEscalation"] is False, name
 
 
 def test_required_files_are_enforced():
     with pytest.raises(subprocess.CalledProcessError) as e:
         subprocess.run(["helm", "template", "construct", str(CHART)], capture_output=True, text=True, check=True)
     assert "--set-file policy=" in e.value.stderr
+
+
+def test_every_container_limits_memory_and_ephemeral_storage(docs):
+    for d in docs:
+        if d["kind"] != "Deployment":
+            continue
+        spec = d["spec"]["template"]["spec"]
+        for c in [*spec.get("initContainers", []), *spec["containers"]]:
+            limits = c["resources"]["limits"]
+            assert "memory" in limits, (d["metadata"]["name"], c["name"])
+            assert "ephemeral-storage" in limits, (d["metadata"]["name"], c["name"])
+
+
+def test_kind_values_use_the_locally_built_images():
+    out = render("-f", str(ROOT / "deploy" / "kind" / "values.yaml"))
+    expr = get(out, "ValidatingAdmissionPolicy", "construct-scan-pods")["spec"]["variables"][0]["expression"]
+    assert "'prsec/workbench-base:latest'" in expr
+    assert pod(out, "worker")["containers"][0]["image"] == "prsec/prsec:latest"

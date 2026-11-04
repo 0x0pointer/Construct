@@ -398,21 +398,17 @@ class K8sRunner:
             pod = self.kube.get("pod", name)
             if pod is None:
                 return None, False, "pod disappeared"
+            ended = _ended(pod)
+            if ended is not None:
+                return ended
             phase, state = _pod_state(pod)
-            if phase in ("Succeeded", "Failed"):
-                term = state.get("terminated") or {}
-                return term.get("exitCode"), False, "" if term else f"pod {phase.lower()}: {_status_reason(pod)}"
-            waiting = state.get("waiting") or {}
-            if waiting.get("reason") in FATAL_WAITING:
-                return None, False, f"{waiting['reason']}: {waiting.get('message', '')}"[:500]
             now = time.monotonic()
-            if "running" in state and run_deadline is None:
+            if run_deadline is None and "running" in state:
                 run_deadline = now + timeout_s
             if run_deadline is not None and now >= run_deadline:
                 return None, True, f"killed after {timeout_s:.0f}s"
             if run_deadline is None and now >= start_deadline:
-                why = f"{waiting.get('reason', phase)}: {waiting.get('message', '')}" if waiting else phase
-                return None, False, f"pod did not start within {self.start_s:.0f}s ({why})"[:500]
+                return None, False, f"pod did not start within {self.start_s:.0f}s ({_waiting_reason(phase, state)})"[:500]
             time.sleep(self.poll_s)
 
     def run_workbench(self, spec: WorkbenchSpec) -> StageResult:
@@ -610,6 +606,23 @@ def _pod_state(pod: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     st = pod.get("status") or {}
     containers = st.get("containerStatuses") or []
     return str(st.get("phase") or "Pending"), ((containers[0] if containers else {}).get("state") or {})
+
+
+def _ended(pod: dict[str, Any]) -> tuple[int | None, bool, str] | None:
+    """(exit code, killed=False, why) once the pod finished or can never start; None while it may still run."""
+    phase, state = _pod_state(pod)
+    if phase in ("Succeeded", "Failed"):
+        term = state.get("terminated") or {}
+        return term.get("exitCode"), False, "" if term else f"pod {phase.lower()}: {_status_reason(pod)}"
+    waiting = state.get("waiting") or {}
+    if waiting.get("reason") in FATAL_WAITING:
+        return None, False, f"{waiting['reason']}: {waiting.get('message', '')}"[:500]
+    return None
+
+
+def _waiting_reason(phase: str, state: dict[str, Any]) -> str:
+    waiting = state.get("waiting") or {}
+    return f"{waiting.get('reason', phase)}: {waiting.get('message', '')}" if waiting else phase
 
 
 def _status_reason(pod: dict[str, Any]) -> str:

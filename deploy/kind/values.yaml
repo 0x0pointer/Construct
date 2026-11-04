@@ -1,5 +1,11 @@
 # Local kind overrides for deploy/helm/construct (make kind-deploy). The Spark gateway config and
 # the Spark's address come from the make target (--set-file / --set).
+# Locally built images (make images): tagged latest, loaded into the node by make kind-load. The
+# Spark policy's workbench_image is prsec/workbench-base:latest, and the admission policy allows these.
+images:
+  prsec: prsec/prsec:latest
+  workbench: prsec/workbench-base:latest
+
 storage:
   size: 50Gi
   volume:
