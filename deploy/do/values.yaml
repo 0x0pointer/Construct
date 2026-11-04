@@ -1,0 +1,33 @@
+# DigitalOcean (DOKS) overrides for deploy/helm/construct (make do-deploy). make do-deploy also sets:
+#   images.prsec / images.workbench   the amd64 images it pushed to DOCR (make do-images)
+#   storage.volume.nfs                 the DO Network File Storage share (make do-nfs)
+#   secrets.openaiApiKey               from .env, never echoed
+# DOKS runs Cilium, which enforces NetworkPolicy; make do-test-k8s proves it before the eval.
+images:
+  pullPolicy: IfNotPresent
+  # DOCR integration (doctl kubernetes cluster registry add) creates this secret in every namespace and puts
+  # it on the default ServiceAccounts only; the launcher runs under its own account.
+  pullSecrets: [foundry-registry]
+
+storage:
+  size: 50Gi
+  volume:
+    hostPath: null   # Helm merges maps: drop the chart's default source, a PV takes exactly one
+    nfs: {server: NFS_SERVER, path: NFS_PATH}
+
+postgres:
+  storage: 5Gi
+  storageClassName: do-block-storage
+
+gateway:
+  keyDatabase:
+    enabled: true
+    storage: 2Gi
+    storageClassName: do-block-storage
+
+worker:
+  concurrency: 2
+  debounceS: 0
+  reconcileIntervalS: 86400   # no GitHub App: eval scans are queued by prsec-eval
+
+skillsVersion: local

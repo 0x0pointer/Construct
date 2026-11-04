@@ -15,6 +15,7 @@
 #   agent-small  triage / cheap stages
 #   judge        skeptic; deliberately a different model family than agent-large
 #   *-anthropic / *-openai  explicit family pins for the harness x model eval matrix
+#   gpt-6-luna   the OpenAI Decisions API for the rules shadow arm (prsec-decide relay, not a chat model)
 
 model_list:
   - model_name: agent-large
@@ -67,12 +68,25 @@ model_list:
       timeout: 600
     model_info: { family: anthropic }
 
+  # The OpenAI Decisions API (POST /v1/decisions) for the openai-decide rules shadow arm (policy `shadows`),
+  # through the prsec-decide relay (prsec_hooks.py): an alias like any model, so only a key minted for it may
+  # call it. Named after the Decisions model so the policy reads the same with and without a gateway.
+  - model_name: gpt-6-luna
+    litellm_params:
+      model: prsec-decide/gpt-6-luna
+      api_base: https://api.openai.com/v1/decisions
+      api_key: os.environ/OPENAI_API_KEY
+      timeout: 60
+    model_info: { family: openai-decisions }
+
 litellm_settings:
   drop_params: true            # harnesses send provider-specific params; drop what the target can't take
   request_timeout: 600         # seconds; the sandbox entrypoint enforces the stage wall clock on top
   num_retries: 2
   turn_off_message_logging: true   # PR source code must not reach logging callbacks
   callbacks: prsec_hooks.strip_server_tools   # strips provider-executed tools (web search, hosted code exec, remote MCP)
+  custom_provider_map:                        # decision models (OpenAI Decisions) as aliases: prsec_hooks.decide_relay
+    - {provider: prsec-decide, custom_handler: prsec_hooks.decide_relay}
 
 router_settings:
   num_retries: 2
@@ -92,12 +106,3 @@ general_settings:
   disable_spend_logs: false                   # spend per virtual key = per-scan cost tracking
   ui_access_mode: admin_only
   proxy_batch_write_at: 10
-  # Decision APIs for the rules shadow arm (prsec/adapters/harness/decide.py), key-authenticated like every
-  # model route. Minted keys may call these and no raw provider API (prsec.gateway.ALLOWED_ROUTES).
-  pass_through_endpoints:
-    - path: /openai-decisions/v1/decisions
-      target: https://api.openai.com/v1/decisions
-      headers: {Authorization: "Bearer os.environ/OPENAI_API_KEY"}
-      auth: true
-      methods: [POST]
-      timeout: 60

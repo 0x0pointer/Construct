@@ -8,6 +8,7 @@ from prsec.adapters.harness.base import GatewayConfig, get_adapter
 from prsec.adapters.harness.decide import (
     CONDITION,
     QUESTION,
+    RELAY_PATH,
     JevDecideAdapter,
     OpenAIDecideAdapter,
     build_state,
@@ -35,11 +36,24 @@ def task(tmp_path, diff="+ import os\n", title="Add webhook test ping", files="a
 
 
 def respond(body, seen=None, status=200):
+    """The provider's reply; through the gateway relay it is the chat completion's message content."""
     def handler(req: httpx.Request) -> httpx.Response:
         if seen is not None:
             seen.append(req)
+        if req.url.path == RELAY_PATH and status < 400:
+            return httpx.Response(status, json={"choices": [{"message": {"role": "assistant", "content": json.dumps(body)}}]})
         return httpx.Response(status, json=body)
     return handler
+
+
+def relayed(req: httpx.Request) -> dict:
+    """The provider request body inside a relay chat request (asserting the chat request's shape)."""
+    chat = json.loads(req.content)
+    assert str(req.url) == "http://llm-gateway:4000/v1/chat/completions"
+    assert req.headers["authorization"] == "Bearer sk-task"
+    [msg] = chat["messages"]
+    assert msg["role"] == "user"
+    return {"model": chat["model"], "body": json.loads(msg["content"])}
 
 
 def jev(probs, options=None, seen=None):
@@ -61,13 +75,13 @@ def predicate(p):
 # ------------------------------------------------------------------ jev-decide
 
 
-def test_jev_request_goes_through_the_gateway_route(tmp_path):
+def test_jev_request_goes_through_the_gateway_relay(tmp_path):
     seen = []
-    out, _, usage = jev([0.05, 0.95], seen=seen).run_inprocess(task(tmp_path), GW, "ignored")
+    out, _, usage = jev([0.05, 0.95], seen=seen).run_inprocess(task(tmp_path, model="rules-jev"), GW, "ignored")
     [req] = seen
-    assert str(req.url) == "http://llm-gateway:4000/jev/v1/decide"
-    assert req.headers["authorization"] == "Bearer sk-task"
-    body = json.loads(req.content)
+    sent = relayed(req)
+    assert sent["model"] == "rules-jev"  # the task's alias: the key's models allowlist gates it
+    body = sent["body"]
     assert (body["kind"], body["question"]) == ("noul", QUESTION)
     assert "Add webhook test ping" in body["state"]
     assert "+ import os" in body["state"]
@@ -115,9 +129,9 @@ def test_openai_request_shape_and_predicate(tmp_path):
     seen = []
     out, _, usage = openai(predicate(0.04), seen=seen).run_inprocess(task(tmp_path), GW, "")
     [req] = seen
-    assert str(req.url) == "http://llm-gateway:4000/openai-decisions/v1/decisions"
-    assert req.headers["authorization"] == "Bearer sk-task"
-    body = json.loads(req.content)
+    sent = relayed(req)
+    assert sent["model"] == "gpt-6-luna"
+    body = sent["body"]
     assert body["model"] == "gpt-6-luna"  # the task's model alias names the Decisions model
     assert body["questions"] == [{"type": "predicate", "name": "security_relevant", "instructions": CONDITION}]
     assert "Add webhook test ping" in body["input"]
@@ -169,9 +183,18 @@ def test_state_is_truncated_diff_last(tmp_path):
     assert state.index("Changed files") < state.index("Diff:")
 
 
-def test_routes_are_on_the_minted_key_allowlist():
-    for adapter in (JevDecideAdapter(), OpenAIDecideAdapter()):
-        assert adapter.route in ALLOWED_ROUTES
+def test_relay_route_is_on_the_minted_key_allowlist():
+    assert RELAY_PATH in ALLOWED_ROUTES
+
+
+@pytest.mark.parametrize("content", ["not json", "[1]", None])
+def test_relay_without_a_json_object_is_no_decision(tmp_path, content):
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    out, events, _ = OpenAIDecideAdapter(transport=httpx.MockTransport(handler)).run_inprocess(task(tmp_path), GW, "")
+    assert out is None
+    assert events[-1].kind.value == "error"
 
 
 @pytest.mark.parametrize("harness", ["jev-decide", "openai-decide"])

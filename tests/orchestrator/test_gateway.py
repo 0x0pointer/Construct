@@ -34,12 +34,13 @@ def test_minted_keys_cannot_reach_provider_passthroughs():
     def allowed(route: str) -> bool:
         return any(route == a or route.startswith(a + "/") for a in gateway.ALLOWED_ROUTES)
 
-    for ok in ("/v1/chat/completions", "/v1/messages", "/v1/messages/count_tokens", "/v1/responses", "/key/info",
-               "/jev/v1/decide", "/openai-decisions/v1/decisions"):
+    for ok in ("/v1/chat/completions", "/v1/messages", "/v1/messages/count_tokens", "/v1/responses", "/key/info"):
         assert allowed(ok), ok
     for blocked in ("/anthropic/v1/messages", "/openai/v1/responses", "/openai_passthrough/v1/responses",
                     "/vertex_ai/v1/projects/x", "/gemini/v1beta/models", "/bedrock/model/x/invoke", "/key/generate",
-                    "/key/delete", "/user/new", "/v1/files", "/v1/batches", "/v1/realtime", "/mcp/tools/call"):
+                    "/key/delete", "/user/new", "/v1/files", "/v1/batches", "/v1/realtime", "/mcp/tools/call",
+                    # custom pass-throughs: OSS LiteLLM lets only the master key call an auth: true one
+                    "/jev/v1/decide", "/openai-decisions/v1/decisions"):
         assert not allowed(blocked), blocked
 
 

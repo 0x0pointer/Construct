@@ -11,7 +11,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="PRSEC_", env_file=".env", extra="ignore")
+    # Empty values count as unset: a .env copied from .env.example (PRSEC_GITHUB_APP_ID=) must not fail parsing.
+    model_config = SettingsConfigDict(env_prefix="PRSEC_", env_file=".env", extra="ignore", env_ignore_empty=True)
 
     database_url: str = "postgresql://prsec:prsec@localhost:5432/prsec"
 

@@ -27,7 +27,8 @@ PRSEC_TEST_DATABASE_URL ?= postgresql://prsec:prsec@localhost:$(TEST_PG_PORT)/pr
 .PHONY: help images image-prsec image-workbench harness-volumes skills host-dirs config up down logs \
         migrate test test-db test-pg-up test-pg-down lint-skills conformance conformance-live test-e2e \
         test-dynamic local-up local-down local-worker local-dashboard eval \
-        kind-up kind-data kind-load kind-deploy kind-dashboard kind-eval test-k8s kind-down
+        kind-up kind-data kind-load kind-deploy kind-dashboard kind-eval test-k8s kind-down \
+        do-images do-nfs do-deploy do-data do-test-k8s do-eval do-report do-down
 
 help: ## list targets
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-16s %s\n", $$1, $$2}'
@@ -119,8 +120,6 @@ test-dynamic: images ## reference PoCs of the dynamic eval cases, replayed in re
 # host with deploy/local/spark.env. SPARK_HOST is resolved here: containers cannot resolve mDNS names.
 SPARK_HOST ?= spark-efb9.local
 SPARK_PORT ?= 8000
-# JEV-27B on the Spark (rules-jev shadow arm); harmless when it is not running
-SPARK_JEV_PORT ?= 8001
 LOCAL_COMPOSE := docker compose -f deploy/compose/docker-compose.local.yml
 LOCAL_ENV := set -a; PRSEC_LOCAL_ROOT="$(CURDIR)"; . deploy/local/spark.env; set +a
 RESOLVE_SPARK := python3 -c 'import socket, sys; print(socket.gethostbyname(sys.argv[1]))' "$(SPARK_HOST)"
@@ -128,7 +127,6 @@ RESOLVE_SPARK := python3 -c 'import socket, sys; print(socket.gethostbyname(sys.
 local-up: images ## start the local pilot infra: Postgres, LLM gateway -> Spark, egress proxy
 	@spark_ip="$$($(RESOLVE_SPARK))"; echo "Spark $(SPARK_HOST) -> $$spark_ip"; \
 	  SPARK_IP="$$spark_ip" SPARK_API_BASE="http://$$spark_ip:$(SPARK_PORT)/v1" \
-	  SPARK_JEV_API_BASE="http://$$spark_ip:$(SPARK_JEV_PORT)/v1" \
 	  $(LOCAL_COMPOSE) up -d --wait
 	@mkdir -p work/local
 	@$(LOCAL_ENV); $(PYTHON) -c 'import psycopg; from prsec.config import settings; from prsec.db.conn import migrate; migrate(psycopg.connect(settings().database_url, autocommit=True)); print("migrated")'
@@ -193,7 +191,6 @@ kind-deploy: kind-up kind-data kind-load ## deploy the whole stack on kind (gate
 	  --set-file gateway.config=deploy/compose/litellm/config.spark.yaml \
 	  --set-file gateway.hooks=deploy/compose/litellm/prsec_hooks.py \
 	  --set gateway.env.SPARK_API_BASE="http://$$spark_ip:$(SPARK_PORT)/v1" \
-	  --set gateway.env.SPARK_JEV_API_BASE="http://$$spark_ip:$(SPARK_JEV_PORT)/v1" \
 	  --set "gateway.hostAliases[0].ip=$$spark_ip" --set "gateway.hostAliases[0].hostnames[0]=spark" \
 	  --wait --timeout 15m
 	$(KUBECTL) -n prsec get pods
@@ -212,3 +209,85 @@ test-k8s: ## K8sRunner against the kind cluster: isolation probes + reference re
 
 kind-down: ## delete the kind cluster (work/kind is kept)
 	kind delete cluster --name $(KIND_CLUSTER)
+
+# ---------------------------------------------------------------- DigitalOcean (the whole stack on DOKS, OpenAI)
+# A dedicated DOKS cluster (doctl kubernetes cluster create $(DO_CLUSTER) ...), amd64 images in DOCR,
+# DO Network File Storage as the shared volume, every model on OpenAI (policy-openai.yaml).
+DO_CLUSTER ?= construct-e2e
+DO_REGION ?= ams3
+DO_CTX := do-$(DO_REGION)-$(DO_CLUSTER)
+DO_REGISTRY ?= registry.digitalocean.com/foundry-registry
+DO_NFS_SIZE ?= 50
+DO_NFS_TIER ?= standard
+DO_KUBECTL := kubectl --context $(DO_CTX)
+DO_HELM := helm --kube-context $(DO_CTX)
+DO_TAG = $(shell cat work/do-image-tag 2>/dev/null)
+DO_PRSEC = $(DO_REGISTRY)/prsec:$(DO_TAG)
+DO_WORKBENCH = $(DO_REGISTRY)/workbench-base:$(DO_TAG)
+
+do-images: ## build the amd64 images and push them to DOCR (tag in work/do-image-tag)
+	doctl registry login --expiry-seconds 3600
+	@tag="0.1.0-$$(git rev-parse --short HEAD)-$$(date +%m%d%H%M)"; echo "$$tag" > work/do-image-tag; \
+	docker buildx build --platform linux/amd64 -f images/prsec/Dockerfile -t $(DO_REGISTRY)/prsec:$$tag --push . && \
+	docker buildx build --platform linux/amd64 -f images/workbench-base/Dockerfile -t $(DO_REGISTRY)/workbench-base:$$tag --push .
+	@test -e work/harness-amd64/opencode/current || PLATFORM=linux/amd64 images/harness/build.sh opencode latest "$(CURDIR)/work/harness-amd64"
+
+do-nfs: ## create the DO NFS share in the cluster's VPC (once); its address goes to work/do-nfs
+	@vpc=$$(doctl kubernetes cluster get $(DO_CLUSTER) -o json | $(PYTHON) -c 'import json,sys; d=json.load(sys.stdin); print((d[0] if isinstance(d,list) else d)["vpc_uuid"])'); \
+	id=$$(doctl nfs list --region $(DO_REGION) --format ID,Name --no-header | awk '$$2=="$(DO_CLUSTER)"{print $$1}'); \
+	if [ -z "$$id" ]; then doctl nfs create --name $(DO_CLUSTER) --region $(DO_REGION) --size $(DO_NFS_SIZE) \
+	  --performance-tier $(DO_NFS_TIER) --vpc-ids $$vpc >/dev/null; \
+	  id=$$(doctl nfs list --region $(DO_REGION) --format ID,Name --no-header | awk '$$2=="$(DO_CLUSTER)"{print $$1}'); fi; \
+	until doctl nfs get --id $$id --region $(DO_REGION) --format Status --no-header | grep -qi active; do sleep 10; done; \
+	doctl nfs get --id $$id --region $(DO_REGION) -o json > work/do-nfs.json; echo "NFS share $$id ready"
+
+do-deploy: ## deploy the whole stack on DOKS with OpenAI (needs do-images, do-nfs; OPENAI_API_KEY from .env)
+	doctl kubernetes cluster registry add $(DO_CLUSTER)
+	@sed "s|^workbench_image: .*|workbench_image: $(DO_WORKBENCH)|" policy-openai.yaml > work/policy-do.yaml
+	@nfs_host=$$($(PYTHON) -c 'import json; d=json.load(open("work/do-nfs.json")); d=d[0] if isinstance(d,list) else d; print(d["host"])'); \
+	nfs_path=$$($(PYTHON) -c 'import json; d=json.load(open("work/do-nfs.json")); d=d[0] if isinstance(d,list) else d; print(d["mount_path"])'); \
+	oa="$${OPENAI_API_KEY:-$$(grep -E '^OPENAI_API_KEY=' $(ENV_FILE) 2>/dev/null | tail -1 | cut -d= -f2-)}"; \
+	[ -n "$$oa" ] || { echo "OPENAI_API_KEY is not set (environment or $(ENV_FILE))" >&2; exit 1; }; \
+	$(DO_HELM) upgrade --install construct deploy/helm/construct -n prsec --create-namespace \
+	  -f deploy/do/values.yaml \
+	  --set images.prsec=$(DO_PRSEC) --set images.workbench=$(DO_WORKBENCH) \
+	  --set storage.volume.nfs.server=$$nfs_host --set storage.volume.nfs.path=$$nfs_path \
+	  --set-file policy=work/policy-do.yaml \
+	  --set-file gateway.config=deploy/compose/litellm/config.openai.yaml \
+	  --set-file gateway.hooks=deploy/compose/litellm/prsec_hooks.py \
+	  --set-string secrets.openaiApiKey=$$oa \
+	  --wait --timeout 15m
+	$(DO_KUBECTL) -n prsec get pods
+
+do-data: ## put skills (version 'local') and the amd64 harness volumes on the shared NFS volume
+	@sed "s|IMAGE_REPO:IMAGE_TAG|$(DO_PRSEC)|g" deploy/do/loader-pod.yaml | $(DO_KUBECTL) -n prsec apply -f - >/dev/null
+	$(DO_KUBECTL) -n prsec wait --for=condition=Ready pod/construct-data-loader --timeout=300s
+	$(DO_KUBECTL) -n prsec exec construct-data-loader -- sh -c 'mkdir -p /var/lib/prsec/work /var/lib/prsec/skills /var/lib/prsec/harness'
+	COPYFILE_DISABLE=1 tar -C $(SKILLS_SRC) -cf - . | $(DO_KUBECTL) -n prsec exec -i construct-data-loader -- sh -c \
+	  'rm -rf /var/lib/prsec/skills/local && mkdir -p /var/lib/prsec/skills/local && tar -C /var/lib/prsec/skills/local -xf - && echo local > /var/lib/prsec/skills/local/VERSION && ln -sfn local /var/lib/prsec/skills/current'
+	COPYFILE_DISABLE=1 tar -C work/harness-amd64 -cf - . | $(DO_KUBECTL) -n prsec exec -i construct-data-loader -- tar -C /var/lib/prsec/harness -xf -
+	$(DO_KUBECTL) -n prsec exec construct-data-loader -- sh -c 'ls -lan /var/lib/prsec /var/lib/prsec/skills /var/lib/prsec/harness/opencode'
+	$(DO_KUBECTL) -n prsec delete pod construct-data-loader --wait=false
+
+do-test-k8s: ## tests/k8s inside the DO cluster (launcher's account): isolation on DO's CNI + reference replays
+	@sed -e "s|IMAGE_REPO:IMAGE_TAG|$(DO_PRSEC)|g" -e "s|WORKBENCH_REPO:IMAGE_TAG|$(DO_WORKBENCH)|g" deploy/do/test-pod.yaml | \
+	  $(DO_KUBECTL) -n prsec apply -f - >/dev/null
+	$(DO_KUBECTL) -n prsec wait --for=condition=Ready pod/construct-k8s-tests --timeout=300s
+	COPYFILE_DISABLE=1 tar -cf - tests pyproject.toml prsec/policy/policy.yaml | $(DO_KUBECTL) -n prsec exec -i construct-k8s-tests -- sh -c 'mkdir -p /tmp/repo && tar -C /tmp/repo -xf -'
+	$(DO_KUBECTL) -n prsec exec construct-k8s-tests -- sh -c 'pip install -q --target /tmp/py pytest pytest-asyncio 2>&1 | tail -1; \
+	  cd /tmp/repo && python -m pytest -q -p no:cacheprovider -m k8s tests/k8s'; \
+	  rc=$$?; $(DO_KUBECTL) -n prsec delete pod construct-k8s-tests --wait=false >/dev/null; exit $$rc
+
+do-eval: ## prsec-eval in the DO worker pod, detached (CASES="a b" or TAG=dynamic); then make do-report
+	@run=do-$$(date +%Y%m%dT%H%M%S); out=/var/lib/prsec/work/evals/$$run; echo "$$run" > work/do-eval-run; \
+	$(DO_KUBECTL) -n prsec exec deploy/worker -c worker -- sh -c "mkdir -p $$out && nohup prsec-eval run $(CASES) \
+	  $(if $(TAG),--tag $(TAG)) --out $$out > $$out/eval.log 2>&1 &" && echo "eval $$run started in the DO worker"
+
+do-report: ## the latest DO eval's log tail and report (once written)
+	@run=$$(cat work/do-eval-run); $(DO_KUBECTL) -n prsec exec deploy/worker -c worker -- sh -c \
+	  "grep -v psycopg /var/lib/prsec/work/evals/$$run/eval.log | tail -8; cat /var/lib/prsec/work/evals/$$run/report.md 2>/dev/null"
+
+do-down: ## delete the DO cluster (with its volumes and load balancers) and the NFS share; DOCR images stay
+	doctl kubernetes cluster delete $(DO_CLUSTER) --dangerous --force
+	@id=$$(doctl nfs list --region $(DO_REGION) --format ID,Name --no-header | awk '$$2=="$(DO_CLUSTER)"{print $$1}'); \
+	[ -z "$$id" ] || doctl nfs delete --id $$id --region $(DO_REGION) --force

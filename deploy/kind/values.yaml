@@ -14,6 +14,11 @@ storage:
 postgres:
   storage: 2Gi
 
+# The Spark gateway config has no key database: dev pass-through on a trusted local model.
+gateway:
+  keyDatabase:
+    enabled: false
+
 worker:
   concurrency: 2
   debounceS: 0

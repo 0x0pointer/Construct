@@ -79,3 +79,62 @@ def test_bad_diff_and_missing_files(tmp_path):
         base_source(case, tmp_path / "base")
     with pytest.raises(CaseError, match="missing"):
         load_case(tmp_path / "nothing-here")
+
+
+def _git_base(case, dest):
+    """The base as `git apply -R` builds it (the reference for the pure-Python reverse patch)."""
+    import shutil
+    import subprocess
+
+    shutil.copytree(case.repo, dest)
+    subprocess.run(["git", "init", "-q"], cwd=dest, check=True)
+    subprocess.run(["git", "apply", "-R", str(case.dir / "diff.patch")], cwd=dest, check=True)
+    shutil.rmtree(dest / ".git")
+    return dest
+
+
+def _tree(root):
+    return {str(p.relative_to(root)): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+@pytest.mark.skipif(__import__("shutil").which("git") is None, reason="git not installed")
+@pytest.mark.parametrize("case_id", sorted(CASES))
+def test_base_matches_git_apply_reverse(case_id, tmp_path):
+    case = CASES[case_id]
+    assert _tree(base_source(case, tmp_path / "ours")) == _tree(_git_base(case, tmp_path / "git"))
+
+
+def _case_with(tmp_path, files: dict[str, str], diff: str):
+    d = tmp_path / "c"
+    for rel, text in files.items():
+        (d / "repo" / rel).parent.mkdir(parents=True, exist_ok=True)
+        (d / "repo" / rel).write_text(text)
+    (d / "repo").mkdir(parents=True, exist_ok=True)
+    for name, text in (("pr.json", '{"title": "t"}'), ("expected.json", "{}"), ("diff.patch", diff)):
+        (d / name).write_text(text)
+    return load_case(d)
+
+
+def test_reverse_patch_added_deleted_and_no_newline(tmp_path):
+    diff = (
+        "--- /dev/null\n+++ b/new.py\n@@ -0,0 +1,2 @@\n+a\n+b\n"
+        "--- a/gone.py\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-x\n-y\n"
+        "--- a/app.py\n+++ b/app.py\n@@ -1,2 +1,3 @@\n keep\n-old\n\\ No newline at end of file\n+new\n+more\n"
+        "\\ No newline at end of file\n"
+    )
+    case = _case_with(tmp_path, {"new.py": "a\nb\n", "app.py": "keep\nnew\nmore"}, diff)
+    base = base_source(case, tmp_path / "base")
+    assert not (base / "new.py").exists()
+    assert (base / "gone.py").read_text() == "x\ny\n"
+    assert (base / "app.py").read_text() == "keep\nold"
+
+
+@pytest.mark.parametrize(("files", "diff", "why"), [
+    ({"app.py": "other\n"}, "--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n-old\n+new\n", "does not match"),
+    ({"app.py": "new\n"}, "--- a/../escape.py\n+++ b/../escape.py\n@@ -1 +1 @@\n-old\n+new\n", "leaves the case"),
+    ({"b.py": "x\n"}, "--- a/a.py\n+++ b/b.py\n@@ -1 +1 @@\n-x\n+x\n", "renames"),
+])
+def test_reverse_patch_refuses(tmp_path, files, diff, why):
+    case = _case_with(tmp_path, files, diff)
+    with pytest.raises(CaseError, match=why):
+        base_source(case, tmp_path / "base")

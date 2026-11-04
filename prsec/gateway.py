@@ -29,14 +29,14 @@ _TIMEOUT = httpx.Timeout(15.0)
 # Without it a key could use LiteLLM's raw provider pass-throughs (/anthropic/*, /openai_passthrough/*,
 # /vertex_ai/*, ...): the provider's full API with the gateway's credentials, past the alias allowlist,
 # and with provider-run tools (web fetch/search) that would carry PR code out past network isolation.
+# No pass-through route at all: the decision models (jev-decide, openai-decide) are model aliases behind
+# the chat route (the gateway's prsec-decide relay), gated by the key's `models` like any model.
 ALLOWED_ROUTES = (
-    "/v1/chat/completions", "/chat/completions",  # raw, OpenCode, pi
+    "/v1/chat/completions", "/chat/completions",  # raw, OpenCode, pi, the decide harnesses (relay)
     "/v1/messages",                               # Claude Code (and /v1/messages/count_tokens)
     "/v1/responses", "/responses",                # Codex
     "/v1/models", "/models",                      # harness model discovery
     "/key/info",                                  # prsec-stage reads its own spend (self_spend)
-    "/jev/v1/decide",                             # jev-decide: JEV-27B System 1 (pass-through route)
-    "/openai-decisions/v1/decisions",             # openai-decide: OpenAI Decisions API (pass-through route)
 )
 
 

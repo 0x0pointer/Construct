@@ -133,15 +133,14 @@ def test_shadow_task_ids():
 
 
 def test_default_policy_shadow_is_wired_through_the_gateway():
-    """The shipped policy's arm uses a decision harness whose route the production gateway serves."""
+    """The shipped policy's arm names a model the production gateway serves through the prsec-decide relay."""
     from pathlib import Path
 
     import yaml
 
-    from prsec.adapters.harness.base import get_adapter
-
     [arm] = load_policy().shadows
     assert (arm.stage, arm.harness, arm.model) == ("rules", "openai-decide", "gpt-6-luna")
-    route = get_adapter(arm.harness).route
     cfg = yaml.safe_load((Path(__file__).resolve().parents[2] / "deploy/compose/litellm/config.yaml").read_text())
-    assert route in {r["path"] for r in cfg["general_settings"]["pass_through_endpoints"]}
+    models = {m["model_name"]: m["litellm_params"] for m in cfg["model_list"]}
+    assert models[arm.model]["model"] == "prsec-decide/gpt-6-luna"
+    assert models[arm.model]["api_base"] == "https://api.openai.com/v1/decisions"

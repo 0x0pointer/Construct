@@ -345,7 +345,10 @@ def _run_task(
             scan_id=ctx.scan_id,
             task=task,
             image=ctx.image,
-            harness_volume=str(settings().harness_root / task.harness / "current"),
+            # In-process adapters (raw, the decide harnesses) install nothing: no volume, so a runner never has
+            # to mount (or, on K8s, kubelet create) a harness/<name>/current that was never loaded.
+            harness_volume=str(settings().harness_root / task.harness / "current") if stages.has_tools(task.harness)
+            else None,
             src_dir=ctx.src,
             in_dir=in_dir,
             out_dir=out_dir,

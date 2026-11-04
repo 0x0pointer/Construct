@@ -11,6 +11,7 @@ spec:
       labels: {{- include "construct.labels" (dict "name" "api" "root" .) | nindent 8 }}
     spec:
       automountServiceAccountToken: false
+      {{- include "construct.pullSecrets" . | nindent 6 }}
       securityContext: {{- include "construct.podSecurity" . | nindent 8 }}
       initContainers: {{- include "construct.migrate" . | nindent 8 }}
           volumeMounts: {{- include "construct.prsecMounts" . | nindent 12 }}

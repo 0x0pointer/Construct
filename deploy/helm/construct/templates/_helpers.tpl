@@ -108,3 +108,13 @@ capabilities: {drop: [ALL]}
 {{- range . }}{{ $out = append $out (printf "'%s'" .) }}{{ end -}}
 {{- join ", " $out -}}
 {{- end }}
+
+{{/* imagePullSecrets for every pod (and the launcher's ServiceAccount), when images.pullSecrets is set. */}}
+{{- define "construct.pullSecrets" -}}
+{{- with .Values.images.pullSecrets }}
+imagePullSecrets:
+{{- range . }}
+  - name: {{ . }}
+{{- end }}
+{{- end }}
+{{- end }}

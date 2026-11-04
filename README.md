@@ -426,8 +426,8 @@ Caveats from the LiteLLM docs, for the pinned `v1.105.5`:
   `litellm/prsec_hooks.py` strips them in a pre-call hook on every route. Harness
   adapters also disable their web tools.
 - **Minted keys reach only the routes Construct uses** (`prsec.gateway.ALLOWED_ROUTES`, LiteLLM
-  `allowed_routes`): the chat, messages and responses routes, model listing, `/key/info`, and the two
-  decision pass-throughs. LiteLLM also serves raw provider pass-throughs (`/anthropic/*`,
+  `allowed_routes`): the chat, messages and responses routes, model listing and `/key/info`. No
+  pass-through route: LiteLLM also serves raw provider pass-throughs (`/anthropic/*`,
   `/openai_passthrough/*`, `/vertex_ai/*`, ...) to any valid key. Those would expose each provider's
   full API with the gateway's credentials, including provider-run web fetch and search, past both the
   alias allowlist and the server-tool stripping. Dev mode's pass-through master key is not restricted
@@ -451,6 +451,10 @@ set `PRSEC_POLICY_FILE` to use a file outside the repo. It sets:
   model whether the PR has any security relevance, and skip only below `PRSEC_DECIDE_SCAN_THRESHOLD`
   (default 0.10). There are two: `openai-decide` (the OpenAI Decisions API, used by the default
   policy) and `jev-decide` (self-hosted AutoTrust JEV-27B System 1, used by the local Spark policy).
+  Neither is a chat model, so the gateway serves each as an ordinary alias through the `prsec-decide`
+  relay in `litellm/prsec_hooks.py` (`model: prsec-decide/<model>`, `api_base: <the endpoint>`).
+  A minted key reaches one only when its `models` include the alias. A key-authenticated LiteLLM
+  pass-through route would need LiteLLM Enterprise's `allowed_passthrough_routes` on every key.
 - `repos`: glob-keyed overrides (`enabled: false`, or per-stage harness and model changes,
   or `workbench_image`)
 - global knobs: `max_hypotheses`, `static_verify_min_severity`, `skip_audit_sample`,

@@ -16,6 +16,7 @@ spec:
         checksum/secrets: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
     spec:
       automountServiceAccountToken: false
+      {{- include "construct.pullSecrets" . | nindent 6 }}
       {{- with .Values.gateway.hostAliases }}
       hostAliases: {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -31,6 +32,13 @@ spec:
               valueFrom: {secretKeyRef: {name: construct-secrets, key: anthropicApiKey}}
             - name: OPENAI_API_KEY
               valueFrom: {secretKeyRef: {name: construct-secrets, key: openaiApiKey}}
+            {{- if .Values.gateway.keyDatabase.enabled }}
+            - name: GATEWAY_DB_PASSWORD
+              valueFrom: {secretKeyRef: {name: construct-secrets, key: gatewayDbPassword}}
+            - {name: DATABASE_URL, value: "postgresql://litellm:$(GATEWAY_DB_PASSWORD)@llm-gateway-db:5432/litellm"}
+            - name: LITELLM_SALT_KEY
+              valueFrom: {secretKeyRef: {name: construct-secrets, key: gatewaySaltKey}}
+            {{- end }}
             - {name: LITELLM_TELEMETRY, value: "False"}
             - {name: DISABLE_ADMIN_UI, value: "True"}
             - {name: NO_DOCS, value: "True"}

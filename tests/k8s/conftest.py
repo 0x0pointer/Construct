@@ -19,11 +19,17 @@ CONTEXT = os.environ.get("PRSEC_K8S_CONTEXT", "kind-construct")
 WORKBENCH = os.environ.get("PRSEC_TEST_WORKBENCH_IMAGE", "prsec/workbench-base:latest")
 
 
+IN_CLUSTER = os.environ.get("PRSEC_K8S_IN_CLUSTER") == "1"  # make do-test-k8s: a pod with the launcher's account
+
+
 @pytest.fixture(scope="session")
 def kube_ready():
     kubernetes = pytest.importorskip("kubernetes")
     try:
-        kubernetes.config.load_kube_config(context=CONTEXT)
+        if IN_CLUSTER:
+            kubernetes.config.load_incluster_config()
+        else:
+            kubernetes.config.load_kube_config(context=CONTEXT)
         core = kubernetes.client.CoreV1Api()
         core.read_namespaced_service("llm-gateway", "prsec", _request_timeout=5)
         core.read_namespaced_service("egress-proxy", "prsec", _request_timeout=5)
@@ -39,7 +45,8 @@ def k8s(kube_ready, monkeypatch, tmp_path_factory):
     """A K8sRunner on the kind cluster, with a fresh work dir under the data volume."""
     from prsec.adapters.runner.k8s import K8sRunner
 
-    monkeypatch.setenv("PRSEC_K8S_CONTEXT", CONTEXT)
+    if not IN_CLUSTER:
+        monkeypatch.setenv("PRSEC_K8S_CONTEXT", CONTEXT)
     monkeypatch.setenv("PRSEC_K8S_DATA_ROOT", str(DATA))
     monkeypatch.setenv("PRSEC_WORK_ROOT", str(DATA / "work"))
     monkeypatch.setenv("PRSEC_SKILLS_DIR", str(DATA / "skills" / "current"))

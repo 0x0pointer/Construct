@@ -148,3 +148,31 @@ def test_provider_keys_and_gateway_rollout():
     assert "checksum/secrets" in annotations
     other = get(render(), "Deployment", "llm-gateway")["spec"]["template"]["metadata"]["annotations"]
     assert other["checksum/secrets"] != annotations["checksum/secrets"]  # a new key rolls the gateway
+
+
+def test_gateway_key_database_mode(docs):
+    """Default: the worker mints per-task keys (master key), the gateway has its own DB only it reaches."""
+    worker = {e["name"]: e for e in pod(docs, "worker")["containers"][0]["env"]}
+    assert worker["PRSEC_GATEWAY_MASTER_KEY"]["valueFrom"]["secretKeyRef"]["key"] == "gatewayKey"
+    assert "PRSEC_GATEWAY_DEV_KEY" not in worker
+    gateway = {e["name"]: e for e in pod(docs, "llm-gateway")["containers"][0]["env"]}
+    assert gateway["DATABASE_URL"]["value"].endswith("@llm-gateway-db:5432/litellm")
+    assert "LITELLM_SALT_KEY" in gateway
+    np = get(docs, "NetworkPolicy", "llm-gateway-db-ingress")
+    assert np["spec"]["ingress"] == [{"from": [{"podSelector": {"matchLabels": {"app.kubernetes.io/name": "llm-gateway"}}}],
+                                      "ports": [{"protocol": "TCP", "port": 5432}]}]
+    kind = render("-f", str(ROOT / "deploy" / "kind" / "values.yaml"))
+    kworker = {e["name"]: e for e in pod(kind, "worker")["containers"][0]["env"]}
+    assert "PRSEC_GATEWAY_DEV_KEY" in kworker
+    assert not [d for d in kind if d["metadata"]["name"] == "llm-gateway-db"]
+
+
+def test_pull_secrets_reach_every_pod_and_the_launcher_account():
+    out = render("--set", "images.pullSecrets[0]=foundry-registry")
+    for d in out:
+        if d["kind"] == "Deployment":
+            assert d["spec"]["template"]["spec"]["imagePullSecrets"] == [{"name": "foundry-registry"}], d["metadata"]["name"]
+    assert get(out, "ServiceAccount", "construct-launcher")["imagePullSecrets"] == [{"name": "foundry-registry"}]
+    env = {e["name"]: e.get("value") for e in pod(out, "launcher")["containers"][0]["env"]}
+    assert env["PRSEC_K8S_PULL_SECRETS"] == "foundry-registry"
+    assert "imagePullSecrets" not in pod(render(), "worker")  # unset: nothing rendered

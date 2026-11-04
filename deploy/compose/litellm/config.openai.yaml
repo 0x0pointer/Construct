@@ -1,0 +1,57 @@
+# LiteLLM gateway, OpenAI only (the DigitalOcean end-to-end deployment: make do-deploy).
+#
+# Same shape as config.yaml (the production default), with every alias on OpenAI:
+#   agent-large  gpt-6.1-sol   hypothesise, static_verify, env, dynamic
+#   agent-small  gpt-6-luna    rules, triage
+#   judge        gpt-6-astra   skeptic
+# A key database (DATABASE_URL, the chart's llm-gateway-db) lets the worker mint one key per task:
+# budget, TTL, aliases and allowed_routes (prsec.gateway.ALLOWED_ROUTES), so agents never hold the
+# master key and cannot reach LiteLLM's raw provider pass-throughs. The rules shadow arm's Decisions
+# model is an alias too (gpt-6-luna below, through the prsec-decide relay), not a pass-through route.
+model_list:
+  - model_name: agent-large
+    litellm_params:
+      model: openai/gpt-6.1-sol
+      api_key: os.environ/OPENAI_API_KEY
+      timeout: 600
+    model_info: { family: openai }
+  - model_name: agent-small
+    litellm_params:
+      model: openai/gpt-6-luna
+      api_key: os.environ/OPENAI_API_KEY
+      timeout: 300
+    model_info: { family: openai }
+  - model_name: judge
+    litellm_params:
+      model: openai/gpt-6-astra
+      api_key: os.environ/OPENAI_API_KEY
+      timeout: 600
+    model_info: { family: openai }
+
+  # The OpenAI Decisions API (POST /v1/decisions) for the openai-decide rules shadow arm, through the
+  # prsec-decide relay (prsec_hooks.py): an alias like any model, so only a key minted for it may call it.
+  # Named after the Decisions model so the policy reads the same with and without a gateway.
+  - model_name: gpt-6-luna
+    litellm_params:
+      model: prsec-decide/gpt-6-luna
+      api_base: https://api.openai.com/v1/decisions
+      api_key: os.environ/OPENAI_API_KEY
+      timeout: 60
+    model_info: { family: openai-decisions }
+
+litellm_settings:
+  drop_params: true
+  request_timeout: 600
+  num_retries: 2
+  turn_off_message_logging: true                 # PR source code must not reach logging callbacks
+  callbacks: prsec_hooks.strip_server_tools      # strips provider-executed tools (web search, hosted code exec, remote MCP)
+  custom_provider_map:                         # decision models (JEV System 1, OpenAI Decisions) as aliases
+    - {provider: prsec-decide, custom_handler: prsec_hooks.decide_relay}
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL          # the gateway's OWN Postgres, not the prsec DB
+  store_model_in_db: false
+  store_prompts_in_spend_logs: false
+  disable_spend_logs: false                      # spend per virtual key = per-task cost
+  ui_access_mode: admin_only

@@ -12,6 +12,7 @@ spec:
       labels: {{- include "construct.labels" (dict "name" "dashboard" "root" .) | nindent 8 }}
     spec:
       automountServiceAccountToken: false
+      {{- include "construct.pullSecrets" . | nindent 6 }}
       securityContext: {{- include "construct.podSecurity" . | nindent 8 }}
       containers:
         - name: dashboard

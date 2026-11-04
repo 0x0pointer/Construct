@@ -6,14 +6,19 @@ calibrated P(yes) becomes `RulesOutput`: `scan` unless P(yes) is below PRSEC_DEC
 evidence is the PR metadata, changed files and diff from the task's context files, truncated to
 PRSEC_DECIDE_MAX_STATE_CHARS (default 60000). Skills and the stage prompt are not used.
 
-Providers, each reached through a key-authenticated LiteLLM pass-through route (the provider key stays
-in the gateway; prsec.gateway.ALLOWED_ROUTES lets minted keys call these routes and no raw provider API):
+Through the gateway a decision model is an ordinary model alias: the adapter sends the provider's
+request body as the one user message of a chat completion to the task's alias, and the gateway's
+`prsec-decide` relay (deploy/compose/litellm/prsec_hooks.py) posts it to the endpoint fixed in the
+gateway config and returns the provider's JSON as the message content. So a minted key reaches a
+decision model only when the alias is in its `models` allowlist, and the provider key stays in the
+gateway. (A key-authenticated LiteLLM pass-through route would need the Enterprise-only
+`allowed_passthrough_routes` on every virtual key.)
 
 - `jev-decide`: AutoTrust JEV-27B System 1 (`serve_decide.py` POST /v1/decide, kind `noul`), self-hosted.
-  Gateway route /jev/v1/decide; dev mode (no gateway) PRSEC_JEV_DECIDE_URL.
+  Dev mode (no gateway) PRSEC_JEV_DECIDE_URL.
 - `openai-decide`: the OpenAI Decisions API (POST /v1/decisions, a `predicate` question); the task's
-  model alias is the Decisions model (e.g. gpt-6-luna). Gateway route /openai-decisions/v1/decisions;
-  dev mode PRSEC_OPENAI_DECIDE_URL (default the public endpoint) with OPENAI_API_KEY.
+  model alias names the Decisions model (e.g. gpt-6-luna; the relay sends the alias's own model). Dev
+  mode PRSEC_OPENAI_DECIDE_URL (default the public endpoint) with OPENAI_API_KEY.
 """
 from __future__ import annotations
 
@@ -44,6 +49,7 @@ QUESTION = (
 MAX_BODY_CHARS = 4_000
 MAX_FILES_LISTED = 200
 OPENAI_DECISIONS_URL = "https://api.openai.com/v1/decisions"
+RELAY_PATH = "/v1/chat/completions"  # the gateway's prsec-decide relay sits behind the ordinary chat route
 PREDICATE_NAME = "security_relevant"
 
 
@@ -77,11 +83,10 @@ def build_state(task: StageTask, max_chars: int) -> str:
 
 
 class _Decide:
-    """Shared run loop; a provider supplies route/dev endpoint, the request body and P(yes) parsing."""
+    """Shared run loop; a provider supplies its dev endpoint, the request body and P(yes) parsing."""
 
     name = ""
     label = ""  # shown in the decision's reason
-    route = ""  # gateway pass-through route
     caps = Caps(native_skills=False, resume=False, json_events=False, max_turns=False, mcp=False, subprocess=False,
                 stages=frozenset({"rules"}))
 
@@ -135,22 +140,31 @@ class _Decide:
                 total = total + Usage.model_validate(e.data["usage"])
         return total
 
-    def _endpoint(self, gw: GatewayConfig | None) -> tuple[str, dict[str, str]]:
-        if gw is not None:
-            return gw.base_url.rstrip("/") + self.route, ({"Authorization": f"Bearer {gw.api_key}"} if gw.api_key else {})
-        return self.dev_endpoint()
+    def _call(self, client: httpx.Client, task: StageTask, body: dict[str, Any], gw: GatewayConfig | None) -> dict[str, Any]:
+        """The provider's response to `body`: straight from the provider in dev mode, else via the gateway relay."""
+        if gw is None:
+            url, headers = self.dev_endpoint()
+            resp = client.post(url, json=body, headers=headers)
+            resp.raise_for_status()
+            return resp.json()
+        headers = {"Authorization": f"Bearer {gw.api_key}"} if gw.api_key else {}
+        chat = {"model": task.model_alias, "messages": [{"role": "user", "content": json.dumps(body)}]}
+        resp = client.post(gw.base_url.rstrip("/") + RELAY_PATH, json=chat, headers=headers)
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+        data = json.loads(content) if isinstance(content, str) else None
+        if not isinstance(data, dict):
+            raise ValueError(f"the gateway relay returned no JSON object: {str(content)[:300]}")
+        return data
 
     def run_inprocess(self, task: StageTask, gw: GatewayConfig | None, prompt: str) -> tuple[dict | None, list[Event], Usage]:  # NOSONAR(S1172) prompt: a fixed question is asked
         state = build_state(task, self.max_state_chars)
         events: list[Event] = [Event(kind=EventKind.system, text=f"{self.name} request",
                                      data={"state_chars": len(state), "threshold": self.threshold})]
         try:
-            url, headers = self._endpoint(gw)
             timeout = httpx.Timeout(float(task.limits.wall_clock_s), connect=15.0)
             with httpx.Client(timeout=timeout, transport=self.transport) as client:
-                resp = client.post(url, json=self.body(task, state), headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
+                data = self._call(client, task, self.body(task, state), gw)
             p = self.p_yes(data)
         except (httpx.HTTPError, RuntimeError, ValueError, KeyError, TypeError) as e:
             events.append(Event(kind=EventKind.error, text=f"{type(e).__name__}: {e}"[:2000]))
@@ -171,7 +185,6 @@ class _Decide:
 class JevDecideAdapter(_Decide):
     name = "jev-decide"
     label = "JEV System 1"
-    route = "/jev/v1/decide"
 
     def dev_endpoint(self) -> tuple[str, dict[str, str]]:
         url = os.environ.get("PRSEC_JEV_DECIDE_URL")
@@ -196,7 +209,6 @@ class JevDecideAdapter(_Decide):
 class OpenAIDecideAdapter(_Decide):
     name = "openai-decide"
     label = "OpenAI Decisions"
-    route = "/openai-decisions/v1/decisions"
 
     def dev_endpoint(self) -> tuple[str, dict[str, str]]:
         key = os.environ.get("OPENAI_API_KEY")

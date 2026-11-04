@@ -12,6 +12,7 @@ spec:
       annotations: {checksum/policy: {{ .Values.policy | sha256sum }}}
     spec:
       automountServiceAccountToken: false
+      {{- include "construct.pullSecrets" . | nindent 6 }}
       terminationGracePeriodSeconds: 60
       securityContext: {{- include "construct.podSecurity" . | nindent 8 }}
       initContainers: {{- include "construct.migrate" . | nindent 8 }}
@@ -29,9 +30,16 @@ spec:
               valueFrom: {secretKeyRef: {name: construct-secrets, key: launcherToken}}
             # Workbenches resolve llm-gateway through hostAliases / the env sink, the worker through cluster DNS.
             - {name: PRSEC_GATEWAY_URL, value: "http://llm-gateway:4000"}
+            {{- if .Values.gateway.keyDatabase.enabled }}
+            # Mints one key per task at the gateway (budget, TTL, aliases, allowed_routes).
+            - name: PRSEC_GATEWAY_MASTER_KEY
+              valueFrom: {secretKeyRef: {name: construct-secrets, key: gatewayKey}}
+            {{- else }}
+            # Dev pass-through: no key database, this key goes to every agent as is.
             - name: PRSEC_GATEWAY_DEV_KEY
               valueFrom: {secretKeyRef: {name: construct-secrets, key: gatewayKey}}
             - {name: PRSEC_GATEWAY_MASTER_KEY, value: ""}
+            {{- end }}
             - {name: PRSEC_WORKER_CONCURRENCY, value: {{ .Values.worker.concurrency | quote }}}
             - {name: PRSEC_DEBOUNCE_S, value: {{ .Values.worker.debounceS | quote }}}
             - {name: PRSEC_RECONCILE_INTERVAL_S, value: {{ .Values.worker.reconcileIntervalS | quote }}}

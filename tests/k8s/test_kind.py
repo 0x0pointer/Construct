@@ -49,10 +49,21 @@ open("/work/out/probe.json", "w").write(json.dumps(r))
 """
 
 
+def _cluster_dns(core) -> str:
+    """kube-dns' ClusterIP; in-cluster the launcher's account may not read kube-system, so fall back to
+    this pod's own resolver (the cluster DNS)."""
+    try:
+        return core.read_namespaced_service("kube-dns", "kube-system").spec.cluster_ip
+    except Exception:
+        for line in Path("/etc/resolv.conf").read_text().splitlines():
+            if line.startswith("nameserver "):
+                return line.split()[1]
+        raise
+
+
 def _ips(core) -> dict[str, str]:
     svc = {n: core.read_namespaced_service(n, "prsec").spec.cluster_ip for n in ("llm-gateway", "egress-proxy")}
-    dns = core.read_namespaced_service("kube-dns", "kube-system").spec.cluster_ip
-    return {"gateway_ip": svc["llm-gateway"], "egress_ip": svc["egress-proxy"], "cluster_dns": dns}
+    return {"gateway_ip": svc["llm-gateway"], "egress_ip": svc["egress-proxy"], "cluster_dns": _cluster_dns(core)}
 
 
 def _spec(scan_id: int, work: Path, network: str | None = None, env_name: str | None = None) -> WorkbenchSpec:

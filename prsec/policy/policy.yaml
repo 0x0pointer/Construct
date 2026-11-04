@@ -72,7 +72,7 @@ experiments:
     sample: 0.10
 
 # A second, calibrated opinion on the rules (skip/scan) decision: recorded on the timeline and scored by
-# prsec-eval, never deciding. The OpenAI Decisions API through the gateway's /openai-decisions route.
+# prsec-eval, never deciding. The OpenAI Decisions API, the gateway's gpt-6-luna alias (prsec-decide relay).
 shadows:
   - stage: rules
     name: openai-decisions

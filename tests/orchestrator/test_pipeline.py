@@ -331,6 +331,10 @@ def test_likely(env):
         assert sp.env["PRSEC_GATEWAY_KEY"] == "sk-scan"
         assert sp.network == "prsec-scan-101"
         assert "PRSEC_GATEWAY_KEY_SCOPE" not in sp.env
+        # only CLI harnesses get a harness volume; in-process ones (raw) must not ask for an unloaded one
+        expected = settings().harness_root / sp.task.harness / "current"
+        assert sp.harness_volume == (str(expected) if sp.task.harness != "raw" else None)
+    assert {sp.task.harness for sp in s["runner"].specs} >= {"raw"}  # the policy runs raw somewhere
     hyp_in = s["runner"].inputs["101-hypothesise"]
     assert json.loads(hyp_in["pr.json"])["title"] == "Add order lookup"
     assert json.loads(hyp_in["triage.json"])["decision"] == "full"

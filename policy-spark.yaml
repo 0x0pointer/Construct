@@ -70,7 +70,7 @@ experiments: []
 
 # Shadow arms run next to a stage on the same inputs; recorded and compared (timeline, prsec-eval
 # "Rules arms"), never deciding. JEV-27B System 1 runs on a second vLLM on the Spark (~/jev-27b.sh,
-# port 8001, serve_decide.py), reached through the gateway's /jev/v1/decide route.
+# port 8001, serve_decide.py), the gateway's rules-jev alias (prsec-decide relay).
 shadows:
   - stage: rules
     name: jev

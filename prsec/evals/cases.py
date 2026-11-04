@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import re
 import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -102,8 +101,15 @@ def load_case(case_dir: Path) -> Case:
     )
 
 
-def list_cases(root: Path = DEFAULT_CASES) -> list[Case]:
-    return [load_case(d) for d in sorted(Path(root).iterdir()) if d.is_dir() and (d / EXPECTED_FILE).is_file()]
+def cases_root() -> Path:
+    """The eval cases of this deployment: the mounted skills' evals/cases, else the repository's copy."""
+    mounted = settings().skills_dir / "evals" / "cases"
+    return mounted if mounted.is_dir() else DEFAULT_CASES
+
+
+def list_cases(root: Path | None = None) -> list[Case]:
+    base = Path(root) if root is not None else cases_root()
+    return [load_case(d) for d in sorted(base.iterdir()) if d.is_dir() and (d / EXPECTED_FILE).is_file()]
 
 
 def head_source(case: Case, dest: Path) -> Path:
@@ -115,20 +121,109 @@ def head_source(case: Case, dest: Path) -> Path:
 
 
 def base_source(case: Case, dest: Path) -> Path:
-    """The base state in a fresh `dest`: repo/ with diff.patch reverse-applied (no .git left behind).
-
-    A throwaway `git init` makes `git apply` resolve paths against `dest`, even when `dest` sits
-    inside another work tree."""
+    """The base state in a fresh `dest`: repo/ with diff.patch reverse-applied, in pure Python (no git
+    in the service image). Strict like `git apply`: every hunk must match exactly, else CaseError."""
     head_source(case, dest)
     try:
-        subprocess.run(["git", "init", "-q"], cwd=dest, check=True, capture_output=True)
-        proc = subprocess.run(["git", "apply", "-R", "--whitespace=nowarn", str(case.dir / DIFF_FILE)],
-                              cwd=dest, capture_output=True, text=True)
-    finally:
-        shutil.rmtree(dest / ".git", ignore_errors=True)
-    if proc.returncode != 0:
-        raise CaseError(f"case {case.id}: {DIFF_FILE} does not reverse-apply: {proc.stderr.strip()[:500]}")
+        for old_path, new_path, hunks in parse_patch(case.diff):
+            _reverse_file(dest, old_path, new_path, hunks)
+    except (ValueError, OSError) as e:
+        raise CaseError(f"case {case.id}: {DIFF_FILE} does not reverse-apply: {e}") from None
     return dest
+
+
+_HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+Hunk = tuple[int, int, list[str]]  # (new start line, new line count, body lines with ' '/'-'/'+' prefix)
+
+
+def _patch_path(raw: str, prefix: str) -> str | None:
+    path = raw.split("\t", 1)[0].strip()
+    if path == "/dev/null":
+        return None
+    return path[len(prefix):] if path.startswith(prefix) else path
+
+
+def _hunk_body(lines: list[str], i: int, old_n: int, new_n: int) -> tuple[list[str], int]:
+    """The body of one hunk (line counts from its header), keeping each line's newline; a
+    '\\ No newline at end of file' marker strips the newline of the line before it."""
+    body: list[str] = []
+    seen_old = seen_new = 0
+    while i < len(lines) and (seen_old < old_n or seen_new < new_n or lines[i].startswith("\\")):
+        line = lines[i]
+        if line.startswith("\\"):
+            if body:
+                body[-1] = body[-1].rstrip("\n")
+        elif line[:1] in (" ", "-", "+") or line in ("\n", ""):
+            line = line if line[:1] in (" ", "-", "+") else " " + line
+            seen_old += line[0] in " -"
+            seen_new += line[0] in " +"
+            body.append(line)
+        else:
+            raise ValueError(f"malformed hunk line {i + 1}: {line[:60]!r}")
+        i += 1
+    if seen_old != old_n or seen_new != new_n:
+        raise ValueError("hunk shorter than its header says")
+    return body, i
+
+
+def parse_patch(text: str) -> list[tuple[str | None, str | None, list[Hunk]]]:
+    """Files of a unified diff: (old path, new path, hunks); /dev/null is None. No renames or binaries."""
+    lines = text.splitlines(keepends=True)
+    files: list[tuple[str | None, str | None, list[Hunk]]] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("--- ") and i + 1 < len(lines) and lines[i + 1].startswith("+++ "):
+            files.append((_patch_path(line[4:], "a/"), _patch_path(lines[i + 1][4:], "b/"), []))
+            i += 2
+            continue
+        m = _HUNK.match(line)
+        if m:
+            if not files:
+                raise ValueError("hunk before any file header")
+            old_n = int(m.group(2)) if m.group(2) is not None else 1
+            new_n = int(m.group(4)) if m.group(4) is not None else 1
+            body, i = _hunk_body(lines, i + 1, old_n, new_n)
+            files[-1][2].append((int(m.group(3)), new_n, body))
+            continue
+        if line.startswith(("rename ", "Binary files", "GIT binary patch")):
+            raise ValueError(f"unsupported patch content: {line.strip()[:60]}")
+        i += 1
+    if not files:
+        raise ValueError("no file in the patch")
+    return files
+
+
+def _reverse_file(root: Path, old_path: str | None, new_path: str | None, hunks: list[Hunk]) -> None:
+    if old_path is not None and new_path is not None and old_path != new_path:
+        raise ValueError(f"renames are not supported ({old_path} -> {new_path})")
+    if new_path is None:  # the PR deleted it: recreate it from the removed lines
+        target = _inside(root, old_path or "")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("".join(l[1:] for _, _, body in hunks for l in body if l[0] in " -"))
+        return
+    target = _inside(root, new_path)
+    if old_path is None:  # the PR added it: it did not exist on base
+        target.unlink()
+        return
+    head = target.read_text().splitlines(keepends=True)
+    offset = 0
+    for start, count, body in hunks:
+        expected = [l[1:] for l in body if l[0] in " +"]
+        replacement = [l[1:] for l in body if l[0] in " -"]
+        pos = start - 1 + offset if count else start + offset
+        if head[pos:pos + len(expected)] != expected:
+            raise ValueError(f"{new_path}: hunk at line {start} does not match the head file")
+        head[pos:pos + len(expected)] = replacement
+        offset += len(replacement) - len(expected)
+    target.write_text("".join(head))
+
+
+def _inside(root: Path, rel: str) -> Path:
+    target = (root / rel).resolve()
+    if not rel or not target.is_relative_to(root.resolve()):
+        raise ValueError(f"patch path {rel!r} leaves the case repository")
+    return target
 
 
 class CaseSCM:
@@ -144,8 +239,7 @@ class CaseSCM:
     def root(self) -> Path:
         if self._root is not None:
             return self._root
-        mounted = settings().skills_dir / "evals" / "cases"  # the skills mounted for this deployment
-        return mounted if mounted.is_dir() else DEFAULT_CASES
+        return cases_root()
 
     def case(self, repo: str) -> Case:
         owner, _, case_id = repo.partition("/")

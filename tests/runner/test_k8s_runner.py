@@ -385,3 +385,13 @@ def test_launcher_backend_switch(monkeypatch):
     monkeypatch.setenv("PRSEC_LAUNCHER_BACKEND", "nomad")
     with pytest.raises(ValueError, match="unknown PRSEC_LAUNCHER_BACKEND"):
         backend()
+
+
+def test_pull_secrets_go_on_every_scan_pod(root, monkeypatch):
+    monkeypatch.setenv("PRSEC_K8S_PULL_SECRETS", "foundry-registry, other")
+    kube = FakeKube()
+    r = runner(kube)
+    pod = r.workbench_pod(spec(root), ["x"], None)
+    assert pod["spec"]["imagePullSecrets"] == [{"name": "foundry-registry"}, {"name": "other"}]
+    r.create_env(7, "h1", env_req(root))
+    assert kube.only("pod", "sink")["spec"]["imagePullSecrets"][0] == {"name": "foundry-registry"}

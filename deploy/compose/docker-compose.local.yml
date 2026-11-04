@@ -35,7 +35,6 @@ services:
     environment:
       LITELLM_MASTER_KEY: ${PRSEC_GATEWAY_DEV_KEY:-sk-prsec-local}
       SPARK_API_BASE: ${SPARK_API_BASE:?set SPARK_API_BASE (make local-up resolves it from SPARK_HOST)}
-      SPARK_JEV_API_BASE: ${SPARK_JEV_API_BASE:-}  # optional: the rules-jev shadow arm
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}  # optional: the openai-decide shadow arm
       LITELLM_LOG: ${LITELLM_LOG:-INFO}
@@ -45,7 +44,7 @@ services:
     volumes:
       - ./litellm:/app/config:ro
     extra_hosts:
-      - "spark:${SPARK_IP:-127.0.0.1}"  # the JEV pass-through target (config.spark.yaml)
+      - "spark:${SPARK_IP:-127.0.0.1}"  # the JEV System 1 endpoint (rules-jev in config.spark.yaml)
     ports:
       - "127.0.0.1:4000:4000"  # host-side checks only; workbenches use the scan network alias
     healthcheck:

@@ -25,6 +25,7 @@ spec:
       labels: {{- include "construct.labels" (dict "name" "postgres" "root" .) | nindent 8 }}
     spec:
       automountServiceAccountToken: false
+      {{- include "construct.pullSecrets" . | nindent 6 }}
       containers:
         - name: postgres
           image: {{ .Values.images.postgres }}

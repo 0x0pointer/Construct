@@ -205,6 +205,7 @@ class K8sRunner:
         self.sink_image = os.environ.get("PRSEC_SINK_IMAGE") or os.environ.get("PRSEC_IMAGE") or "prsec/prsec:latest"
         # IfNotPresent: images loaded into the nodes (kind) or pinned by digest are never re-pulled
         self.pull_policy = os.environ.get("PRSEC_K8S_PULL_POLICY", "IfNotPresent")
+        self.pull_secrets = [s.strip() for s in os.environ.get("PRSEC_K8S_PULL_SECRETS", "").split(",") if s.strip()]
         self.poll_s = 1.0
         self._ips: dict[str, str] = {}
 
@@ -246,6 +247,8 @@ class K8sRunner:
     def _pod_common(self) -> dict[str, Any]:
         spec: dict[str, Any] = {"restartPolicy": "Never", "automountServiceAccountToken": False,
                                 "enableServiceLinks": False, "terminationGracePeriodSeconds": 5}
+        if self.pull_secrets:
+            spec["imagePullSecrets"] = [{"name": s} for s in self.pull_secrets]
         if self.runtime_class:
             spec["runtimeClassName"] = self.runtime_class
         return spec
