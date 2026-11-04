@@ -288,6 +288,9 @@ do-report: ## the latest DO eval's log tail and report (once written)
 	  "grep -v psycopg /var/lib/prsec/work/evals/$$run/eval.log | tail -8; cat /var/lib/prsec/work/evals/$$run/report.md 2>/dev/null"
 
 do-down: ## delete the DO cluster (with its volumes and load balancers) and the NFS share; DOCR images stay
-	doctl kubernetes cluster delete $(DO_CLUSTER) --dangerous --force
-	@id=$$(doctl nfs list --region $(DO_REGION) --format ID,Name --no-header | awk '$$2=="$(DO_CLUSTER)"{print $$1}'); \
-	[ -z "$$id" ] || doctl nfs delete --id $$id --region $(DO_REGION)
+	@cid=$$(doctl kubernetes cluster get $(DO_CLUSTER) --format ID --no-header); test -n "$$cid"; \
+	doctl kubernetes cluster delete $(DO_CLUSTER) --dangerous --force && \
+	id=$$(doctl nfs list --region $(DO_REGION) --format ID,Name --no-header | awk '$$2=="$(DO_CLUSTER)"{print $$1}'); \
+	{ [ -z "$$id" ] || doctl nfs delete --id $$id --region $(DO_REGION); } && \
+	echo "waiting for the cluster's PVC volumes to detach (they can outlive the cluster)" && \
+	python3 deploy/do/reap_volumes.py "$$cid"
