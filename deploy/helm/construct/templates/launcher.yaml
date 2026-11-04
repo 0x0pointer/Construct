@@ -12,7 +12,10 @@ spec:
       labels: {{- include "construct.labels" (dict "name" "launcher" "root" .) | nindent 8 }}
       annotations: {checksum/policy: {{ .Values.policy | sha256sum }}}
     spec:
-      serviceAccountName: construct-launcher  # NOSONAR(S6865) bound to its Roles in rbac.yaml
+      serviceAccountName: construct-launcher
+      # No automounted token: an explicit, short-lived projected one (rotated by the kubelet; the
+      # kubernetes client re-reads it), at the standard path in-cluster config reads.
+      automountServiceAccountToken: false
       securityContext: {{- include "construct.podSecurity" . | nindent 8 }}
       containers:
         - name: launcher
@@ -40,9 +43,18 @@ spec:
           ports: [{containerPort: 8090}]
           readinessProbe: {httpGet: {path: /healthz, port: 8090}, periodSeconds: 5}
           securityContext: {{- include "construct.containerSecurity" . | nindent 12 }}
-          volumeMounts: {{- include "construct.prsecMounts" . | nindent 12 }}
+          volumeMounts:
+            {{- include "construct.prsecMounts" . | nindent 12 }}
+            - {name: kube-api-access, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}
           resources: {requests: {memory: 128Mi, cpu: 50m, ephemeral-storage: 64Mi}, limits: {memory: 512Mi, ephemeral-storage: 512Mi}}
-      volumes: {{- include "construct.prsecVolumes" . | nindent 8 }}
+      volumes:
+        {{- include "construct.prsecVolumes" . | nindent 8 }}
+        - name: kube-api-access
+          projected:
+            sources:
+              - serviceAccountToken: {path: token, expirationSeconds: 3600}
+              - configMap: {name: kube-root-ca.crt, items: [{key: ca.crt, path: ca.crt}]}
+              - downwardAPI: {items: [{path: namespace, fieldRef: {fieldPath: metadata.namespace}}]}
 ---
 apiVersion: v1
 kind: Service

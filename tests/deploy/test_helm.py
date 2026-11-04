@@ -52,7 +52,13 @@ def test_admission_allows_exactly_the_catalog_and_our_images(docs):
 
 
 def test_only_the_launcher_has_kubernetes_rights(docs):
-    assert pod(docs, "launcher")["serviceAccountName"] == "construct-launcher"
+    launcher = pod(docs, "launcher")
+    assert launcher["serviceAccountName"] == "construct-launcher"
+    assert launcher["automountServiceAccountToken"] is False  # an explicit, short-lived projected token instead
+    [token] = [v for v in launcher["volumes"] if v["name"] == "kube-api-access"]
+    assert token["projected"]["sources"][0]["serviceAccountToken"]["expirationSeconds"] == 3600
+    mounts = {m["mountPath"]: m for m in launcher["containers"][0]["volumeMounts"]}
+    assert mounts["/var/run/secrets/kubernetes.io/serviceaccount"]["readOnly"] is True
     for name in ("worker", "api", "dashboard", "llm-gateway", "egress-proxy", "postgres"):
         assert pod(docs, name)["automountServiceAccountToken"] is False, name
     role = get(docs, "Role", "construct-launcher")
