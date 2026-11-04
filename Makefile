@@ -198,9 +198,11 @@ kind-deploy: kind-up kind-data kind-load ## deploy the whole stack on kind (gate
 kind-dashboard: ## dashboard of the kind stack on http://127.0.0.1:8082
 	$(KUBECTL) -n prsec port-forward svc/dashboard 8082:8081
 
-kind-eval: ## prsec-eval inside the cluster's worker (CASES="a b" or TAG=dynamic); report under work/kind/work/evals
-	$(KUBECTL) -n prsec exec deploy/worker -- prsec-eval run $(CASES) $(if $(TAG),--tag $(TAG)) \
-	  --out /var/lib/prsec/work/evals/kind-$$(date +%Y%m%dT%H%M%S)
+kind-eval: ## prsec-eval in the cluster's worker, detached (CASES="a b" or TAG=dynamic); log+report in work/kind/work/evals
+	@run=kind-$$(date +%Y%m%dT%H%M%S); out=/var/lib/prsec/work/evals/$$run; \
+	$(KUBECTL) -n prsec exec deploy/worker -c worker -- sh -c "mkdir -p $$out && nohup prsec-eval run $(CASES) \
+	  $(if $(TAG),--tag $(TAG)) --out $$out > $$out/eval.log 2>&1 &" && \
+	echo "eval started in the worker pod; follow: tail -f work/kind/work/evals/$$run/eval.log"
 
 test-k8s: ## K8sRunner against the kind cluster: isolation probes + reference replays (needs kind-deploy)
 	PRSEC_K8S_CONTEXT=$(KIND_CTX) PRSEC_K8S_DATA_ROOT="$(KIND_DATA)" $(PYTEST) -q -m k8s tests/k8s
