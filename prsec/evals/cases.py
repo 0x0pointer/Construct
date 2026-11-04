@@ -213,7 +213,7 @@ def _reverse_file(root: Path, old_path: str | None, new_path: str | None, hunks:
     if new_path is None:  # the PR deleted it: recreate it from the removed lines
         target = _inside(root, old_path or "")
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("".join(l[1:] for _, _, body in hunks for l in body if l[0] in " -"))
+        _write(target, "".join(l[1:] for _, _, body in hunks for l in body if l[0] in " -"))
         return
     target = _inside(root, new_path)
     if old_path is None:  # the PR added it: it did not exist on base
@@ -229,7 +229,13 @@ def _reverse_file(root: Path, old_path: str | None, new_path: str | None, hunks:
             raise ValueError(f"{new_path}: hunk at line {start} does not match the head file")
         head[pos:pos + len(expected)] = replacement
         offset += len(replacement) - len(expected)
-    target.write_text("".join(head))
+    _write(target, "".join(head))
+
+
+def _write(path: Path, text: str) -> None:
+    """Write file content; `path` is already confined to the case repository by `_inside`."""
+    with open(path, "w") as f:
+        f.write(text)
 
 
 def _inside(root: Path, rel: str) -> Path:
