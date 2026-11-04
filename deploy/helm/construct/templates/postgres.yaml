@@ -1,0 +1,56 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  labels: {app.kubernetes.io/part-of: construct}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.postgres.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources: {requests: {storage: {{ .Values.postgres.storage }}}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels: {{- include "construct.labels" (dict "name" "postgres" "root" .) | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app.kubernetes.io/name: postgres}}
+  template:
+    metadata:
+      labels: {{- include "construct.labels" (dict "name" "postgres" "root" .) | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: postgres
+          image: {{ .Values.images.postgres }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          env:
+            - {name: POSTGRES_DB, value: prsec}
+            - {name: POSTGRES_USER, value: prsec}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: construct-secrets, key: dbPassword}}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          ports: [{containerPort: 5432}]
+          readinessProbe:
+            exec: {command: [pg_isready, -h, 127.0.0.1, -U, prsec, -d, prsec]}
+            periodSeconds: 3
+          volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
+          resources: {requests: {memory: 256Mi, cpu: 100m}, limits: {memory: 1Gi}}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: postgres-data}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels: {{- include "construct.labels" (dict "name" "postgres" "root" .) | nindent 4 }}
+spec:
+  selector: {app.kubernetes.io/name: postgres}
+  ports: [{port: 5432, targetPort: 5432}]
+{{- end }}

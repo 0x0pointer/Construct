@@ -1,0 +1,85 @@
+# Local pilot policy: every stage on the self-hosted model on the DGX Spark, dynamic validation ON.
+# Use with the Spark gateway (deploy/compose/litellm/config.spark.yaml, `make spark-gateway`) and a
+# container runner (PRSEC_RUNNER=docker locally; the K8s runner later). PRSEC_POLICY_PATH points here.
+#
+# The Spark decodes at ~16 tok/s, several times slower than the hosted APIs, so the agentic stages get
+# 2-3x the default wall clocks and the dynamic phase runs one hypothesis at a time. Budgets are nominal:
+# the gateway books no cost for a self-hosted model.
+version: "1"
+workbench_image: prsec/workbench-base:latest
+max_hypotheses: 6
+static_verify_min_severity: medium
+skip_audit_sample: 0.0
+scan_drafts: true
+scan_forks: false
+
+defaults:
+  rules:
+    harness: raw
+    model: agent-small
+    skills: [rules]
+    wall_clock_s: 300
+    usd_budget: 0.05
+  triage:
+    harness: raw
+    model: agent-small
+    skills: [triage]
+    wall_clock_s: 300
+    usd_budget: 0.25
+  hypothesise:
+    harness: opencode
+    model: agent-large
+    skills: [taint-analysis, business-logic, org]
+    wall_clock_s: 3600
+    usd_budget: 3.0
+  static_verify:
+    harness: opencode
+    model: agent-large
+    skills: [static-validation, org]
+    wall_clock_s: 2400
+    usd_budget: 1.5
+  skeptic:
+    harness: raw
+    model: judge
+    skills: []
+    wall_clock_s: 600
+    usd_budget: 0.3
+  env:
+    harness: opencode
+    model: agent-large
+    skills: [env-building, mocking]
+    wall_clock_s: 1800
+    usd_budget: 1.0
+  dynamic:
+    harness: opencode
+    model: agent-large
+    skills: [env-building, mocking, poc-authoring, oracles, org]
+    wall_clock_s: 3600
+    usd_budget: 4.0
+
+dynamic:
+  enabled: true
+  max_hypotheses: 2
+  min_severity: medium
+  replay_runs: 2
+  base_replay: true
+  replay_timeout_s: 900
+  concurrency: 1
+
+experiments: []
+
+# Shadow arms run next to a stage on the same inputs; recorded and compared (timeline, prsec-eval
+# "Rules arms"), never deciding. JEV-27B System 1 runs on a second vLLM on the Spark (~/jev-27b.sh,
+# port 8001, serve_decide.py), reached through the gateway's /jev/v1/decide route.
+shadows:
+  - stage: rules
+    name: jev
+    harness: jev-decide   # PRSEC_DECIDE_SCAN_THRESHOLD: scan when P(security-relevant) >= 0.10
+    model: rules-jev
+  # The cloud deployment's arm (prsec/policy/policy.yaml); needs OPENAI_API_KEY for the local gateway.
+  # - stage: rules
+  #   name: openai-decisions
+  #   harness: openai-decide
+  #   model: gpt-6-luna
+
+repos: {}

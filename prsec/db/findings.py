@@ -338,6 +338,7 @@ def metrics() -> dict[str, Any]:
                       COALESCE(avg((usage->>'tokens_in')::float + (usage->>'tokens_out')::float), 0)::float AS avg_tokens,
                       COALESCE(avg((usage->>'turns')::float), 0)::float AS avg_turns
                FROM stage_runs WHERE created_at > now() - interval '30 days'
+                 AND task_id NOT LIKE '%-shadow-%'  -- shadow arms (policy `shadows`) are not the stage's agent
                GROUP BY stage"""
         ).fetchall()
         for r in [*per_harness, *per_stage_harness, *per_stage]:

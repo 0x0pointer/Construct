@@ -1,0 +1,53 @@
+# Scans namespace: deny everything by default. K8sRunner adds a policy per scan (gateway only) and per
+# dynamic env (inside the env, plus gateway / egress proxy when asked).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: {{ .Values.scansNamespace }}
+  labels: {app.kubernetes.io/part-of: construct}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# Control namespace: the services scan pods may reach accept only them (and the worker).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: llm-gateway-ingress
+  labels: {app.kubernetes.io/part-of: construct}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: llm-gateway}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: worker}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ .Values.scansNamespace }}}}
+          podSelector: {matchLabels: {prsec.llm: "1"}}
+      ports: [{protocol: TCP, port: 4000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: egress-proxy-ingress
+  labels: {app.kubernetes.io/part-of: construct}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: egress-proxy}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ .Values.scansNamespace }}}}
+          podSelector: {matchLabels: {prsec.packages: "1"}}
+      ports: [{protocol: TCP, port: 3128}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: launcher-ingress
+  labels: {app.kubernetes.io/part-of: construct}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: launcher}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: worker}}}]
+      ports: [{protocol: TCP, port: 8090}]

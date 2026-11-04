@@ -603,19 +603,63 @@ def _rules(ctx: Ctx, hint: str | None) -> tuple[dict[str, Any], str]:
     in `_scan` and is passed in here as `hint` for the agent to confirm or override. Fails open to
     `scan` if the stage errors or returns invalid output.
     """
-    ran = _run(ctx, Stage.rules, dict(ctx.shared), prompt_ctx={"pr_number": ctx.pr.number, "rules_hint": hint or ""})
-    record: dict[str, Any] = {"llm_task_id": ran.task.task_id, "hint": hint}
+    files = dict(ctx.shared)
+    prompt_ctx = {"pr_number": ctx.pr.number, "rules_hint": hint or ""}
+    arms = stages.shadow_arms(ctx.policy, Stage.rules, ctx.scan_id)
+    pool = ThreadPoolExecutor(max_workers=len(arms), thread_name_prefix="shadow") if arms else None
+    try:
+        futures = [submit_with_context(pool, _shadow_rules, ctx, arm, files, prompt_ctx) for arm in arms] if pool else []
+        ran = _run(ctx, Stage.rules, files, prompt_ctx=prompt_ctx)
+        record: dict[str, Any] = {"llm_task_id": ran.task.task_id, "hint": hint}
+        out = ran.output
+        if isinstance(out, RulesOutput):
+            record.update(out.model_dump())
+            decision = out.decision
+            record["source"] = "llm"
+        else:
+            record.update(decision="scan", reason=f"rules stage {ran.result.status.value}; failing open", source="fallback")
+            decision = "scan"
+        ctx.emit("rules", f"rules: {decision} ({record['source']}): {str(record.get('reason') or '')[:300]}",
+                 data={"decision": decision, "source": record["source"], "reason": record.get("reason")})
+        if futures:
+            record["shadows"] = [_shadow_compared(ctx, f.result(), decision) for f in futures]
+    finally:
+        if pool is not None:
+            pool.shutdown(wait=True)
+    return record, decision
+
+
+def _shadow_rules(ctx: Ctx, arm: Any, files: dict[str, str], prompt_ctx: dict[str, Any]) -> dict[str, Any]:
+    """One shadow arm of the rules stage: same inputs, its own harness/model; recorded, never decides.
+    Any failure is recorded on the arm; only Superseded / LeaseLost propagate."""
+    entry: dict[str, Any] = {"name": arm.name, "harness": arm.harness, "model": arm.model}
+    try:
+        task, choice = stages.build_task(ctx.policy, Stage.rules, ctx.scan_id, ctx.repo, context_files=list(files),
+                                         prompt_ctx=prompt_ctx, shadow=arm)
+        entry["task_id"] = task.task_id
+        with bind(task_id=task.task_id, stage=Stage.rules.value):
+            ran = _run_task(ctx, task, choice, files, None, None)
+    except (Superseded, LeaseLost):
+        raise
+    except Exception as e:
+        log.warning("scan %s: rules shadow %s failed", ctx.scan_id, arm.name, exc_info=True)
+        return {**entry, "status": "error", "decision": None, "reason": f"{type(e).__name__}: {e}"[:300]}
     out = ran.output
     if isinstance(out, RulesOutput):
-        record.update(out.model_dump())
-        decision = out.decision
-        record["source"] = "llm"
-    else:
-        record.update(decision="scan", reason=f"rules stage {ran.result.status.value}; failing open", source="fallback")
-        decision = "scan"
-    ctx.emit("rules", f"rules: {decision} ({record['source']}): {str(record.get('reason') or '')[:300]}",
-             data={"decision": decision, "source": record["source"], "reason": record.get("reason")})
-    return record, decision
+        return {**entry, "status": ran.result.status.value, **out.model_dump()}
+    return {**entry, "status": ran.result.status.value, "decision": None, "reason": f"no usable output ({ran.result.status.value})"}
+
+
+def _shadow_compared(ctx: Ctx, entry: dict[str, Any], decision: str) -> dict[str, Any]:
+    """Mark whether a shadow arm agreed with the stage's decision and put it on the timeline."""
+    got = entry.get("decision")
+    entry["agrees"] = None if got is None else got == decision
+    verdict_text = "no decision" if got is None else f"{got}, {'agrees' if entry['agrees'] else 'DISAGREES'} with {decision}"
+    ctx.emit("rules", f"rules shadow {entry['name']} ({entry['model']}): {verdict_text}: {str(entry.get('reason') or '')[:240]}",
+             level="info" if entry["agrees"] is not False else "warning",
+             data={"shadow": entry["name"], "model": entry["model"], "harness": entry["harness"], "decision": got,
+                   "agrees": entry["agrees"], "status": entry.get("status"), "reason": entry.get("reason")})
+    return entry
 
 
 def _triage(ctx: Ctx, rules: dict[str, Any]) -> tuple[dict[str, Any], str]:

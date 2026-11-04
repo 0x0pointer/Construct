@@ -34,6 +34,9 @@ CORE_KEYS = ("ts", "level", "service", "logger", "msg", "exc")
 # shows prsec's own DEBUG lines and not every HTTP/DB round trip.
 QUIET_LOGGERS = ("urllib3", "httpx", "httpcore", "docker", "botocore", "boto3", "s3transfer", "minio",
                  "psycopg", "psycopg.pool", "asyncio", "multipart", "hpack", "filelock")
+# Of those, the ones whose INFO is per-call chatter (psycopg.pool logs every connection checkout and
+# return): held at WARNING unless PRSEC_LOG_LEVEL=DEBUG.
+CHATTY_AT_INFO = ("psycopg.pool",)
 UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
 
 _HANDLER_ATTR = "_prsec_handler"
@@ -185,10 +188,10 @@ def setup_logging(service: str) -> None:
     # Root lets DEBUG records through to the handler, whose filter applies the real level
     # (or lets a debug=True context pass).
     root.setLevel(logging.DEBUG)
-    quiet = max(level, logging.INFO)
     for name in QUIET_LOGGERS:
         lg = logging.getLogger(name)
         if lg.level == logging.NOTSET or getattr(lg, "_prsec_quiet", False):
-            lg.setLevel(quiet if level > logging.DEBUG else logging.NOTSET)
+            floor = logging.WARNING if name in CHATTY_AT_INFO else logging.INFO
+            lg.setLevel(max(level, floor) if level > logging.DEBUG else logging.NOTSET)
             lg._prsec_quiet = True  # type: ignore[attr-defined]
     _route_uvicorn()

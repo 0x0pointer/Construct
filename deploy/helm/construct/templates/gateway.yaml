@@ -1,0 +1,57 @@
+# LiteLLM: the only way any agent reaches a model. Provider keys live only here.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-gateway
+  labels: {{- include "construct.labels" (dict "name" "llm-gateway" "root" .) | nindent 4 }}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app.kubernetes.io/name: llm-gateway}}
+  template:
+    metadata:
+      labels: {{- include "construct.labels" (dict "name" "llm-gateway" "root" .) | nindent 8 }}
+      annotations:
+        checksum/config: {{ printf "%s%s" .Values.gateway.config .Values.gateway.hooks | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.gateway.hostAliases }}
+      hostAliases: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: litellm
+          image: {{ .Values.images.gateway }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          args: [--config, /app/config/config.yaml, --port, "4000", --num_workers, "2"]
+          env:
+            - name: LITELLM_MASTER_KEY
+              valueFrom: {secretKeyRef: {name: construct-secrets, key: gatewayKey}}
+            - name: ANTHROPIC_API_KEY
+              valueFrom: {secretKeyRef: {name: construct-secrets, key: anthropicApiKey}}
+            - name: OPENAI_API_KEY
+              valueFrom: {secretKeyRef: {name: construct-secrets, key: openaiApiKey}}
+            - {name: LITELLM_TELEMETRY, value: "False"}
+            - {name: DISABLE_ADMIN_UI, value: "True"}
+            - {name: NO_DOCS, value: "True"}
+            {{- range $k, $v := .Values.gateway.env }}
+            - {name: {{ $k }}, value: {{ $v | quote }}}
+            {{- end }}
+          ports: [{containerPort: 4000}]
+          readinessProbe:
+            httpGet: {path: /health/liveliness, port: 4000}
+            periodSeconds: 5
+            failureThreshold: 30
+          volumeMounts: [{name: config, mountPath: /app/config, readOnly: true}]
+          resources: {requests: {memory: 512Mi, cpu: 200m}, limits: {memory: 2Gi}}
+          securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+      volumes:
+        - name: config
+          configMap: {name: construct-gateway}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-gateway
+  labels: {{- include "construct.labels" (dict "name" "llm-gateway" "root" .) | nindent 4 }}
+spec:
+  selector: {app.kubernetes.io/name: llm-gateway}
+  ports: [{port: 4000, targetPort: 4000}]

@@ -1,0 +1,11 @@
+# kind cluster for Construct (make kind-up renders this with the repo path).
+# The node's /var/lib/prsec is the Mac's work/kind: the chart's hostPath data volume, so the work
+# dirs, skills and harness volumes can be prepared and inspected from the repo.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: construct
+nodes:
+  - role: control-plane
+    extraMounts:
+      - hostPath: ${PRSEC_KIND_DATA}
+        containerPath: /var/lib/prsec

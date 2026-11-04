@@ -1,0 +1,6 @@
+apiVersion: v2
+name: construct
+description: Construct (prsec) agentic PR security scanner, with every agent stage, dynamic environment and replay as pods (K8sRunner). See docs/design/k8s.md.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

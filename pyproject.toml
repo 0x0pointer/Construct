@@ -16,6 +16,7 @@ dependencies = [
   "pyjwt[crypto]>=2.9",
   "psycopg[binary,pool]>=3.2",
   "docker>=7.1",
+  "kubernetes>=31.0",  # K8sRunner (launcher backend on a cluster)
   "jsonschema>=4.23",
   "pyyaml>=6.0",
   "minio>=7.2",
@@ -43,6 +44,8 @@ prsec-egress-proxy = "prsec.dynamic.egress_proxy:main"
 # observability: follow a scan from the terminal, re-run one stage locally
 prsec-trace = "prsec.obs.trace:main"
 prsec-debug = "prsec.obs.debug:main"
+# evals: run the labelled cases through the real pipeline and score them
+prsec-eval = "prsec.evals.run:main"
 prsec-stage = "prsec.sandbox.entrypoint.main:main"
 prsec-cite = "prsec.sandbox.cli.cite:main"
 prsec-skills-lint = "prsec.skills_lint:main"
@@ -58,6 +61,7 @@ testpaths = ["tests"]
 markers = [
   "db: needs PRSEC_TEST_DATABASE_URL (Postgres)",
   "docker: needs a Docker daemon",
+  "k8s: needs the kind cluster with the chart deployed (make kind-deploy; make test-k8s)",
   "live_harness: invokes a real harness CLI + LLM (opt-in via PRSEC_LIVE_HARNESS=1)",
 ]
 

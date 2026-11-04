@@ -71,6 +71,14 @@ experiments:
     harnesses: [claude-code, codex, opencode, pi]
     sample: 0.10
 
+# A second, calibrated opinion on the rules (skip/scan) decision: recorded on the timeline and scored by
+# prsec-eval, never deciding. The OpenAI Decisions API through the gateway's /openai-decisions route.
+shadows:
+  - stage: rules
+    name: openai-decisions
+    harness: openai-decide   # PRSEC_DECIDE_SCAN_THRESHOLD: scan when P(security-relevant) >= 0.10
+    model: gpt-6-luna        # the Decisions API model
+
 repos: {}
 #  "acme/legacy-*":
 #    enabled: false

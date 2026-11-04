@@ -1,0 +1,79 @@
+# Local pilot infrastructure for real-model scans with the Docker runner (no cluster, no TLS, no SSO).
+#
+#   make local-up        Postgres + the LLM gateway (Spark) + the egress proxy, in Docker
+#   make local-worker    prsec-worker on the host with PRSEC_RUNNER=docker (deploy/local/spark.env)
+#   make eval            prsec-eval run: queue the eval cases, wait for the worker, score
+#
+# The worker runs on the host so it bind-mounts host dirs straight into the workbenches. The gateway
+# keeps the fixed name prsec-llm-gateway that DockerRunner attaches to every scan network
+# (workbenches reach it as http://llm-gateway:4000); the egress proxy keeps prsec-egress-proxy.
+# Dev only: the gateway accepts one pass-through key and has no budget DB.
+name: prsec-local
+
+services:
+  postgres:
+    image: postgres:16.15-alpine
+    container_name: prsec-local-pg
+    environment:
+      POSTGRES_DB: prsec
+      POSTGRES_USER: prsec
+      POSTGRES_PASSWORD: prsec
+    ports:
+      - "127.0.0.1:${PRSEC_LOCAL_PG_PORT:-55433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U prsec -d prsec"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  llm-gateway:
+    image: ghcr.io/berriai/litellm:v1.105.5@sha256:f6f3e4b4ba4a50912740dd33ec332269428d0ced71920f617a96dd59282b378e
+    container_name: prsec-llm-gateway
+    command: ["--config", "/app/config/config.spark.yaml", "--port", "4000", "--num_workers", "2"]
+    environment:
+      LITELLM_MASTER_KEY: ${PRSEC_GATEWAY_DEV_KEY:-sk-prsec-local}
+      SPARK_API_BASE: ${SPARK_API_BASE:?set SPARK_API_BASE (make local-up resolves it from SPARK_HOST)}
+      SPARK_JEV_API_BASE: ${SPARK_JEV_API_BASE:-}  # optional: the rules-jev shadow arm
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}  # optional: the openai-decide shadow arm
+      LITELLM_LOG: ${LITELLM_LOG:-INFO}
+      LITELLM_TELEMETRY: "False"
+      DISABLE_ADMIN_UI: "True"
+      NO_DOCS: "True"
+    volumes:
+      - ./litellm:/app/config:ro
+    extra_hosts:
+      - "spark:${SPARK_IP:-127.0.0.1}"  # the JEV pass-through target (config.spark.yaml)
+    ports:
+      - "127.0.0.1:4000:4000"  # host-side checks only; workbenches use the scan network alias
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  # Package registries only, for the dynamic phase's install/build commands (see prsec/dynamic/egress_proxy.py).
+  egress-proxy:
+    image: ${PRSEC_IMAGE:-prsec/prsec:latest}
+    container_name: prsec-egress-proxy
+    command: ["prsec-egress-proxy"]
+    networks: [egress]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:size=16m"]  # NOSONAR(S5443) private per-container tmpfs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 3128), timeout=3).close()"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+networks:
+  egress:
+    name: prsec-local-egress
+
+volumes:
+  pgdata:

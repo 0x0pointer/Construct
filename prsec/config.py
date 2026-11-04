@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -110,6 +110,40 @@ class Experiment(BaseModel):
     sample: float = 0.1  # fraction of scans
 
 
+# Stages whose decision a shadow arm may run next to (see ShadowArm).
+SHADOW_STAGES = frozenset({"rules"})
+
+
+class ShadowArm(BaseModel):
+    """A second agent that runs next to a stage's own agent on the same inputs. Its output is recorded
+    (timeline, stage_runs, the stage's record) and compared, but it never changes the decision: a way
+    to measure another model or harness on live traffic before trusting it."""
+
+    stage: str
+    name: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,19}$", description="Short arm label, e.g. jev")
+    harness: str
+    model: str
+    skills: list[str] | None = None  # default: the stage's skills
+    wall_clock_s: int | None = None  # default: the stage's
+    usd_budget: float | None = None  # default: the stage's
+    sample: float = Field(default=1.0, ge=0.0, le=1.0)  # fraction of scans the arm runs on
+
+    @field_validator("stage")
+    @classmethod
+    def _stage(cls, v: str) -> str:
+        if v not in SHADOW_STAGES:
+            raise ValueError(f"shadow arms are supported for {', '.join(sorted(SHADOW_STAGES))} only, not {v!r}")
+        return v
+
+    def policy_for(self, base: StagePolicy) -> StagePolicy:
+        """The stage's policy with this arm's harness, model and (optional) skills/limits."""
+        update: dict[str, Any] = {"harness": self.harness, "model": self.model}
+        for f in ("skills", "wall_clock_s", "usd_budget"):
+            if getattr(self, f) is not None:
+                update[f] = getattr(self, f)
+        return base.model_copy(update=update)
+
+
 class RepoOverride(BaseModel):
     enabled: bool = True
     stages: dict[str, StagePolicy] = Field(default_factory=dict)
@@ -126,8 +160,16 @@ class Policy(BaseModel):
     scan_drafts: bool = True
     scan_forks: bool = False
     experiments: list[Experiment] = Field(default_factory=list)
+    shadows: list[ShadowArm] = Field(default_factory=list)
     repos: dict[str, RepoOverride] = Field(default_factory=dict)  # key: owner/name (glob allowed)
     dynamic: DynamicPolicy = Field(default_factory=DynamicPolicy)
+
+    @model_validator(mode="after")
+    def _unique_shadows(self) -> "Policy":
+        keys = [(a.stage, a.name) for a in self.shadows]
+        if len(keys) != len(set(keys)):
+            raise ValueError("shadow arm names must be unique per stage")
+        return self
 
     def stage(self, stage: str, repo: str | None = None) -> StagePolicy:
         base = self.defaults[stage]

@@ -26,8 +26,9 @@ def spec_for(tmp_path, mode="valid", **limits) -> WorkbenchSpec:
 
 def test_get_runner():
     assert isinstance(get_runner("local"), LocalRunner)
+    assert type(get_runner("k8s")).__name__ == "K8sRunner"
     with pytest.raises(ValueError):
-        get_runner("k8s")
+        get_runner("nomad")
 
 
 def test_host_task_rewrites_container_paths(tmp_path):

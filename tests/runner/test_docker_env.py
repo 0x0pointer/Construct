@@ -236,7 +236,7 @@ def test_healthy_services(client, work):
     info = _runner(client).create_env(42, "h1", _req(work))
     assert info.services == {"db": "healthy", "cache": "healthy"}
     db = _by_name(client, "prsec-svc-42-h1-db")
-    db.exec_run.assert_called_with(["pg_isready", "-U", "app", "-d", "app"])
+    db.exec_run.assert_called_with(["pg_isready", "-h", "127.0.0.1", "-U", "app", "-d", "app"])
 
 
 # ------------------------------------------------------------------ workbench / replay in an env

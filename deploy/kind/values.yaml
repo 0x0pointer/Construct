@@ -1,0 +1,21 @@
+# Local kind overrides for deploy/helm/construct (make kind-deploy). The Spark gateway config and
+# the Spark's address come from the make target (--set-file / --set).
+storage:
+  size: 50Gi
+  volume:
+    hostPath: {path: /var/lib/prsec, type: Directory}
+
+postgres:
+  storage: 2Gi
+
+worker:
+  concurrency: 2
+  debounceS: 0
+  reconcileIntervalS: 86400   # no GitHub App here: eval scans are queued by prsec-eval
+
+launcher:
+  workbench:
+    memory: 3Gi
+    cpus: "2"
+
+skillsVersion: local

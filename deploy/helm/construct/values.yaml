@@ -1,0 +1,97 @@
+# Construct on Kubernetes. Install into the control namespace (`prsec`); the chart also creates the
+# scans namespace where the launcher (K8sRunner) starts every workbench, sink and catalog-service pod.
+#
+#   helm upgrade --install construct deploy/helm/construct -n prsec --create-namespace \
+#     --set-file policy=prsec/policy/policy.yaml \
+#     --set-file gateway.config=deploy/compose/litellm/config.yaml \
+#     --set-file gateway.hooks=deploy/compose/litellm/prsec_hooks.py
+#
+# deploy/kind/values.yaml holds the local kind overrides (`make kind-deploy`).
+
+images:
+  prsec: prsec/prsec:latest              # api, worker, launcher, dashboard, egress proxy, and the env sink
+  workbench: prsec/workbench-base:latest  # must equal the policy's workbench_image
+  gateway: ghcr.io/berriai/litellm:v1.105.5@sha256:f6f3e4b4ba4a50912740dd33ec332269428d0ced71920f617a96dd59282b378e
+  postgres: postgres:16.15-alpine
+  pullPolicy: IfNotPresent
+
+scansNamespace: prsec-scans
+
+# AppSec policy (policy.yaml content). Pass the file: --set-file policy=...
+policy: ""
+
+# One storage backend, two PersistentVolumes on it (a claim belongs to one namespace): the control
+# namespace's claim (worker, launcher, api) and the scans namespace's claim (workbench pods by subPath).
+# Both mount at dataRoot. `volume` is the PV source: hostPath (kind, single node), nfs, or csi (EFS,
+# Filestore, Azure Files). Its root needs work/, skills/<ver> + skills/current and harness/<name>/current.
+storage:
+  claimName: prsec-data
+  dataRoot: /var/lib/prsec
+  size: 100Gi
+  storageClassName: prsec-data-static
+  volume:
+    hostPath: {path: /var/lib/prsec, type: Directory}
+
+secrets:
+  # Empty values are generated once and kept across upgrades.
+  dbPassword: ""
+  launcherToken: ""
+  gatewayKey: ""        # LiteLLM master key; the worker passes it through as the dev key (no key DB)
+  adminToken: ""        # enables POST /scans on the api (and prsec-eval through it)
+  webhookSecret: ""
+  anthropicApiKey: ""   # optional, for the *-anthropic gateway aliases
+  openaiApiKey: ""
+
+github:
+  appId: ""
+  privateKey: ""        # --set-file github.privateKey=...
+
+postgres:
+  enabled: true         # false: set externalDatabaseUrl (managed Postgres)
+  storage: 10Gi
+  storageClassName: ""  # default class
+externalDatabaseUrl: ""
+
+gateway:
+  config: ""            # LiteLLM config.yaml content (--set-file)
+  hooks: ""             # prsec_hooks.py content (--set-file), referenced by the config's callbacks
+  env: {}               # e.g. SPARK_API_BASE
+  hostAliases: []       # e.g. [{ip: 192.0.2.10, hostnames: [spark]}]
+
+egressProxy:
+  allow: pypi.org,files.pythonhosted.org,registry.npmjs.org,registry.yarnpkg.com,proxy.golang.org,sum.golang.org,repo1.maven.org,repo.maven.apache.org,plugins.gradle.org,services.gradle.org
+
+worker:
+  concurrency: 2
+  debounceS: 120
+  reconcileIntervalS: 900
+
+launcher:
+  runtimeClassName: ""  # gvisor / kata where the provider has it
+  workbench:
+    memory: 4Gi
+    cpus: "2"
+    tmpSize: 1Gi
+  service:
+    memory: 1Gi
+    cpus: "1"
+
+skillsVersion: dev     # fallback only: skills/current/VERSION on the volume wins
+
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+
+# Admission policy on the scans namespace: only these images may run there (plus images.workbench and
+# images.prsec). Keep in sync with prsec/dynamic/catalog.yaml (tests/deploy/test_helm.py checks it).
+admission:
+  enabled: true
+  extraImages: []
+  catalogImages:
+    - postgres:16.15-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+    - mysql:8.4@sha256:76f0358884cb92d9a086d24e5671c38048d3fef40f2588703d73eb55392d6b69
+    - redis:7.4-alpine@sha256:6ba19c50b56777f5c11c58eff8ddb69d0d5f27ba131cffb63f180ccfd43c66af
+    - mongo:7.0@sha256:ff35930c973ac3b35e0a8cd41b565f7ed2384237e3c498186fdc5a3795cfde25
+    - axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
+    - ghcr.io/navikt/mock-oauth2-server:2.3.0@sha256:dfcc1b60abe7414d2754767fceaec62a5dc79a10e543804069f69287b277e314

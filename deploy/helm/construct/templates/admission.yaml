@@ -1,0 +1,43 @@
+{{- if .Values.admission.enabled }}
+# The launcher's fixed recipe, enforced by the API server for the scans namespace: allowlisted images
+# only, no host access, no privileged containers, no service-account token, only the data volume.
+{{- $images := concat (list .Values.images.workbench .Values.images.prsec) .Values.admission.catalogImages .Values.admission.extraImages }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: construct-scan-pods
+  labels: {app.kubernetes.io/part-of: construct}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - {apiGroups: [""], apiVersions: [v1], operations: [CREATE, UPDATE], resources: [pods]}
+  variables:
+    - name: images
+      expression: "{{ printf "[%s]" (include "construct.quotedList" $images) }}"
+  validations:
+    - expression: "object.spec.containers.all(c, c.image in variables.images)"
+      message: "image not allowed in the scans namespace"
+    - expression: "!has(object.spec.initContainers) && !has(object.spec.ephemeralContainers)"
+      message: "no init or ephemeral containers"
+    - expression: "has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false"
+      message: "scan pods get no service-account token"
+    - expression: "!(has(object.spec.hostNetwork) && object.spec.hostNetwork) && !(has(object.spec.hostPID) && object.spec.hostPID) && !(has(object.spec.hostIPC) && object.spec.hostIPC)"
+      message: "no host namespaces"
+    - expression: "!has(object.spec.volumes) || object.spec.volumes.all(v, has(v.emptyDir) || has(v.configMap) || (has(v.persistentVolumeClaim) && v.persistentVolumeClaim.claimName == '{{ .Values.storage.claimName }}'))"
+      message: "only emptyDir, configMap and the data volume"
+    - expression: "object.spec.containers.all(c, !has(c.securityContext) || !has(c.securityContext.privileged) || !c.securityContext.privileged)"
+      message: "no privileged containers"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: construct-scan-pods
+  labels: {app.kubernetes.io/part-of: construct}
+spec:
+  policyName: construct-scan-pods
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels: {kubernetes.io/metadata.name: {{ .Values.scansNamespace }}}
+{{- end }}

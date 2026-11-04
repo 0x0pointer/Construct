@@ -25,6 +25,20 @@ log = logging.getLogger(__name__)
 DEV_KEY_ENV = "PRSEC_GATEWAY_DEV_KEY"
 _TIMEOUT = httpx.Timeout(15.0)
 
+# The only gateway routes a minted key may call (LiteLLM `allowed_routes`: exact or "/"-prefix match).
+# Without it a key could use LiteLLM's raw provider pass-throughs (/anthropic/*, /openai_passthrough/*,
+# /vertex_ai/*, ...): the provider's full API with the gateway's credentials, past the alias allowlist,
+# and with provider-run tools (web fetch/search) that would carry PR code out past network isolation.
+ALLOWED_ROUTES = (
+    "/v1/chat/completions", "/chat/completions",  # raw, OpenCode, pi
+    "/v1/messages",                               # Claude Code (and /v1/messages/count_tokens)
+    "/v1/responses", "/responses",                # Codex
+    "/v1/models", "/models",                      # harness model discovery
+    "/key/info",                                  # prsec-stage reads its own spend (self_spend)
+    "/jev/v1/decide",                             # jev-decide: JEV-27B System 1 (pass-through route)
+    "/openai-decisions/v1/decisions",             # openai-decide: OpenAI Decisions API (pass-through route)
+)
+
 
 class GatewayError(RuntimeError):
     pass
@@ -58,6 +72,7 @@ def mint_key(scan_id: int, usd_budget: float, ttl_s: int, models: list[str], tas
         "max_budget": round(float(usd_budget), 4),
         "duration": f"{int(ttl_s)}s",
         "models": sorted(set(models)),
+        "allowed_routes": list(ALLOWED_ROUTES),
         "metadata": metadata,
     }
     try:

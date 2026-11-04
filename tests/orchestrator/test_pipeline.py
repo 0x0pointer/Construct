@@ -161,7 +161,8 @@ def env(tmp_path, monkeypatch):
     state = {"minted": [], "revoked": []}
     monkeypatch.setattr(settings(), "work_root", tmp_path / "work")
     monkeypatch.setattr(settings(), "runner", "fake")
-    policy = load_policy().model_copy(update={"experiments": [], "skip_audit_sample": 0.0})
+    # Optional arms (experiments, shadows) have their own tests; the core pipeline runs without them.
+    policy = load_policy().model_copy(update={"experiments": [], "shadows": [], "skip_audit_sample": 0.0})
     monkeypatch.setattr(pipeline, "load_policy", lambda: policy)
     monkeypatch.setattr(pipeline.gateway, "mint_key", lambda *a: state["minted"].append(a) or "sk-scan")
     monkeypatch.setattr(pipeline.gateway, "revoke_key", lambda k: state["revoked"].append(k))

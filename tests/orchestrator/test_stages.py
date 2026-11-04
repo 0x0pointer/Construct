@@ -7,7 +7,7 @@ from prsec.stages.outputs import schema_for
 
 
 def _policy(**kw) -> Policy:
-    p = load_policy()
+    p = load_policy().model_copy(update={"shadows": []})  # shadow arms: tests/orchestrator/test_shadows.py
     return p.model_copy(update=kw)
 
 

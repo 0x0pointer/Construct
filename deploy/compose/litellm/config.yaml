@@ -92,3 +92,12 @@ general_settings:
   disable_spend_logs: false                   # spend per virtual key = per-scan cost tracking
   ui_access_mode: admin_only
   proxy_batch_write_at: 10
+  # Decision APIs for the rules shadow arm (prsec/adapters/harness/decide.py), key-authenticated like every
+  # model route. Minted keys may call these and no raw provider API (prsec.gateway.ALLOWED_ROUTES).
+  pass_through_endpoints:
+    - path: /openai-decisions/v1/decisions
+      target: https://api.openai.com/v1/decisions
+      headers: {Authorization: "Bearer os.environ/OPENAI_API_KEY"}
+      auth: true
+      methods: [POST]
+      timeout: 60

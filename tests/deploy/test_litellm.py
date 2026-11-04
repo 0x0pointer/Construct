@@ -63,6 +63,22 @@ def test_general_settings(cfg: dict) -> None:
     assert ls["callbacks"] == "prsec_hooks.strip_server_tools"
 
 
+@pytest.mark.parametrize("name", ["config.yaml", "config.spark.yaml"])
+def test_pass_through_routes_need_a_key_and_are_allowlisted(name: str) -> None:
+    """Every custom pass-through requires a gateway key, and minted keys may call exactly these (plus the
+    model routes): LiteLLM's raw provider pass-throughs (/anthropic/*, /openai_passthrough/*) stay closed."""
+    from prsec.gateway import ALLOWED_ROUTES
+
+    gs = yaml.safe_load((LITELLM_DIR / name).read_text())["general_settings"]
+    routes = gs.get("pass_through_endpoints") or []
+    assert routes
+    for r in routes:
+        assert r["auth"] is True, r["path"]
+        assert r["methods"] == ["POST"], r["path"]
+        assert r["path"] in ALLOWED_ROUTES, r["path"]
+    assert "/openai-decisions/v1/decisions" in {r["path"] for r in routes}
+
+
 def test_strip_anthropic_server_tools(hooks) -> None:
     data = {
         "tools": [
