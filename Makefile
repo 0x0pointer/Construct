@@ -182,9 +182,12 @@ kind-data: ## prepare the data volume (work/kind): work dir, skills as version '
 kind-load: images ## load the prsec images into the kind node
 	kind load docker-image $(PRSEC_IMAGE) $(WORKBENCH_IMAGE) --name $(KIND_CLUSTER)
 
-kind-deploy: kind-up kind-data kind-load ## deploy the whole stack on kind (gateway -> the Spark)
+kind-deploy: kind-up kind-data kind-load ## deploy the whole stack on kind (gateway -> the Spark; provider keys from .env)
 	@spark_ip="$$($(RESOLVE_SPARK))"; echo "Spark $(SPARK_HOST) -> $$spark_ip"; \
+	oa="$${OPENAI_API_KEY:-$$(grep -E '^OPENAI_API_KEY=' $(ENV_FILE) 2>/dev/null | tail -1 | cut -d= -f2-)}"; \
+	an="$${ANTHROPIC_API_KEY:-$$(grep -E '^ANTHROPIC_API_KEY=' $(ENV_FILE) 2>/dev/null | tail -1 | cut -d= -f2-)}"; \
 	$(HELM) upgrade --install construct deploy/helm/construct -n prsec --create-namespace \
+	  $${oa:+--set-string secrets.openaiApiKey=$$oa} $${an:+--set-string secrets.anthropicApiKey=$$an} \
 	  -f deploy/kind/values.yaml \
 	  --set-file policy=policy-spark.yaml \
 	  --set-file gateway.config=deploy/compose/litellm/config.spark.yaml \

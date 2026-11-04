@@ -16,6 +16,16 @@ app.kubernetes.io/instance: {{ .root.Release.Name }}
 {{- end -}}
 {{- end }}
 
+{{/* A provider key: the given one, else the one already in the cluster (an upgrade without it keeps it), else "". */}}
+{{- define "construct.keepSecret" -}}
+{{- $given := index .root.Values.secrets .key -}}
+{{- if $given -}}{{ $given }}
+{{- else -}}
+{{- $existing := lookup "v1" "Secret" .root.Release.Namespace "construct-secrets" -}}
+{{- if and $existing (index $existing.data .key) -}}{{ index $existing.data .key | b64dec }}{{- end -}}
+{{- end -}}
+{{- end }}
+
 {{/* Pod/container hardening for the control-plane services (the prsec image runs as uid 10001). */}}
 {{- define "construct.podSecurity" -}}
 runAsNonRoot: true

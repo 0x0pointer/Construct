@@ -137,3 +137,14 @@ def test_kind_values_use_the_locally_built_images():
     expr = get(out, "ValidatingAdmissionPolicy", "construct-scan-pods")["spec"]["variables"][0]["expression"]
     assert "'prsec/workbench-base:latest'" in expr
     assert pod(out, "worker")["containers"][0]["image"] == "prsec/prsec:latest"
+
+
+def test_provider_keys_and_gateway_rollout():
+    out = render("--set-string", "secrets.openaiApiKey=sk-test")
+    data = get(out, "Secret", "construct-secrets")["stringData"]
+    assert data["openaiApiKey"] == "sk-test"
+    assert data["anthropicApiKey"] == ""  # unset and no cluster to look up: empty, never generated
+    annotations = get(out, "Deployment", "llm-gateway")["spec"]["template"]["metadata"]["annotations"]
+    assert "checksum/secrets" in annotations
+    other = get(render(), "Deployment", "llm-gateway")["spec"]["template"]["metadata"]["annotations"]
+    assert other["checksum/secrets"] != annotations["checksum/secrets"]  # a new key rolls the gateway

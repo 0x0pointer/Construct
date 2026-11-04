@@ -76,10 +76,11 @@ shadows:
     name: jev
     harness: jev-decide   # PRSEC_DECIDE_SCAN_THRESHOLD: scan when P(security-relevant) >= 0.10
     model: rules-jev
-  # The cloud deployment's arm (prsec/policy/policy.yaml); needs OPENAI_API_KEY for the local gateway.
-  # - stage: rules
-  #   name: openai-decisions
-  #   harness: openai-decide
-  #   model: gpt-6-luna
+  # The cloud deployment's arm (prsec/policy/policy.yaml). Needs OPENAI_API_KEY in the gateway; without
+  # it the arm records "no decision" and the scan is unaffected.
+  - stage: rules
+    name: openai-decisions
+    harness: openai-decide
+    model: gpt-6-luna
 
 repos: {}

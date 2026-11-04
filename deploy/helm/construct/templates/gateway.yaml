@@ -12,6 +12,8 @@ spec:
       labels: {{- include "construct.labels" (dict "name" "llm-gateway" "root" .) | nindent 8 }}
       annotations:
         checksum/config: {{ printf "%s%s" .Values.gateway.config .Values.gateway.hooks | sha256sum }}
+        # Provider keys come from the Secret as env: roll the gateway when they change.
+        checksum/secrets: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
     spec:
       automountServiceAccountToken: false
       {{- with .Values.gateway.hostAliases }}
