@@ -1,0 +1,28 @@
+# One backing store, two PersistentVolumes (a PVC belongs to one namespace): control and scans.
+{{- range $ns := list .Release.Namespace .Values.scansNamespace }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ printf "%s-%s" $.Values.storage.claimName $ns }}
+  labels: {app.kubernetes.io/part-of: construct}
+spec:
+  capacity: {storage: {{ $.Values.storage.size }}}
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ $.Values.storage.storageClassName }}
+  claimRef: {namespace: {{ $ns }}, name: {{ $.Values.storage.claimName }}}
+  {{- toYaml $.Values.storage.volume | nindent 2 }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $.Values.storage.claimName }}
+  namespace: {{ $ns }}
+  labels: {app.kubernetes.io/part-of: construct}
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: {{ $.Values.storage.storageClassName }}
+  volumeName: {{ printf "%s-%s" $.Values.storage.claimName $ns }}
+  resources: {requests: {storage: {{ $.Values.storage.size }}}}
+{{- end }}

@@ -51,6 +51,8 @@ startable with nothing but its own files and the package registry: a `requiremen
 `package.json`, a sqlite or catalog-service schema, and a seed script that creates the users the
 PoC needs. The reference PoC must fire on `repo/` and must not fire on the base (reverse-applied
 diff); the reference is what an eval run compares a failed agent attempt against.
+`make test-dynamic` checks exactly that for every dynamic case, in real Docker environments and
+without an agent (`tests/dynamic/test_reference_replays.py`).
 
 ## Adding a case
 
@@ -75,3 +77,4 @@ diff); the reference is what an eval run compares a failed agent attempt against
 | [css-only](cases/css-only/expected.json) | `skip` |
 | [idor-two-users](cases/idor-two-users/expected.json) | `idor` at `app.py` 44-46; reproduced by alice reading bob's order (two seeded users) |
 | [negative-quantity](cases/negative-quantity/expected.json) | `value-tampering` at `app.py` 57-61; reproduced by a `json_compare` on a negative cart total |
+| [ssrf-webhook-test](cases/ssrf-webhook-test/expected.json) | `ssrf` at `app.py` 70-72; reproduced by a `canary_hit`: the server pings the canary URL registered as a webhook. Runs on the seeded `postgres` catalog service |

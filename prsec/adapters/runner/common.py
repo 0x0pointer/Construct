@@ -27,6 +27,30 @@ TAIL_LINE_MAX = 256 * 1024  # a partial line longer than this is dropped
 GRACE_S = 60
 
 
+def harness_mount(harness: str) -> str:
+    """Where a harness volume is mounted in the workbench (PRSEC_HARNESS_HOME)."""
+    return f"/opt/harness/{harness}/current"
+
+
+def workbench_env(spec: Any) -> dict[str, str]:
+    """The workbench container's environment (every runner): the spec's env (gateway url/key etc.), a
+    HOME/XDG tree under the task's out dir, the private /tmp, and the harness home when one is mounted."""
+    t = spec.task
+    home = f"{t.out_dir.rstrip('/')}/.home"
+    env = {
+        **spec.env,
+        "HOME": home,
+        "XDG_CONFIG_HOME": f"{home}/.config",
+        "XDG_CACHE_HOME": f"{home}/.cache",
+        # '/tmp' is inside the container: a per-container tmpfs / emptyDir, never a shared host dir.
+        "TMPDIR": "/tmp",  # NOSONAR(S5443)
+        "PRSEC_CITE_ROOT": t.workdir,
+    }
+    if spec.harness_volume:
+        env["PRSEC_HARNESS_HOME"] = harness_mount(t.harness)
+    return env
+
+
 def write_task(task: StageTask, in_dir: Path) -> Path:
     in_dir.mkdir(parents=True, exist_ok=True)
     path = in_dir / TASK_FILE

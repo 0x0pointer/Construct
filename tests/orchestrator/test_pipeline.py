@@ -161,7 +161,8 @@ def env(tmp_path, monkeypatch):
     state = {"minted": [], "revoked": []}
     monkeypatch.setattr(settings(), "work_root", tmp_path / "work")
     monkeypatch.setattr(settings(), "runner", "fake")
-    policy = load_policy().model_copy(update={"experiments": [], "skip_audit_sample": 0.0})
+    # Optional arms (experiments, shadows) have their own tests; the core pipeline runs without them.
+    policy = load_policy().model_copy(update={"experiments": [], "shadows": [], "skip_audit_sample": 0.0})
     monkeypatch.setattr(pipeline, "load_policy", lambda: policy)
     monkeypatch.setattr(pipeline.gateway, "mint_key", lambda *a: state["minted"].append(a) or "sk-scan")
     monkeypatch.setattr(pipeline.gateway, "revoke_key", lambda k: state["revoked"].append(k))
@@ -330,6 +331,10 @@ def test_likely(env):
         assert sp.env["PRSEC_GATEWAY_KEY"] == "sk-scan"
         assert sp.network == "prsec-scan-101"
         assert "PRSEC_GATEWAY_KEY_SCOPE" not in sp.env
+        # only CLI harnesses get a harness volume; in-process ones (raw) must not ask for an unloaded one
+        expected = settings().harness_root / sp.task.harness / "current"
+        assert sp.harness_volume == (str(expected) if sp.task.harness != "raw" else None)
+    assert {sp.task.harness for sp in s["runner"].specs} >= {"raw"}  # the policy runs raw somewhere
     hyp_in = s["runner"].inputs["101-hypothesise"]
     assert json.loads(hyp_in["pr.json"])["title"] == "Add order lookup"
     assert json.loads(hyp_in["triage.json"])["decision"] == "full"

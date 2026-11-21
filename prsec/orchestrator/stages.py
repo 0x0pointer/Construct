@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from prsec import prompts
-from prsec.config import Policy, StagePolicy
+from prsec.config import Policy, ShadowArm, StagePolicy
 from prsec.models import Limits, Stage, StageTask
 from prsec.sandbox.entrypoint.contract import SCHEMA_FILE
 from prsec.stages.outputs import schema_for
@@ -28,6 +28,24 @@ def bucket(scan_id: int, key: str) -> float:
 def task_id(scan_id: int, stage: Stage | str, hyp_id: str | None = None) -> str:
     base = f"{scan_id}-{Stage(stage).value}"
     return f"{base}-{hyp_id}" if hyp_id else base
+
+
+SHADOW_MARK = "shadow"  # task ids of shadow arms: <scan>-<stage>-shadow-<arm>
+
+
+def shadow_task_id(scan_id: int, stage: Stage | str, arm: str) -> str:
+    return f"{task_id(scan_id, stage)}-{SHADOW_MARK}-{arm}"
+
+
+def is_shadow_task(tid: str) -> bool:
+    return f"-{SHADOW_MARK}-" in tid
+
+
+def shadow_arms(policy: Policy, stage: Stage | str, scan_id: int) -> list[ShadowArm]:
+    """The shadow arms that run next to `stage` on this scan (each sampled deterministically)."""
+    name = Stage(stage).value
+    return [a for a in policy.shadows
+            if a.stage == name and bucket(scan_id, f"shadow:{name}:{a.name}") < a.sample]
 
 
 def _repo_pins(policy: Policy, stage: str, repo: str | None) -> bool:
@@ -52,6 +70,18 @@ def choose(policy: Policy, stage: Stage | str, repo: str | None, scan_id: int) -
     return StageChoice(sp, None)
 
 
+def _check_harness_stage(harness: str, stage: Stage) -> None:
+    """A stage-specific adapter (Caps.stages, e.g. jev-decide) may only serve its stages."""
+    try:
+        from prsec.adapters.harness.base import get_adapter
+
+        allowed = get_adapter(harness).caps.stages
+    except ValueError:  # unknown harness: the workbench reports it
+        return
+    if allowed is not None and stage.value not in allowed:
+        raise ValueError(f"harness {harness!r} only serves {', '.join(sorted(allowed))}, not {stage.value}")
+
+
 def has_tools(harness: str) -> bool:
     """False for in-process adapters (raw) whose context files are inlined into the prompt."""
     try:
@@ -71,15 +101,23 @@ def build_task(
     context_files: list[str],
     prompt_ctx: dict[str, Any] | None = None,
     hyp_id: str | None = None,
+    shadow: ShadowArm | None = None,
 ) -> tuple[StageTask, StageChoice]:
+    """`shadow`: build the task of that shadow arm instead (its harness/model, its own task id)."""
     stage = Stage(stage)
-    choice = choose(policy, stage, repo, scan_id)
+    if shadow is not None:
+        choice = StageChoice(shadow.policy_for(policy.stage(stage.value, repo)), f"{stage.value}:{SHADOW_MARK}:{shadow.name}")
+        tid = shadow_task_id(scan_id, stage, shadow.name)
+    else:
+        choice = choose(policy, stage, repo, scan_id)
+        tid = task_id(scan_id, stage, hyp_id)
     sp = choice.policy
+    _check_harness_stage(sp.harness, stage)
     files = [f for f in context_files if f != SCHEMA_FILE] + [SCHEMA_FILE]
     task = StageTask(
         scan_id=scan_id,
         stage=stage,
-        task_id=task_id(scan_id, stage, hyp_id),
+        task_id=tid,
         harness=sp.harness,
         model_alias=sp.model,
         prompt_md="",
@@ -137,6 +175,13 @@ def scan_budget(policy: Policy, repo: str, n_hypotheses: int) -> tuple[float, in
         usd += sp.usd_budget * mult
         wall += sp.wall_clock_s * mult
         models.add(sp.model)
+    for arm in policy.shadows:  # upper bound: as if every arm were sampled; arms run next to their stage
+        if arm.stage in policy.defaults:
+            base = policy.stage(arm.stage, repo)
+            sp = arm.policy_for(base)
+            usd += sp.usd_budget
+            wall += max(0, sp.wall_clock_s - base.wall_clock_s)
+            models.add(sp.model)
     if n_dyn and "dynamic" in policy.defaults:
         from prsec.dynamic.envspec import MAX_HEALTH_S, MAX_INSTALL_S
 

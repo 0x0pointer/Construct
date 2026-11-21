@@ -1,0 +1,37 @@
+# tests/k8s run inside the cluster (make do-test-k8s): the launcher's ServiceAccount (same rights as
+# the in-cluster launcher), the shared volume at the same path, K8sRunner with in-cluster config.
+apiVersion: v1
+kind: Pod
+metadata: {name: construct-k8s-tests, labels: {app.kubernetes.io/part-of: construct}}
+spec:
+  serviceAccountName: construct-launcher
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+  containers:
+    - name: tests
+      image: IMAGE_REPO:IMAGE_TAG
+      command: [sleep, "7200"]
+      env:
+        - {name: PRSEC_K8S_IN_CLUSTER, value: "1"}
+        - {name: PRSEC_K8S_DATA_ROOT, value: /var/lib/prsec}
+        - {name: PRSEC_TEST_IMAGE, value: IMAGE_REPO:IMAGE_TAG}
+        - {name: PRSEC_TEST_WORKBENCH_IMAGE, value: WORKBENCH_REPO:IMAGE_TAG}
+        - {name: PRSEC_K8S_PULL_POLICY, value: IfNotPresent}
+        - {name: HOME, value: /tmp}
+        - {name: PYTHONPATH, value: /tmp/py}
+      securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+      volumeMounts:
+        - {name: data, mountPath: /var/lib/prsec}
+        - {name: tmp, mountPath: /tmp}
+        - {name: kube-api-access, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}
+      resources: {requests: {cpu: 100m, memory: 256Mi, ephemeral-storage: 256Mi}, limits: {memory: 1Gi, ephemeral-storage: 2Gi}}
+  volumes:
+    - {name: data, persistentVolumeClaim: {claimName: prsec-data}}
+    - {name: tmp, emptyDir: {sizeLimit: 1Gi}}
+    - name: kube-api-access
+      projected:
+        sources:
+          - serviceAccountToken: {path: token, expirationSeconds: 3600}
+          - configMap: {name: kube-root-ca.crt, items: [{key: ca.crt, path: ca.crt}]}
+          - downwardAPI: {items: [{path: namespace, fieldRef: {fieldPath: metadata.namespace}}]}

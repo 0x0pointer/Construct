@@ -1,0 +1,78 @@
+# OpenAI-only policy for the DigitalOcean end-to-end deployment (make do-deploy), with the gateway
+# config deploy/compose/litellm/config.openai.yaml. Same stages and budgets as prsec/policy/policy.yaml;
+# opencode drives the agentic stages (the harness validated end to end), raw the one-shot ones.
+#
+# make do-deploy replaces workbench_image with the image it pushed (the chart's admission policy only
+# admits that exact image in the scans namespace).
+version: "1"
+workbench_image: WORKBENCH_IMAGE
+max_hypotheses: 8
+static_verify_min_severity: medium
+skip_audit_sample: 0.0
+scan_drafts: true
+scan_forks: false
+
+defaults:
+  rules:
+    harness: raw
+    model: agent-small
+    skills: [rules]
+    wall_clock_s: 120
+    usd_budget: 0.05
+  triage:
+    harness: raw
+    model: agent-small
+    skills: [triage]
+    wall_clock_s: 180
+    usd_budget: 0.25
+  hypothesise:
+    harness: opencode
+    model: agent-large
+    skills: [taint-analysis, business-logic, org]
+    wall_clock_s: 1200
+    usd_budget: 3.0
+  static_verify:
+    harness: opencode
+    model: agent-large
+    skills: [static-validation, org]
+    wall_clock_s: 900
+    usd_budget: 1.5
+  skeptic:
+    harness: raw
+    model: judge
+    skills: []
+    wall_clock_s: 180
+    usd_budget: 0.3
+  env:
+    harness: opencode
+    model: agent-large
+    skills: [env-building, mocking]
+    wall_clock_s: 600
+    usd_budget: 1.0
+  dynamic:
+    harness: opencode
+    model: agent-large
+    skills: [env-building, mocking, poc-authoring, oracles, org]
+    wall_clock_s: 1800
+    usd_budget: 4.0
+
+dynamic:
+  # On to see whether OpenAI writes the exploit PoCs now; a refusal shows up as a dynamic outcome
+  # (blocked / not_reproduced) and the finding stays `likely`.
+  enabled: true
+  max_hypotheses: 3
+  min_severity: medium
+  replay_runs: 2
+  base_replay: true
+  replay_timeout_s: 900
+  concurrency: 2
+
+experiments: []
+
+shadows:
+  - stage: rules
+    name: openai-decisions
+    harness: openai-decide
+    model: gpt-6-luna
+
+repos: {}

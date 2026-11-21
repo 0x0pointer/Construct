@@ -1,0 +1,10 @@
+{
+  "repo": "evals/hooks-flask",
+  "number": 106,
+  "title": "Add a test ping for webhooks",
+  "body": "Customers register webhook URLs but cannot check they work until a real event fires. Adds POST /api/webhooks/<id>/test, which sends a ping event to the stored URL and reports whether it was delivered.",
+  "base_ref": "main",
+  "head_ref": "feature/webhook-test-ping",
+  "commits": [{"sha": "0000000000000000000000000000000000000106", "message": "Add POST /api/webhooks/<id>/test"}],
+  "changed_files": ["app.py"]
+}

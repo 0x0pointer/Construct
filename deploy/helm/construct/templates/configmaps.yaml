@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: construct-policy
+  labels: {app.kubernetes.io/part-of: construct}
+data:
+  policy.yaml: {{ required "pass the AppSec policy: --set-file policy=prsec/policy/policy.yaml" .Values.policy | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: construct-gateway
+  labels: {app.kubernetes.io/part-of: construct}
+data:
+  config.yaml: {{ required "pass the LiteLLM config: --set-file gateway.config=..." .Values.gateway.config | quote }}
+  prsec_hooks.py: {{ required "pass the gateway hooks: --set-file gateway.hooks=deploy/compose/litellm/prsec_hooks.py" .Values.gateway.hooks | quote }}

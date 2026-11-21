@@ -1,0 +1,7 @@
+Construct is installed in {{ .Release.Namespace }}; scan pods run in {{ .Values.scansNamespace }}.
+
+  kubectl -n {{ .Release.Namespace }} get pods
+  kubectl -n {{ .Release.Namespace }} port-forward svc/dashboard 8081   # http://127.0.0.1:8081
+  kubectl -n {{ .Release.Namespace }} exec deploy/worker -- prsec-eval run --tag dynamic
+
+The data volume must hold skills/current and harness/<name>/current (see docs/design/k8s.md).

@@ -17,16 +17,39 @@ cannot do this (checked against LiteLLM v1.105.5).
 
 Loaded via `litellm_settings.callbacks: prsec_hooks.strip_server_tools` (module path
 is resolved relative to config.yaml).
+
+Decision relay (`litellm_settings.custom_provider_map: [{provider: prsec-decide, custom_handler:
+prsec_hooks.decide_relay}]`): the rules shadow arms' decision models (JEV-27B System 1's POST
+/v1/decide, the OpenAI Decisions API's POST /v1/decisions) are not chat models. Each is an ordinary
+model alias (`model: prsec-decide/<provider model>`, `api_base: <the endpoint URL>`), so a minted key
+reaches one only when the alias is in its `models` allowlist, like any model; a key-authenticated
+pass-through route would instead need LiteLLM Enterprise's `allowed_passthrough_routes` on the key.
+The decide harness (prsec/adapters/harness/decide.py) sends the provider's JSON request body as the
+one user message; the relay posts it to the configured endpoint (never one the caller names), with
+the alias's own model, and returns the provider's JSON as the message content.
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, NoReturn
 
+import httpx
+
 try:  # the module is unit-tested without litellm installed
     from litellm.integrations.custom_logger import CustomLogger
+    from litellm.llms.custom_llm import CustomLLM, CustomLLMError
+    from litellm.types.utils import Usage
 except ImportError:  # pragma: no cover - exercised only outside the proxy image
     CustomLogger = object  # type: ignore[misc,assignment]
+    CustomLLM = object  # type: ignore[misc,assignment]
+    Usage = None  # type: ignore[assignment,misc]
+
+    class CustomLLMError(Exception):  # type: ignore[no-redef]
+        def __init__(self, status_code: int, message: str) -> None:
+            super().__init__(message)
+            self.status_code = status_code
+            self.message = message
 
 log = logging.getLogger("prsec.gateway")
 
@@ -152,3 +175,91 @@ class StripServerTools(CustomLogger):  # type: ignore[misc,valid-type]
 
 
 strip_server_tools = StripServerTools()
+
+
+# ------------------------------------------------------------------ decision relay
+
+DECIDE_MAX_BODY_CHARS = 1 << 20  # the harness truncates its state to 60k chars; anything near 1 MiB is not it
+DECIDE_TIMEOUT_S = 60.0
+NO_KEY = ("", "none")  # api_key "none" (a self-hosted endpoint): send no Authorization header
+
+
+def decide_request(messages: Any, model: str) -> dict[str, Any]:
+    """The provider request body carried by the one user message; a body naming a `model` gets the alias's."""
+    if not isinstance(messages, list) or len(messages) != 1:
+        raise CustomLLMError(status_code=400, message="prsec-decide takes exactly one message: the JSON request body")
+    msg = messages[0]
+    content = msg.get("content") if isinstance(msg, dict) and msg.get("role") == "user" else None
+    if not isinstance(content, str):
+        raise CustomLLMError(status_code=400, message="prsec-decide: the message must be a user message with text content")
+    if len(content) > DECIDE_MAX_BODY_CHARS:
+        raise CustomLLMError(status_code=413, message="prsec-decide: request body too large")
+    try:
+        body = json.loads(content)
+    except ValueError:
+        raise CustomLLMError(status_code=400, message="prsec-decide: the message content is not JSON") from None
+    if not isinstance(body, dict):
+        raise CustomLLMError(status_code=400, message="prsec-decide: the request body must be a JSON object")
+    if "model" in body:
+        body["model"] = model
+    return body
+
+
+def _headers(api_key: Any) -> dict[str, str]:
+    key = api_key if isinstance(api_key, str) else ""
+    return {} if key.strip().lower() in NO_KEY else {"Authorization": f"Bearer {key}"}
+
+
+def _timeout(timeout: Any) -> httpx.Timeout:
+    if isinstance(timeout, httpx.Timeout):
+        return timeout
+    seconds = float(timeout) if isinstance(timeout, (int, float)) and timeout > 0 else DECIDE_TIMEOUT_S
+    return httpx.Timeout(seconds, connect=15.0)
+
+
+def _endpoint(api_base: Any) -> str:
+    if not isinstance(api_base, str) or not api_base.startswith(("http://", "https://")):
+        raise CustomLLMError(status_code=500, message="prsec-decide: the model's api_base must be the endpoint URL")
+    return api_base
+
+
+def decide_response(model_response: Any, model: str, resp: httpx.Response) -> Any:
+    """Fill LiteLLM's response object: the provider's JSON as the content, its token counts as usage."""
+    if resp.status_code >= 400:
+        raise CustomLLMError(status_code=resp.status_code, message=f"decision endpoint HTTP {resp.status_code}: {resp.text[:500]}")
+    try:
+        data = resp.json()
+    except ValueError:
+        raise CustomLLMError(status_code=502, message="decision endpoint returned no JSON") from None
+    model_response.choices[0].message.content = json.dumps(data)
+    model_response.model = model
+    u = data.get("usage") if isinstance(data, dict) else None
+    u = u if isinstance(u, dict) else {}
+    tokens_in = int(u.get("prompt_tokens") or u.get("input_tokens") or 0)
+    tokens_out = int(u.get("completion_tokens") or u.get("output_tokens") or 0)
+    if Usage is not None:
+        model_response.usage = Usage(prompt_tokens=tokens_in, completion_tokens=tokens_out, total_tokens=tokens_in + tokens_out)
+    return model_response
+
+
+class DecideRelay(CustomLLM):  # type: ignore[misc,valid-type]
+    """LiteLLM custom provider `prsec-decide` (see the module docstring). LiteLLM calls the handlers with
+    keyword arguments only (api_key, model_response, timeout, headers, ...); caller headers are dropped."""
+
+    transport: httpx.BaseTransport | None = None  # tests
+    async_transport: httpx.AsyncBaseTransport | None = None
+
+    def completion(self, model: str, messages: list, api_base: str, **kwargs: Any) -> Any:
+        body = decide_request(messages, model)
+        with httpx.Client(timeout=_timeout(kwargs.get("timeout")), transport=self.transport) as client:
+            resp = client.post(_endpoint(api_base), json=body, headers=_headers(kwargs.get("api_key")))
+        return decide_response(kwargs["model_response"], model, resp)
+
+    async def acompletion(self, model: str, messages: list, api_base: str, **kwargs: Any) -> Any:
+        body = decide_request(messages, model)
+        async with httpx.AsyncClient(timeout=_timeout(kwargs.get("timeout")), transport=self.async_transport) as client:
+            resp = await client.post(_endpoint(api_base), json=body, headers=_headers(kwargs.get("api_key")))
+        return decide_response(kwargs["model_response"], model, resp)
+
+
+decide_relay = DecideRelay()

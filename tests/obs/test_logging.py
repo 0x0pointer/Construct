@@ -186,6 +186,25 @@ def test_quiet_third_party_stays_at_info_in_debug_scan(monkeypatch, capsys) -> N
     assert _lines(capsys) == []
 
 
+def test_pool_checkouts_hidden_at_info(monkeypatch, capsys) -> None:
+    _setup(monkeypatch, level="INFO")
+    pool = logging.getLogger("psycopg.pool")
+    pool.info("connection given by 'prsec'")
+    pool.warning("error connecting in 'prsec'")
+    assert [r["msg"] for r in _json_lines(capsys)] == ["error connecting in 'prsec'"]
+
+
+def test_pool_logger_levels_follow_the_process_level(monkeypatch) -> None:
+    pool = logging.getLogger("psycopg.pool")
+    _setup(monkeypatch, level="INFO")
+    assert pool.level == logging.WARNING  # checkouts hidden
+    assert logging.getLogger("httpx").level == logging.INFO  # other quiet loggers keep INFO
+    _setup(monkeypatch, level="DEBUG")
+    assert pool.level == logging.NOTSET  # everything shown
+    _setup(monkeypatch, level="ERROR")
+    assert pool.level == logging.ERROR
+
+
 def test_text_format_readable(monkeypatch, capsys) -> None:
     _setup(monkeypatch, fmt="text", service="launcher")
     with obslog.bind(scan_id=4, stage="hunt"):

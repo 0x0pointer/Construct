@@ -1,0 +1,71 @@
+{{- if .Values.gateway.keyDatabase.enabled }}
+# The gateway's OWN database (virtual keys, budgets, spend), separate from prsec's: the worker mints one
+# key per task through the gateway (budget, TTL, aliases, allowed_routes). Only the gateway reaches it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: llm-gateway-db
+  labels: {app.kubernetes.io/part-of: construct}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.gateway.keyDatabase.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources: {requests: {storage: {{ .Values.gateway.keyDatabase.storage }}}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-gateway-db
+  labels: {{- include "construct.labels" (dict "name" "llm-gateway-db" "root" .) | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app.kubernetes.io/name: llm-gateway-db}}
+  template:
+    metadata:
+      labels: {{- include "construct.labels" (dict "name" "llm-gateway-db" "root" .) | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      {{- include "construct.pullSecrets" . | nindent 6 }}
+      containers:
+        - name: postgres
+          image: {{ .Values.images.postgres }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          env:
+            - {name: POSTGRES_DB, value: litellm}
+            - {name: POSTGRES_USER, value: litellm}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: construct-secrets, key: gatewayDbPassword}}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+          ports: [{containerPort: 5432}]
+          readinessProbe:
+            exec: {command: [pg_isready, -h, 127.0.0.1, -U, litellm, -d, litellm]}
+            periodSeconds: 3
+          volumeMounts: [{name: data, mountPath: /var/lib/postgresql/data}]
+          resources: {requests: {memory: 128Mi, cpu: 50m, ephemeral-storage: 64Mi}, limits: {memory: 512Mi, ephemeral-storage: 1Gi}}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: llm-gateway-db}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-gateway-db
+  labels: {{- include "construct.labels" (dict "name" "llm-gateway-db" "root" .) | nindent 4 }}
+spec:
+  selector: {app.kubernetes.io/name: llm-gateway-db}
+  ports: [{port: 5432, targetPort: 5432}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: llm-gateway-db-ingress
+  labels: {app.kubernetes.io/part-of: construct}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: llm-gateway-db}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: llm-gateway}}}]
+      ports: [{protocol: TCP, port: 5432}]
+{{- end }}

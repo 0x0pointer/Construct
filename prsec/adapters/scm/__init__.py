@@ -16,6 +16,10 @@ def get_scm(name: str = "github") -> SCMAdapter:
                 from prsec.adapters.scm.github import GitHubAppSCM
 
                 _instances[name] = GitHubAppSCM()
+            elif name == "evals":  # labelled eval cases served as PRs (prsec-eval); read-only files
+                from prsec.evals.cases import CaseSCM
+
+                _instances[name] = CaseSCM()
             else:
                 raise ValueError(f"unknown SCM adapter: {name!r}")
         return _instances[name]

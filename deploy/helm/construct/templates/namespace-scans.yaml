@@ -1,0 +1,11 @@
+# Every workbench, sink and catalog-service pod runs here. Pod Security: baseline enforced (catalog
+# databases need a few capabilities), restricted audited/warned (workbenches and sinks meet it).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.scansNamespace }}
+  labels:
+    app.kubernetes.io/part-of: construct
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

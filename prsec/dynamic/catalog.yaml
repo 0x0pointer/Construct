@@ -9,7 +9,9 @@ services:
     port: 5432
     env: {POSTGRES_USER: app, POSTGRES_PASSWORD: app, POSTGRES_DB: app}
     seed_path: /docker-entrypoint-initdb.d
-    health: ["pg_isready", "-U", "app", "-d", "app"]
+    # Over TCP: during init (seed files) the entrypoint runs a temporary server on the unix socket
+    # only (listen_addresses=''), which a socket check would report as ready before seeding ends.
+    health: ["pg_isready", "-h", "127.0.0.1", "-U", "app", "-d", "app"]
     caps: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
     connection: "postgresql://app:app@{name}:5432/app"
   mysql:
@@ -38,6 +40,7 @@ services:
   mailpit:
     image: axllent/mailpit:v1.27@sha256:e22dce5b36f93c77082e204a3942fb6b283b7896e057458400a4c88344c3df68
     port: 1025
+    extra_ports: [8025]  # web API for sent mail
     env: {}
     health: ["/mailpit", "readyz"]
     caps: []

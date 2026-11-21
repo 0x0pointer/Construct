@@ -1,0 +1,19 @@
+# kind cluster for Construct (make kind-up renders this with the repo path).
+# The node's /var/lib/prsec is the Mac's work/kind: the chart's hostPath data volume, so the work
+# dirs, skills and harness volumes can be prepared and inspected from the repo.
+#
+# No default CNI: kindnet's NetworkPolicy enforcement (an alpha userspace queue) failed open under
+# load in tests/k8s (a scan pod reached the internet through a deny-all policy). make kind-up installs
+# Calico instead, which enforces policy in the dataplane like the managed clusters' CNIs. The pod
+# range stays kind's 10.244.0.0/16: Calico's default 192.168.0.0/16 would swallow LAN hosts.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: construct
+networking:
+  disableDefaultCNI: true
+  podSubnet: 10.244.0.0/16
+nodes:
+  - role: control-plane
+    extraMounts:
+      - hostPath: ${PRSEC_KIND_DATA}
+        containerPath: /var/lib/prsec

@@ -1,0 +1,12 @@
+{
+  "stack": "python",
+  "workdir": ".",
+  "install": ["python -m venv .venv", ".venv/bin/pip install -r requirements.txt"],
+  "build": [],
+  "start": ".venv/bin/flask --app app run --host 127.0.0.1 --port 5000",
+  "port": 5000,
+  "health": {"path": "/api/webhooks", "expect_status": [401], "timeout_s": 60},
+  "env": {"DATABASE_URL": "postgresql://app:app@db:5432/app"},
+  "services": [{"name": "db", "kind": "postgres", "seed": ["schema.sql", "seed.sql"]}],
+  "stubs": []
+}
