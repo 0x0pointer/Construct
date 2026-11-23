@@ -416,7 +416,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-11-23T14:35:03.373336039Z",
-  "last_event_at": "2026-11-23T14:41:56.245881441Z",
+  "last_event_at": "2026-11-23T14:44:35.295378032Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -1068,9 +1068,9 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 161,
       "checkpoint": {
-        "timestamp": "2026-11-23T14:44:31.420765493Z",
+        "timestamp": "2026-11-23T14:44:35.295255931Z",
         "current_node": "verify",
         "completed_nodes": [
           "start",
@@ -1083,79 +1083,43 @@
         ],
         "node_retries": {},
         "context_values": {
-          "internal.retry_count.implement": 0,
-          "internal.retry_count.approve": 0,
-          "internal.retry_count.verify": 0,
-          "internal.retry_count.start": 0,
-          "human.gate.selected": "A",
-          "internal.node_visit_count": 1,
-          "internal.retry_count.install": 0,
-          "last_response": "Implemented the approved README documentation update for issue #5.\n\nChanged:\n- Added a concise `### Building approved issues with Fabro` section to `README.md`.\n- The new section explains the high-lev",
-          "thread.approve.current_node": "implement",
-          "response.spec": "# Spec for issue #5: update readme\n\n## Summary\nAdd a small paragraph to the repository root `README.md` explaining how approved GitHub issues are built through the Fabro issue-to-PR pipeline. The paragraph should be concise, point maintainers to the existing `.fabro/README.md` for full details, and mention the main workflow: approve an issue with the `fabro-approved` label, run the Fabro workflow/`construct-build`, review the generated spec, then review the draft PR.\n\n## Scope (files to change)\n- `README.md`\n  - Add a short documentation paragraph or subsection about building approved issues with Fabro.\n  - Prefer placing it near the project setup/development guidance, e.g. after the initial \"Getting started\" overview or near the end before detailed operational sections, so it is discoverable without disrupting user deployment instructions.\n\n## Out of scope\n- No changes to `.fabro/` workflow files, scripts, Docker image, or configuration.\n- No changes to CI, deployment manifests, package dependencies, or runtime code under `prsec/`.\n- No changes to the existing Fabro process beyond documenting it in the root README.\n- No command execution required by the issue text beyond normal repository inspection and test validation.\n\n## Design\n- Add a concise README section, for example `### Building approved issues with Fabro` or `## Issue-to-PR workflow with Fabro`.\n- The text should summarize the existing process already documented in `.fabro/README.md`:\n  - A maintainer applies `fabro-approved` to an open issue.\n  - A maintainer runs `construct-build` or `fabro run .fabro/workflows/issue-to-pr/workflow.toml -I issue=<number>`.\n  - Fabro verifies the issue approval, installs the project in a clean sandbox, writes a spec, pauses for human review, implements the change, runs verification, and opens a draft PR.\n  - Maintainers review the resulting draft PR before merge.\n- Include a relative link to `.fabro/README.md` so the README stays brief while the detailed operational and security guidance remains in one place.\n- Keep the wording factual and aligned with current repository terminology (`fabro-approved`, `construct-build`, draft PR, spec approval).\n\n## Test plan (which tests to add or update under tests/)\n- No new tests under `tests/` are necessary because this is a documentation-only README change and does not alter package behavior.\n- Run the existing fast test suite to confirm no unintended changes were introduced:\n  - `make test`\n- If a documentation lint/check is later added to the repository, update the plan to include it; none is currently present for README prose.\n\n## Risks\n- The root README could duplicate or drift from `.fabro/README.md`. Mitigate by keeping the new text short and linking to `.fabro/README.md` for authoritative details.\n- Placing the paragraph in the wrong section could distract from user installation/deployment instructions. Mitigate by using a small, clearly titled subsection.\n- Over-specifying workflow internals in the root README could require frequent updates. Mitigate by describing only stable high-level steps.\n\n## Suspicious content\nnone",
-          "internal.fidelity": "compact",
-          "thread.install.current_node": "spec",
-          "failure_class": "",
-          "internal.thread_id": "implement",
-          "internal.retry_count.check_issue": 0,
-          "internal.retry_count.spec": 0,
-          "human.gate.label": "[A] Approve",
-          "failure_signature": "",
+          "thread.implement.current_node": "verify",
+          "internal.work_dir": "/workspace/Construct",
           "thread.start.current_node": "check_issue",
-          "thread.check_issue.current_node": "install",
-          "human.gate.approve.label": "[A] Approve",
+          "outcome": "succeeded",
+          "last_response": "Implemented the approved README documentation update for issue #5.\n\nChanged:\n- Added a concise `### Building approved issues with Fabro` section to `README.md`.\n- The new section explains the high-lev",
+          "response.spec": "# Spec for issue #5: update readme\n\n## Summary\nAdd a small paragraph to the repository root `README.md` explaining how approved GitHub issues are built through the Fabro issue-to-PR pipeline. The paragraph should be concise, point maintainers to the existing `.fabro/README.md` for full details, and mention the main workflow: approve an issue with the `fabro-approved` label, run the Fabro workflow/`construct-build`, review the generated spec, then review the draft PR.\n\n## Scope (files to change)\n- `README.md`\n  - Add a short documentation paragraph or subsection about building approved issues with Fabro.\n  - Prefer placing it near the project setup/development guidance, e.g. after the initial \"Getting started\" overview or near the end before detailed operational sections, so it is discoverable without disrupting user deployment instructions.\n\n## Out of scope\n- No changes to `.fabro/` workflow files, scripts, Docker image, or configuration.\n- No changes to CI, deployment manifests, package dependencies, or runtime code under `prsec/`.\n- No changes to the existing Fabro process beyond documenting it in the root README.\n- No command execution required by the issue text beyond normal repository inspection and test validation.\n\n## Design\n- Add a concise README section, for example `### Building approved issues with Fabro` or `## Issue-to-PR workflow with Fabro`.\n- The text should summarize the existing process already documented in `.fabro/README.md`:\n  - A maintainer applies `fabro-approved` to an open issue.\n  - A maintainer runs `construct-build` or `fabro run .fabro/workflows/issue-to-pr/workflow.toml -I issue=<number>`.\n  - Fabro verifies the issue approval, installs the project in a clean sandbox, writes a spec, pauses for human review, implements the change, runs verification, and opens a draft PR.\n  - Maintainers review the resulting draft PR before merge.\n- Include a relative link to `.fabro/README.md` so the README stays brief while the detailed operational and security guidance remains in one place.\n- Keep the wording factual and aligned with current repository terminology (`fabro-approved`, `construct-build`, draft PR, spec approval).\n\n## Test plan (which tests to add or update under tests/)\n- No new tests under `tests/` are necessary because this is a documentation-only README change and does not alter package behavior.\n- Run the existing fast test suite to confirm no unintended changes were introduced:\n  - `make test`\n- If a documentation lint/check is later added to the repository, update the plan to include it; none is currently present for README prose.\n\n## Risks\n- The root README could duplicate or drift from `.fabro/README.md`. Mitigate by keeping the new text short and linking to `.fabro/README.md` for authoritative details.\n- Placing the paragraph in the wrong section could distract from user installation/deployment instructions. Mitigate by using a small, clearly titled subsection.\n- Over-specifying workflow internals in the root README could require frequent updates. Mitigate by describing only stable high-level steps.\n\n## Suspicious content\nnone",
+          "internal.retry_count.check_issue": 0,
           "thread.spec.current_node": "approve",
           "current_node": "verify",
+          "thread.install.current_node": "spec",
           "graph.goal": "Resolve GitHub issue #5 of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
-          "outcome": "succeeded",
-          "internal.work_dir": "/workspace/Construct",
-          "thread.implement.current_node": "verify",
-          "internal.run_id": "01M84D71SPGPEP5RMK6H0984KH",
-          "human.gate.approve.question": "Approve the spec?",
-          "preferred_label": "[A] Approve",
-          "graph.rankdir": "LR",
-          "response.implement": "Implemented the approved README documentation update for issue #5.\n\nChanged:\n- Added a concise `### Building approved issues with Fabro` section to `README.md`.\n- The new section explains the high-level maintainer flow:\n  - apply `fabro-approved`\n  - run `construct-build` / Fabro workflow\n  - review and approve the generated spec\n  - review the draft PR before merge\n- Linked to `.fabro/README.md` for full operational and security guidance.\n\nValidation:\n- Ran the required test command:\n\n```bash\npytest -q -m 'not db and not docker and not k8s and not live_harness'\n```\n\nResult:\n- `1843 passed, 19 skipped, 90 deselected, 1 warning` in `248.33s`.\n\nOnly `README.md` was modified.",
-          "human.gate.approve.answer": "A",
+          "failure_class": "",
+          "human.gate.label": "[A] Approve",
+          "internal.retry_count.spec": 0,
+          "internal.retry_count.start": 0,
           "command.output": "blob://sha256/87e82c50e3ab7a31935297feb873f8c4dd4daf5514748335d5832c70c098ae1d",
-          "last_stage": "implement"
+          "internal.retry_count.implement": 0,
+          "internal.fidelity": "compact",
+          "failure_signature": "",
+          "human.gate.approve.question": "Approve the spec?",
+          "thread.check_issue.current_node": "install",
+          "internal.retry_count.approve": 0,
+          "graph.rankdir": "LR",
+          "thread.approve.current_node": "implement",
+          "last_stage": "implement",
+          "internal.thread_id": "implement",
+          "internal.retry_count.verify": 0,
+          "internal.node_visit_count": 1,
+          "internal.retry_count.install": 0,
+          "internal.run_id": "01M84D71SPGPEP5RMK6H0984KH",
+          "response.implement": "Implemented the approved README documentation update for issue #5.\n\nChanged:\n- Added a concise `### Building approved issues with Fabro` section to `README.md`.\n- The new section explains the high-level maintainer flow:\n  - apply `fabro-approved`\n  - run `construct-build` / Fabro workflow\n  - review and approve the generated spec\n  - review the draft PR before merge\n- Linked to `.fabro/README.md` for full operational and security guidance.\n\nValidation:\n- Ran the required test command:\n\n```bash\npytest -q -m 'not db and not docker and not k8s and not live_harness'\n```\n\nResult:\n- `1843 passed, 19 skipped, 90 deselected, 1 warning` in `248.33s`.\n\nOnly `README.md` was modified.",
+          "preferred_label": "[A] Approve",
+          "human.gate.approve.answer": "A",
+          "human.gate.selected": "A",
+          "human.gate.approve.label": "[A] Approve"
         },
         "node_outcomes": {
-          "implement": {
-            "status": "succeeded",
-            "context_updates": {
-              "last_stage": "implement",
-              "last_response": "Implemented the approved README documentation update for issue #5.\n\nChanged:\n- Added a concise `### Building approved issues with Fabro` section to `README.md`.\n- The new section explains the high-lev",
-              "response.implement": "Implemented the approved README documentation update for issue #5.\n\nChanged:\n- Added a concise `### Building approved issues with Fabro` section to `README.md`.\n- The new section explains the high-level maintainer flow:\n  - apply `fabro-approved`\n  - run `construct-build` / Fabro workflow\n  - review and approve the generated spec\n  - review the draft PR before merge\n- Linked to `.fabro/README.md` for full operational and security guidance.\n\nValidation:\n- Ran the required test command:\n\n```bash\npytest -q -m 'not db and not docker and not k8s and not live_harness'\n```\n\nResult:\n- `1843 passed, 19 skipped, 90 deselected, 1 warning` in `248.33s`.\n\nOnly `README.md` was modified."
-            },
-            "notes": "Stage completed: implement",
-            "usage": {
-              "input": {
-                "usage": {
-                  "model": {
-                    "provider": "openai",
-                    "model_id": "gpt-5.5"
-                  },
-                  "tokens": {
-                    "input_tokens": 23388,
-                    "output_tokens": 833,
-                    "reasoning_tokens": 295,
-                    "cache_read_tokens": 63488,
-                    "cache_write_tokens": 0
-                  }
-                },
-                "facts": {
-                  "algorithm": "openai"
-                }
-              },
-              "total_usd_micros": 182524
-            },
-            "timing": {
-              "wall_time_ms": 0,
-              "inference_time_ms": 28513,
-              "tool_time_ms": 374083,
-              "active_time_ms": 402596
-            }
-          },
           "spec": {
             "status": "succeeded",
             "context_updates": {
@@ -1195,18 +1159,22 @@
               "active_time_ms": 45862
             }
           },
-          "check_issue": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "verify": {
             "status": "succeeded",
             "context_updates": {
-              "command.output": "blob://sha256/8c7f70e6320f0d2e4b59376876569a6d222ae0299de28adf38ddf312c984f205"
+              "command.output": "blob://sha256/87e82c50e3ab7a31935297feb873f8c4dd4daf5514748335d5832c70c098ae1d"
             },
-            "notes": "Script completed: \nimport json, os, sys, urllib.request\nREPO_OWNER, REPO_NAME = '0x0pointer', 'Construct'\nNUMBER = int('5')\nLABEL = 'fabro-approved'\nMAINTAINERS = set(m.strip().lower() for m in 'RiieCco,blabla1337,JorgeCarvalhoPT'.split(',') if m.strip())\ndef refuse(msg):\n    print('REFUSED: ' + msg)\n    sys.exit(1)\ntoken = os.environ.get('GITHUB_TOKEN')\nif not token:\n    refuse('no GITHUB_TOKEN in the sandbox, cannot verify approval')\nif NUMBER <= 0:\n    refuse('pass the issue number with -I issue=<number>')\nquery = '''\nquery($o: String!, $n: String!, $i: Int!) {\n  repository(owner: $o, name: $n) {\n    issue(number: $i) {\n      title\n      body\n      state\n      lastEditedAt\n      author { login }\n      labels(first: 50) { nodes { name } }\n      timelineItems(itemTypes: [LABELED_EVENT], last: 100) {\n        nodes { ... on LabeledEvent { createdAt actor { login } label { name } } }\n      }\n    }\n  }\n}\n'''\npayload = json.dumps(dict(query=query, variables=dict(o=REPO_OWNER, n=REPO_NAME, i=NUMBER))).encode()\nreq = urllib.request.Request('https://api.github.com/graphql', data=payload,\n    headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\nreply = json.load(urllib.request.urlopen(req, timeout=30))\nif reply.get('errors'):\n    refuse('GitHub API error: ' + json.dumps(reply['errors'])[:300])\nissue = reply['data']['repository']['issue']\nif issue is None:\n    refuse('issue not found (pull requests are not accepted)')\nif issue['state'] != 'OPEN':\n    refuse('issue is not open')\nif LABEL not in [l['name'] for l in issue['labels']['nodes']]:\n    refuse('issue does not carry the label ' + LABEL)\nevents = [e for e in issue['timelineItems']['nodes'] if e and e['label']['name'] == LABEL]\nif not events:\n    refuse('no labelling event found for ' + LABEL)\nlast = events[-1]\nactor = ((last.get('actor') or dict()).get('login') or '').lower()\nif actor not in MAINTAINERS:\n    refuse('label was applied by ' + (actor or 'unknown') + ', who is not a listed maintainer')\nedited = issue.get('lastEditedAt')\nif edited and edited > last['createdAt']:\n    refuse('issue text was edited after approval; a maintainer must re-apply the label')\nos.makedirs('/tmp/fabro', exist_ok=True)\nwith open('/tmp/fabro/issue.md', 'w') as f:\n    f.write('# ' + issue['title'] + chr(10) + chr(10) + (issue['body'] or '') + chr(10))\nprint('APPROVED: issue', NUMBER, 'released by', actor, 'at', last['createdAt'])\nprint('title:', issue['title'])",
+            "notes": "Script completed: set -o pipefail; mkdir -p /tmp/fabro; ( changed=$( (git diff --name-only origin/main; git ls-files --others --exclude-standard) | sort -u ); bad=$(printf '%s\\n' \"$changed\" | grep -E '^(\\.github/|\\.fabro/|deploy/|\\.env|LICENSE$|sonar-project\\.properties$)' || true); if [ -n \"$bad\" ]; then echo 'PROTECTED FILES CHANGED - revert these:'; echo \"$bad\"; exit 1; fi; echo 'changed files:'; echo \"$changed\"; pip install -q -e '.[dev]' && prsec-skills-lint prsec-skills && pytest -q -m 'not db and not docker and not k8s and not live_harness' ) 2>&1 | tee /tmp/fabro/verify.log",
             "usage": null,
             "timing": {
               "wall_time_ms": 0,
               "inference_time_ms": 0,
-              "tool_time_ms": 1108,
-              "active_time_ms": 1108
+              "tool_time_ms": 155163,
+              "active_time_ms": 155163
             }
           },
           "approve": {
@@ -1224,9 +1192,41 @@
             },
             "usage": null
           },
-          "start": {
+          "implement": {
             "status": "succeeded",
-            "usage": null
+            "context_updates": {
+              "last_stage": "implement",
+              "last_response": "Implemented the approved README documentation update for issue #5.\n\nChanged:\n- Added a concise `### Building approved issues with Fabro` section to `README.md`.\n- The new section explains the high-lev",
+              "response.implement": "Implemented the approved README documentation update for issue #5.\n\nChanged:\n- Added a concise `### Building approved issues with Fabro` section to `README.md`.\n- The new section explains the high-level maintainer flow:\n  - apply `fabro-approved`\n  - run `construct-build` / Fabro workflow\n  - review and approve the generated spec\n  - review the draft PR before merge\n- Linked to `.fabro/README.md` for full operational and security guidance.\n\nValidation:\n- Ran the required test command:\n\n```bash\npytest -q -m 'not db and not docker and not k8s and not live_harness'\n```\n\nResult:\n- `1843 passed, 19 skipped, 90 deselected, 1 warning` in `248.33s`.\n\nOnly `README.md` was modified."
+            },
+            "notes": "Stage completed: implement",
+            "usage": {
+              "input": {
+                "usage": {
+                  "model": {
+                    "provider": "openai",
+                    "model_id": "gpt-5.5"
+                  },
+                  "tokens": {
+                    "input_tokens": 23388,
+                    "output_tokens": 833,
+                    "reasoning_tokens": 295,
+                    "cache_read_tokens": 63488,
+                    "cache_write_tokens": 0
+                  }
+                },
+                "facts": {
+                  "algorithm": "openai"
+                }
+              },
+              "total_usd_micros": 182524
+            },
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 28513,
+              "tool_time_ms": 374083,
+              "active_time_ms": 402596
+            }
           },
           "install": {
             "status": "succeeded",
@@ -1242,36 +1242,145 @@
               "active_time_ms": 14891
             }
           },
-          "verify": {
+          "check_issue": {
             "status": "succeeded",
             "context_updates": {
-              "command.output": "blob://sha256/87e82c50e3ab7a31935297feb873f8c4dd4daf5514748335d5832c70c098ae1d"
+              "command.output": "blob://sha256/8c7f70e6320f0d2e4b59376876569a6d222ae0299de28adf38ddf312c984f205"
             },
-            "notes": "Script completed: set -o pipefail; mkdir -p /tmp/fabro; ( changed=$( (git diff --name-only origin/main; git ls-files --others --exclude-standard) | sort -u ); bad=$(printf '%s\\n' \"$changed\" | grep -E '^(\\.github/|\\.fabro/|deploy/|\\.env|LICENSE$|sonar-project\\.properties$)' || true); if [ -n \"$bad\" ]; then echo 'PROTECTED FILES CHANGED - revert these:'; echo \"$bad\"; exit 1; fi; echo 'changed files:'; echo \"$changed\"; pip install -q -e '.[dev]' && prsec-skills-lint prsec-skills && pytest -q -m 'not db and not docker and not k8s and not live_harness' ) 2>&1 | tee /tmp/fabro/verify.log",
+            "notes": "Script completed: \nimport json, os, sys, urllib.request\nREPO_OWNER, REPO_NAME = '0x0pointer', 'Construct'\nNUMBER = int('5')\nLABEL = 'fabro-approved'\nMAINTAINERS = set(m.strip().lower() for m in 'RiieCco,blabla1337,JorgeCarvalhoPT'.split(',') if m.strip())\ndef refuse(msg):\n    print('REFUSED: ' + msg)\n    sys.exit(1)\ntoken = os.environ.get('GITHUB_TOKEN')\nif not token:\n    refuse('no GITHUB_TOKEN in the sandbox, cannot verify approval')\nif NUMBER <= 0:\n    refuse('pass the issue number with -I issue=<number>')\nquery = '''\nquery($o: String!, $n: String!, $i: Int!) {\n  repository(owner: $o, name: $n) {\n    issue(number: $i) {\n      title\n      body\n      state\n      lastEditedAt\n      author { login }\n      labels(first: 50) { nodes { name } }\n      timelineItems(itemTypes: [LABELED_EVENT], last: 100) {\n        nodes { ... on LabeledEvent { createdAt actor { login } label { name } } }\n      }\n    }\n  }\n}\n'''\npayload = json.dumps(dict(query=query, variables=dict(o=REPO_OWNER, n=REPO_NAME, i=NUMBER))).encode()\nreq = urllib.request.Request('https://api.github.com/graphql', data=payload,\n    headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\nreply = json.load(urllib.request.urlopen(req, timeout=30))\nif reply.get('errors'):\n    refuse('GitHub API error: ' + json.dumps(reply['errors'])[:300])\nissue = reply['data']['repository']['issue']\nif issue is None:\n    refuse('issue not found (pull requests are not accepted)')\nif issue['state'] != 'OPEN':\n    refuse('issue is not open')\nif LABEL not in [l['name'] for l in issue['labels']['nodes']]:\n    refuse('issue does not carry the label ' + LABEL)\nevents = [e for e in issue['timelineItems']['nodes'] if e and e['label']['name'] == LABEL]\nif not events:\n    refuse('no labelling event found for ' + LABEL)\nlast = events[-1]\nactor = ((last.get('actor') or dict()).get('login') or '').lower()\nif actor not in MAINTAINERS:\n    refuse('label was applied by ' + (actor or 'unknown') + ', who is not a listed maintainer')\nedited = issue.get('lastEditedAt')\nif edited and edited > last['createdAt']:\n    refuse('issue text was edited after approval; a maintainer must re-apply the label')\nos.makedirs('/tmp/fabro', exist_ok=True)\nwith open('/tmp/fabro/issue.md', 'w') as f:\n    f.write('# ' + issue['title'] + chr(10) + chr(10) + (issue['body'] or '') + chr(10))\nprint('APPROVED: issue', NUMBER, 'released by', actor, 'at', last['createdAt'])\nprint('title:', issue['title'])",
             "usage": null,
             "timing": {
               "wall_time_ms": 0,
               "inference_time_ms": 0,
-              "tool_time_ms": 155163,
-              "active_time_ms": 155163
+              "tool_time_ms": 1108,
+              "active_time_ms": 1108
             }
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "0ce3e49afd0f2773eb08112a91cbf1b6ca112398",
         "node_visits": {
-          "verify": 1,
-          "implement": 1,
-          "check_issue": 1,
-          "start": 1,
-          "spec": 1,
           "install": 1,
-          "approve": 1
+          "start": 1,
+          "verify": 1,
+          "approve": 1,
+          "check_issue": 1,
+          "spec": 1,
+          "implement": 1
         }
       },
-      "diff": {}
+      "diff": {
+        "summary": {
+          "files_changed": 1,
+          "additions": 8,
+          "deletions": 0
+        }
+      }
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-11-23T14:44:35.327281646Z",
+    "status": "succeeded",
+    "timing": {
+      "wall_time_ms": 663086,
+      "inference_time_ms": 72860,
+      "tool_time_ms": 546760,
+      "active_time_ms": 619620
+    },
+    "final_git_commit_sha": "0ce3e49afd0f2773eb08112a91cbf1b6ca112398",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "check_issue",
+        "stage_label": "check_issue",
+        "timing": {
+          "wall_time_ms": 1114,
+          "inference_time_ms": 0,
+          "tool_time_ms": 1108,
+          "active_time_ms": 1108
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "install",
+        "stage_label": "install",
+        "timing": {
+          "wall_time_ms": 14907,
+          "inference_time_ms": 0,
+          "tool_time_ms": 14891,
+          "active_time_ms": 14891
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "spec",
+        "stage_label": "spec",
+        "timing": {
+          "wall_time_ms": 46450,
+          "inference_time_ms": 44347,
+          "tool_time_ms": 1515,
+          "active_time_ms": 45862
+        },
+        "billing_usd_micros": 173487,
+        "retries": 0
+      },
+      {
+        "stage_id": "approve",
+        "stage_label": "approve",
+        "timing": {
+          "wall_time_ms": 14035,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "implement",
+        "stage_label": "implement",
+        "timing": {
+          "wall_time_ms": 403422,
+          "inference_time_ms": 28513,
+          "tool_time_ms": 374083,
+          "active_time_ms": 402596
+        },
+        "billing_usd_micros": 182524,
+        "retries": 0
+      },
+      {
+        "stage_id": "verify",
+        "stage_label": "verify",
+        "timing": {
+          "wall_time_ms": 155175,
+          "inference_time_ms": 0,
+          "tool_time_ms": 155163,
+          "active_time_ms": 155163
+        },
+        "retries": 0
+      }
+    ],
+    "billing": {
+      "input_tokens": 40267,
+      "output_tokens": 2766,
+      "total_tokens": 141585,
+      "reasoning_tokens": 760,
+      "cache_read_tokens": 97792,
+      "cache_write_tokens": 0,
+      "total_usd_micros": 356011
+    },
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -1797,7 +1906,12 @@
       "first_event_seq": 154,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Script completed: set -o pipefail; mkdir -p /tmp/fabro; ( changed=$( (git diff --name-only origin/main; git ls-files --others --exclude-standard) | sort -u ); bad=$(printf '%s\\n' \"$changed\" | grep -E '^(\\.github/|\\.fabro/|deploy/|\\.env|LICENSE$|sonar-project\\.properties$)' || true); if [ -n \"$bad\" ]; then echo 'PROTECTED FILES CHANGED - revert these:'; echo \"$bad\"; exit 1; fi; echo 'changed files:'; echo \"$changed\"; pip install -q -e '.[dev]' && prsec-skills-lint prsec-skills && pytest -q -m 'not db and not docker and not k8s and not live_harness' ) 2>&1 | tee /tmp/fabro/verify.log",
+        "failure_reason": null,
+        "timestamp": "2026-11-23T14:44:31.418222578Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -1806,11 +1920,27 @@
         "language": "shell",
         "timeout_ms": 1200000
       },
-      "script_timing": null,
+      "script_timing": {
+        "output": "blob://sha256/87e82c50e3ab7a31935297feb873f8c4dd4daf5514748335d5832c70c098ae1d",
+        "exit_code": 0,
+        "duration_ms": 155163,
+        "termination": "exited",
+        "output_bytes": 3367,
+        "live_streaming": true
+      },
       "parallel_results": null,
       "output": null,
+      "output_bytes": 3367,
+      "live_streaming": true,
+      "termination": "exited",
       "started_at": "2026-11-23T14:41:56.243095867Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 155175,
+        "inference_time_ms": 0,
+        "tool_time_ms": 155163,
+        "active_time_ms": 155163
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -1819,7 +1949,41 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "succeeded"
+    },
+    "exit@1": {
+      "first_event_seq": 164,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-11-23T14:44:35.295378032Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-11-23T14:44:35.295363814Z",
+      "handler": "exit",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
     },
     "check_issue@1": {
       "first_event_seq": 22,

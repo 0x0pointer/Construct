@@ -1,0 +1,6 @@
+{
+  "outcome": "succeeded",
+  "notes": "Script completed: set -o pipefail; mkdir -p /tmp/fabro; ( changed=$( (git diff --name-only origin/main; git ls-files --others --exclude-standard) | sort -u ); bad=$(printf '%s\\n' \"$changed\" | grep -E '^(\\.github/|\\.fabro/|deploy/|\\.env|LICENSE$|sonar-project\\.properties$)' || true); if [ -n \"$bad\" ]; then echo 'PROTECTED FILES CHANGED - revert these:'; echo \"$bad\"; exit 1; fi; echo 'changed files:'; echo \"$changed\"; pip install -q -e '.[dev]' && prsec-skills-lint prsec-skills && pytest -q -m 'not db and not docker and not k8s and not live_harness' ) 2>&1 | tee /tmp/fabro/verify.log",
+  "failure_reason": null,
+  "timestamp": "2026-11-23T14:44:31.418222578Z"
+}
