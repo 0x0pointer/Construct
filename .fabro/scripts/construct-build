@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+"""Build approved Construct issues with Fabro.
+
+  construct-build            build every open issue labelled fabro-approved
+  construct-build 12 15      build just these issues
+  construct-build --list     show what would be built, start nothing
+  construct-build --again    include issues that were already built
+  construct-build --yes      do not pause for spec approval (auto-approve)
+
+Issues are built one after another. Each run pauses for
+you to approve the spec unless --yes is given. The workflow itself still
+refuses any issue whose label was not applied by a listed maintainer, or that
+was edited after approval, so this command is only a convenience.
+
+Holds no secrets; lists issues through GitHub's public API.
+State: ~/.fabro/construct-build.json (issue number -> last result).
+"""
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+REPO = "0x0pointer/Construct"
+LABEL = "fabro-approved"
+# This file lives in <repo>/.fabro/scripts/, so the repo root is two levels up.
+REPO_DIR = str(Path(__file__).resolve().parents[2])
+WORKFLOW = ".fabro/workflows/issue-to-pr/workflow.toml"
+FABRO = shutil.which("fabro") or os.path.expanduser("~/.fabro/bin/fabro")
+STATE = os.path.expanduser("~/.fabro/construct-build.json")
+RUN_ID = re.compile(r"\b(01[0-9A-HJKMNP-TV-Z]{24})\b")
+
+
+def approved_issues():
+    """Open issues (not PRs) carrying the label: [(number, title)], oldest first."""
+    url = (f"https://api.github.com/repos/{REPO}/issues"
+           f"?state=open&labels={LABEL}&per_page=100&sort=created&direction=asc")
+    req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
+                                               "User-Agent": "construct-build"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return [(i["number"], i["title"]) for i in json.load(resp) if "pull_request" not in i]
+
+
+def load_state():
+    try:
+        with open(STATE) as f:
+            return {int(k): v for k, v in json.load(f).items()}
+    except FileNotFoundError:
+        return {}
+
+
+def save_state(state):
+    tmp = STATE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({str(k): v for k, v in sorted(state.items())}, f, indent=1)
+    os.replace(tmp, STATE)
+
+
+def run_issue(number, auto_approve):
+    """Run the workflow attached to this terminal. Returns (result, run_id)."""
+    cmd = [FABRO, "run", WORKFLOW, "-I", f"issue={number}", "--label", f"issue={number}",
+           "--no-upgrade-check"]
+    if auto_approve:
+        cmd.append("--auto-approve")
+    # Tee the output so the run id can be read while the terminal stays interactive.
+    proc = subprocess.Popen(cmd, cwd=REPO_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1)
+    run_id = None
+    for line in proc.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        if run_id is None:
+            match = RUN_ID.search(line)
+            if match:
+                run_id = match.group(1)
+    code = proc.wait()
+    if run_id is None:
+        return "failed to start", None
+    out = subprocess.run([FABRO, "inspect", run_id, "--json", "--no-upgrade-check"],
+                         cwd=REPO_DIR, capture_output=True, text=True)
+    try:
+        data = json.loads(out.stdout)
+        run = data[0] if isinstance(data, list) else data
+        outcomes = {k: v.get("status") for k, v in run["checkpoint"]["node_outcomes"].items()}
+        status = (run.get("conclusion") or {}).get("status")
+    except Exception:
+        return ("finished" if code == 0 else "failed"), run_id
+    if outcomes.get("check_issue") != "succeeded":
+        return "refused by the approval check", run_id
+    if outcomes.get("install") != "succeeded":
+        return "install failed", run_id
+    if "implement" not in outcomes:
+        return "spec rejected or not approved", run_id
+    if outcomes.get("verify") == "succeeded" and status == "succeeded":
+        return "built", run_id
+    return "failed", run_id
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Build approved Construct issues with Fabro.")
+    parser.add_argument("issues", nargs="*", type=int, help="issue numbers (default: all approved)")
+    parser.add_argument("--list", action="store_true", help="only show what would be built")
+    parser.add_argument("--again", action="store_true", help="include issues already built")
+    parser.add_argument("--yes", action="store_true", help="auto-approve the spec")
+    args = parser.parse_args()
+
+    state = load_state()
+    try:
+        approved = approved_issues()
+    except Exception as exc:
+        print(f"Could not list issues from GitHub: {exc}")
+        return 1
+    titles = dict(approved)
+
+    # Forget issues that lost the label, so re-labelling builds them again.
+    for number in [n for n in state if n not in titles]:
+        del state[number]
+    save_state(state)
+
+    if args.issues:
+        todo = args.issues
+    else:
+        todo = [n for n, _ in approved]
+    skipped = [n for n in todo if state.get(n, {}).get("result") == "built" and not args.again]
+    todo = [n for n in todo if n not in skipped]
+
+    if not approved and not args.issues:
+        print(f"No open issues carry the '{LABEL}' label. Nothing to build.")
+        return 0
+    for n in skipped:
+        print(f"  #{n}  already built (run {state[n].get('run')}) - use --again to rebuild")
+    for n in todo:
+        note = "" if n in titles else f"  [not labelled '{LABEL}' - the run will refuse it]"
+        print(f"  #{n}  {titles.get(n, '')}{note}")
+    if args.list or not todo:
+        return 0
+
+    results = []
+    for n in todo:
+        print(f"\n===== Building issue #{n} =====")
+        result, run_id = run_issue(n, args.yes)
+        state[n] = {"result": result, "run": run_id, "when": time.strftime("%Y-%m-%d %H:%M")}
+        save_state(state)
+        results.append((n, result, run_id))
+
+    print("\n===== Summary =====")
+    for n, result, run_id in results:
+        print(f"  #{n}: {result}" + (f"  (run {run_id})" if run_id else ""))
+    return 0 if all(r == "built" for _, r, _ in results) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

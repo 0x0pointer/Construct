@@ -1,0 +1,46 @@
+_version = 1
+
+# Issue -> spec -> human approval -> code -> tests -> draft PR, for Construct.
+#
+# Run (from the repo root):
+#   fabro run .fabro/workflows/issue-to-pr/workflow.toml -I issue=<number>
+#
+# No secrets belong in this file. Keys and tokens live in Fabro's vault
+# (`fabro secret set ...`), never in the repository.
+
+[workflow]
+graph = "workflow.fabro"
+
+[run.inputs]
+# Issue number to work on. Must be passed with -I issue=<number>.
+issue = "0"
+# Label a maintainer adds to release an issue to the pipeline.
+approval_label = "fabro-approved"
+# GitHub logins allowed to release an issue (comma separated, no spaces).
+maintainers = "RiieCco,blabla1337,JorgeCarvalhoPT"
+
+[run.model]
+name = "gpt-5.5"
+
+[run.environment]
+id = "construct"
+
+[environments.construct]
+provider = "docker"
+
+[environments.construct.image]
+# Built from .fabro/docker/Dockerfile
+docker = "construct-fabro:latest"
+
+[environments.construct.resources]
+cpu = 1
+memory = "1500MB"
+
+[run.pull_request]
+enabled = true
+draft = true
+
+[run.integrations.github.permissions]
+issues = "read"
+contents = "write"
+pull_requests = "write"
