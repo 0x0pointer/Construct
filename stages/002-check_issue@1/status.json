@@ -1,0 +1,6 @@
+{
+  "outcome": "failed",
+  "notes": null,
+  "failure_reason": "Script failed with exit code: 1\n\n## output\nREFUSED: pass the issue number with -I issue=<number>\n",
+  "timestamp": "2026-11-23T21:23:42.283469777Z"
+}
