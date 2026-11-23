@@ -413,10 +413,11 @@
     "base_sha": "04041849845137cfb1b77260c210cfa66b935a67"
   },
   "status": {
-    "kind": "running"
+    "kind": "blocked",
+    "blocked_reason": "human_input_required"
   },
-  "status_updated_at": "2026-11-23T14:33:32.213677095Z",
-  "last_event_at": "2026-11-23T14:34:44.923111605Z",
+  "status_updated_at": "2026-11-23T14:34:49.339499578Z",
+  "last_event_at": "2026-11-23T14:35:03.373223522Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -598,9 +599,9 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 93,
       "checkpoint": {
-        "timestamp": "2026-11-23T14:34:44.942664170Z",
+        "timestamp": "2026-11-23T14:34:49.318560950Z",
         "current_node": "spec",
         "completed_nodes": [
           "start",
@@ -610,30 +611,180 @@
         ],
         "node_retries": {},
         "context_values": {
+          "internal.run_id": "01M84D71SPGPEP5RMK6H0984KH",
+          "last_response": "# Spec for issue #5: update readme\n\n## Summary\nAdd a small paragraph to the repository root `README.md` explaining how approved GitHub issues are built through the Fabro issue-to-PR pipeline. The para",
+          "failure_signature": "",
+          "graph.goal": "Resolve GitHub issue #5 of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
+          "internal.node_visit_count": 1,
+          "internal.retry_count.install": 0,
+          "internal.retry_count.start": 0,
+          "thread.start.current_node": "check_issue",
+          "internal.retry_count.check_issue": 0,
+          "thread.install.current_node": "spec",
+          "command.output": "blob://sha256/b29412db3ae5fafae23855906ef445965ef3d006458d12517ade3727363570fc",
           "last_stage": "spec",
+          "thread.check_issue.current_node": "install",
+          "current_node": "spec",
+          "graph.rankdir": "LR",
+          "response.spec": "# Spec for issue #5: update readme\n\n## Summary\nAdd a small paragraph to the repository root `README.md` explaining how approved GitHub issues are built through the Fabro issue-to-PR pipeline. The paragraph should be concise, point maintainers to the existing `.fabro/README.md` for full details, and mention the main workflow: approve an issue with the `fabro-approved` label, run the Fabro workflow/`construct-build`, review the generated spec, then review the draft PR.\n\n## Scope (files to change)\n- `README.md`\n  - Add a short documentation paragraph or subsection about building approved issues with Fabro.\n  - Prefer placing it near the project setup/development guidance, e.g. after the initial \"Getting started\" overview or near the end before detailed operational sections, so it is discoverable without disrupting user deployment instructions.\n\n## Out of scope\n- No changes to `.fabro/` workflow files, scripts, Docker image, or configuration.\n- No changes to CI, deployment manifests, package dependencies, or runtime code under `prsec/`.\n- No changes to the existing Fabro process beyond documenting it in the root README.\n- No command execution required by the issue text beyond normal repository inspection and test validation.\n\n## Design\n- Add a concise README section, for example `### Building approved issues with Fabro` or `## Issue-to-PR workflow with Fabro`.\n- The text should summarize the existing process already documented in `.fabro/README.md`:\n  - A maintainer applies `fabro-approved` to an open issue.\n  - A maintainer runs `construct-build` or `fabro run .fabro/workflows/issue-to-pr/workflow.toml -I issue=<number>`.\n  - Fabro verifies the issue approval, installs the project in a clean sandbox, writes a spec, pauses for human review, implements the change, runs verification, and opens a draft PR.\n  - Maintainers review the resulting draft PR before merge.\n- Include a relative link to `.fabro/README.md` so the README stays brief while the detailed operational and security guidance remains in one place.\n- Keep the wording factual and aligned with current repository terminology (`fabro-approved`, `construct-build`, draft PR, spec approval).\n\n## Test plan (which tests to add or update under tests/)\n- No new tests under `tests/` are necessary because this is a documentation-only README change and does not alter package behavior.\n- Run the existing fast test suite to confirm no unintended changes were introduced:\n  - `make test`\n- If a documentation lint/check is later added to the repository, update the plan to include it; none is currently present for README prose.\n\n## Risks\n- The root README could duplicate or drift from `.fabro/README.md`. Mitigate by keeping the new text short and linking to `.fabro/README.md` for authoritative details.\n- Placing the paragraph in the wrong section could distract from user installation/deployment instructions. Mitigate by using a small, clearly titled subsection.\n- Over-specifying workflow internals in the root README could require frequent updates. Mitigate by describing only stable high-level steps.\n\n## Suspicious content\nnone",
+          "internal.thread_id": "install",
+          "internal.work_dir": "/workspace/Construct",
+          "internal.fidelity": "compact",
+          "outcome": "succeeded",
+          "internal.retry_count.spec": 0,
+          "failure_class": ""
+        },
+        "node_outcomes": {
+          "check_issue": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/8c7f70e6320f0d2e4b59376876569a6d222ae0299de28adf38ddf312c984f205"
+            },
+            "notes": "Script completed: \nimport json, os, sys, urllib.request\nREPO_OWNER, REPO_NAME = '0x0pointer', 'Construct'\nNUMBER = int('5')\nLABEL = 'fabro-approved'\nMAINTAINERS = set(m.strip().lower() for m in 'RiieCco,blabla1337,JorgeCarvalhoPT'.split(',') if m.strip())\ndef refuse(msg):\n    print('REFUSED: ' + msg)\n    sys.exit(1)\ntoken = os.environ.get('GITHUB_TOKEN')\nif not token:\n    refuse('no GITHUB_TOKEN in the sandbox, cannot verify approval')\nif NUMBER <= 0:\n    refuse('pass the issue number with -I issue=<number>')\nquery = '''\nquery($o: String!, $n: String!, $i: Int!) {\n  repository(owner: $o, name: $n) {\n    issue(number: $i) {\n      title\n      body\n      state\n      lastEditedAt\n      author { login }\n      labels(first: 50) { nodes { name } }\n      timelineItems(itemTypes: [LABELED_EVENT], last: 100) {\n        nodes { ... on LabeledEvent { createdAt actor { login } label { name } } }\n      }\n    }\n  }\n}\n'''\npayload = json.dumps(dict(query=query, variables=dict(o=REPO_OWNER, n=REPO_NAME, i=NUMBER))).encode()\nreq = urllib.request.Request('https://api.github.com/graphql', data=payload,\n    headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\nreply = json.load(urllib.request.urlopen(req, timeout=30))\nif reply.get('errors'):\n    refuse('GitHub API error: ' + json.dumps(reply['errors'])[:300])\nissue = reply['data']['repository']['issue']\nif issue is None:\n    refuse('issue not found (pull requests are not accepted)')\nif issue['state'] != 'OPEN':\n    refuse('issue is not open')\nif LABEL not in [l['name'] for l in issue['labels']['nodes']]:\n    refuse('issue does not carry the label ' + LABEL)\nevents = [e for e in issue['timelineItems']['nodes'] if e and e['label']['name'] == LABEL]\nif not events:\n    refuse('no labelling event found for ' + LABEL)\nlast = events[-1]\nactor = ((last.get('actor') or dict()).get('login') or '').lower()\nif actor not in MAINTAINERS:\n    refuse('label was applied by ' + (actor or 'unknown') + ', who is not a listed maintainer')\nedited = issue.get('lastEditedAt')\nif edited and edited > last['createdAt']:\n    refuse('issue text was edited after approval; a maintainer must re-apply the label')\nos.makedirs('/tmp/fabro', exist_ok=True)\nwith open('/tmp/fabro/issue.md', 'w') as f:\n    f.write('# ' + issue['title'] + chr(10) + chr(10) + (issue['body'] or '') + chr(10))\nprint('APPROVED: issue', NUMBER, 'released by', actor, 'at', last['createdAt'])\nprint('title:', issue['title'])",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 1108,
+              "active_time_ms": 1108
+            }
+          },
+          "install": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/b29412db3ae5fafae23855906ef445965ef3d006458d12517ade3727363570fc"
+            },
+            "notes": "Script completed: pip install -q -e '.[dev]' && python -c 'import prsec; print(\"prsec importable\")'",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 14891,
+              "active_time_ms": 14891
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "spec": {
+            "status": "succeeded",
+            "context_updates": {
+              "last_response": "# Spec for issue #5: update readme\n\n## Summary\nAdd a small paragraph to the repository root `README.md` explaining how approved GitHub issues are built through the Fabro issue-to-PR pipeline. The para",
+              "last_stage": "spec",
+              "response.spec": "# Spec for issue #5: update readme\n\n## Summary\nAdd a small paragraph to the repository root `README.md` explaining how approved GitHub issues are built through the Fabro issue-to-PR pipeline. The paragraph should be concise, point maintainers to the existing `.fabro/README.md` for full details, and mention the main workflow: approve an issue with the `fabro-approved` label, run the Fabro workflow/`construct-build`, review the generated spec, then review the draft PR.\n\n## Scope (files to change)\n- `README.md`\n  - Add a short documentation paragraph or subsection about building approved issues with Fabro.\n  - Prefer placing it near the project setup/development guidance, e.g. after the initial \"Getting started\" overview or near the end before detailed operational sections, so it is discoverable without disrupting user deployment instructions.\n\n## Out of scope\n- No changes to `.fabro/` workflow files, scripts, Docker image, or configuration.\n- No changes to CI, deployment manifests, package dependencies, or runtime code under `prsec/`.\n- No changes to the existing Fabro process beyond documenting it in the root README.\n- No command execution required by the issue text beyond normal repository inspection and test validation.\n\n## Design\n- Add a concise README section, for example `### Building approved issues with Fabro` or `## Issue-to-PR workflow with Fabro`.\n- The text should summarize the existing process already documented in `.fabro/README.md`:\n  - A maintainer applies `fabro-approved` to an open issue.\n  - A maintainer runs `construct-build` or `fabro run .fabro/workflows/issue-to-pr/workflow.toml -I issue=<number>`.\n  - Fabro verifies the issue approval, installs the project in a clean sandbox, writes a spec, pauses for human review, implements the change, runs verification, and opens a draft PR.\n  - Maintainers review the resulting draft PR before merge.\n- Include a relative link to `.fabro/README.md` so the README stays brief while the detailed operational and security guidance remains in one place.\n- Keep the wording factual and aligned with current repository terminology (`fabro-approved`, `construct-build`, draft PR, spec approval).\n\n## Test plan (which tests to add or update under tests/)\n- No new tests under `tests/` are necessary because this is a documentation-only README change and does not alter package behavior.\n- Run the existing fast test suite to confirm no unintended changes were introduced:\n  - `make test`\n- If a documentation lint/check is later added to the repository, update the plan to include it; none is currently present for README prose.\n\n## Risks\n- The root README could duplicate or drift from `.fabro/README.md`. Mitigate by keeping the new text short and linking to `.fabro/README.md` for authoritative details.\n- Placing the paragraph in the wrong section could distract from user installation/deployment instructions. Mitigate by using a small, clearly titled subsection.\n- Over-specifying workflow internals in the root README could require frequent updates. Mitigate by describing only stable high-level steps.\n\n## Suspicious content\nnone"
+            },
+            "notes": "Stage completed: spec",
+            "usage": {
+              "input": {
+                "usage": {
+                  "model": {
+                    "provider": "openai",
+                    "model_id": "gpt-5.5"
+                  },
+                  "tokens": {
+                    "input_tokens": 16879,
+                    "output_tokens": 1933,
+                    "reasoning_tokens": 465,
+                    "cache_read_tokens": 34304,
+                    "cache_write_tokens": 0
+                  }
+                },
+                "facts": {
+                  "algorithm": "openai"
+                }
+              },
+              "total_usd_micros": 173487
+            },
+            "files_touched": [
+              "/tmp/fabro/spec.md"
+            ],
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 44347,
+              "tool_time_ms": 1515,
+              "active_time_ms": 45862
+            }
+          }
+        },
+        "next_node_id": "approve",
+        "git_commit_sha": "5afcd304feb3d21b9877a38e248887efc507613b",
+        "node_visits": {
+          "spec": 1,
+          "start": 1,
+          "install": 1,
+          "check_issue": 1
+        }
+      },
+      "diff": {
+        "summary": {
+          "files_changed": 0,
+          "additions": 0,
+          "deletions": 0
+        }
+      }
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-11-23T14:35:03.399157372Z",
+        "current_node": "approve",
+        "completed_nodes": [
+          "start",
+          "check_issue",
+          "install",
+          "spec",
+          "approve"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.retry_count.approve": 0,
+          "internal.retry_count.start": 0,
+          "human.gate.selected": "A",
+          "internal.node_visit_count": 1,
+          "internal.retry_count.install": 0,
+          "last_response": "# Spec for issue #5: update readme\n\n## Summary\nAdd a small paragraph to the repository root `README.md` explaining how approved GitHub issues are built through the Fabro issue-to-PR pipeline. The para",
+          "response.spec": "# Spec for issue #5: update readme\n\n## Summary\nAdd a small paragraph to the repository root `README.md` explaining how approved GitHub issues are built through the Fabro issue-to-PR pipeline. The paragraph should be concise, point maintainers to the existing `.fabro/README.md` for full details, and mention the main workflow: approve an issue with the `fabro-approved` label, run the Fabro workflow/`construct-build`, review the generated spec, then review the draft PR.\n\n## Scope (files to change)\n- `README.md`\n  - Add a short documentation paragraph or subsection about building approved issues with Fabro.\n  - Prefer placing it near the project setup/development guidance, e.g. after the initial \"Getting started\" overview or near the end before detailed operational sections, so it is discoverable without disrupting user deployment instructions.\n\n## Out of scope\n- No changes to `.fabro/` workflow files, scripts, Docker image, or configuration.\n- No changes to CI, deployment manifests, package dependencies, or runtime code under `prsec/`.\n- No changes to the existing Fabro process beyond documenting it in the root README.\n- No command execution required by the issue text beyond normal repository inspection and test validation.\n\n## Design\n- Add a concise README section, for example `### Building approved issues with Fabro` or `## Issue-to-PR workflow with Fabro`.\n- The text should summarize the existing process already documented in `.fabro/README.md`:\n  - A maintainer applies `fabro-approved` to an open issue.\n  - A maintainer runs `construct-build` or `fabro run .fabro/workflows/issue-to-pr/workflow.toml -I issue=<number>`.\n  - Fabro verifies the issue approval, installs the project in a clean sandbox, writes a spec, pauses for human review, implements the change, runs verification, and opens a draft PR.\n  - Maintainers review the resulting draft PR before merge.\n- Include a relative link to `.fabro/README.md` so the README stays brief while the detailed operational and security guidance remains in one place.\n- Keep the wording factual and aligned with current repository terminology (`fabro-approved`, `construct-build`, draft PR, spec approval).\n\n## Test plan (which tests to add or update under tests/)\n- No new tests under `tests/` are necessary because this is a documentation-only README change and does not alter package behavior.\n- Run the existing fast test suite to confirm no unintended changes were introduced:\n  - `make test`\n- If a documentation lint/check is later added to the repository, update the plan to include it; none is currently present for README prose.\n\n## Risks\n- The root README could duplicate or drift from `.fabro/README.md`. Mitigate by keeping the new text short and linking to `.fabro/README.md` for authoritative details.\n- Placing the paragraph in the wrong section could distract from user installation/deployment instructions. Mitigate by using a small, clearly titled subsection.\n- Over-specifying workflow internals in the root README could require frequent updates. Mitigate by describing only stable high-level steps.\n\n## Suspicious content\nnone",
+          "internal.fidelity": "compact",
+          "thread.install.current_node": "spec",
+          "failure_class": "",
+          "internal.thread_id": "spec",
           "internal.retry_count.check_issue": 0,
           "internal.retry_count.spec": 0,
+          "human.gate.label": "[A] Approve",
           "failure_signature": "",
           "thread.start.current_node": "check_issue",
           "thread.check_issue.current_node": "install",
-          "internal.retry_count.start": 0,
-          "current_node": "spec",
+          "human.gate.approve.label": "[A] Approve",
+          "thread.spec.current_node": "approve",
+          "current_node": "approve",
           "graph.goal": "Resolve GitHub issue #5 of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
-          "internal.node_visit_count": 1,
-          "internal.work_dir": "/workspace/Construct",
           "outcome": "succeeded",
-          "internal.retry_count.install": 0,
-          "last_response": "# Spec for issue #5: update readme\n\n## Summary\nAdd a small paragraph to the repository root `README.md` explaining how approved GitHub issues are built through the Fabro issue-to-PR pipeline. The para",
+          "internal.work_dir": "/workspace/Construct",
           "internal.run_id": "01M84D71SPGPEP5RMK6H0984KH",
-          "response.spec": "# Spec for issue #5: update readme\n\n## Summary\nAdd a small paragraph to the repository root `README.md` explaining how approved GitHub issues are built through the Fabro issue-to-PR pipeline. The paragraph should be concise, point maintainers to the existing `.fabro/README.md` for full details, and mention the main workflow: approve an issue with the `fabro-approved` label, run the Fabro workflow/`construct-build`, review the generated spec, then review the draft PR.\n\n## Scope (files to change)\n- `README.md`\n  - Add a short documentation paragraph or subsection about building approved issues with Fabro.\n  - Prefer placing it near the project setup/development guidance, e.g. after the initial \"Getting started\" overview or near the end before detailed operational sections, so it is discoverable without disrupting user deployment instructions.\n\n## Out of scope\n- No changes to `.fabro/` workflow files, scripts, Docker image, or configuration.\n- No changes to CI, deployment manifests, package dependencies, or runtime code under `prsec/`.\n- No changes to the existing Fabro process beyond documenting it in the root README.\n- No command execution required by the issue text beyond normal repository inspection and test validation.\n\n## Design\n- Add a concise README section, for example `### Building approved issues with Fabro` or `## Issue-to-PR workflow with Fabro`.\n- The text should summarize the existing process already documented in `.fabro/README.md`:\n  - A maintainer applies `fabro-approved` to an open issue.\n  - A maintainer runs `construct-build` or `fabro run .fabro/workflows/issue-to-pr/workflow.toml -I issue=<number>`.\n  - Fabro verifies the issue approval, installs the project in a clean sandbox, writes a spec, pauses for human review, implements the change, runs verification, and opens a draft PR.\n  - Maintainers review the resulting draft PR before merge.\n- Include a relative link to `.fabro/README.md` so the README stays brief while the detailed operational and security guidance remains in one place.\n- Keep the wording factual and aligned with current repository terminology (`fabro-approved`, `construct-build`, draft PR, spec approval).\n\n## Test plan (which tests to add or update under tests/)\n- No new tests under `tests/` are necessary because this is a documentation-only README change and does not alter package behavior.\n- Run the existing fast test suite to confirm no unintended changes were introduced:\n  - `make test`\n- If a documentation lint/check is later added to the repository, update the plan to include it; none is currently present for README prose.\n\n## Risks\n- The root README could duplicate or drift from `.fabro/README.md`. Mitigate by keeping the new text short and linking to `.fabro/README.md` for authoritative details.\n- Placing the paragraph in the wrong section could distract from user installation/deployment instructions. Mitigate by using a small, clearly titled subsection.\n- Over-specifying workflow internals in the root README could require frequent updates. Mitigate by describing only stable high-level steps.\n\n## Suspicious content\nnone",
+          "human.gate.approve.question": "Approve the spec?",
+          "preferred_label": "[A] Approve",
           "graph.rankdir": "LR",
-          "internal.fidelity": "compact",
+          "human.gate.approve.answer": "A",
           "command.output": "blob://sha256/b29412db3ae5fafae23855906ef445965ef3d006458d12517ade3727363570fc",
-          "failure_class": "",
-          "internal.thread_id": "install",
-          "thread.install.current_node": "spec"
+          "last_stage": "spec"
         },
         "node_outcomes": {
+          "approve": {
+            "status": "succeeded",
+            "preferred_label": "[A] Approve",
+            "suggested_next_ids": [
+              "implement"
+            ],
+            "context_updates": {
+              "human.gate.approve.label": "[A] Approve",
+              "human.gate.label": "[A] Approve",
+              "human.gate.selected": "A",
+              "human.gate.approve.answer": "A",
+              "human.gate.approve.question": "Approve the spec?"
+            },
+            "usage": null
+          },
           "install": {
             "status": "succeeded",
             "context_updates": {
@@ -706,12 +857,13 @@
             "usage": null
           }
         },
-        "next_node_id": "approve",
+        "next_node_id": "implement",
         "node_visits": {
           "check_issue": 1,
           "start": 1,
           "spec": 1,
-          "install": 1
+          "install": 1,
+          "approve": 1
         }
       },
       "diff": {}
@@ -797,7 +949,12 @@
       "first_event_seq": 42,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Stage completed: spec",
+        "failure_reason": null,
+        "timestamp": "2026-11-23T14:34:44.940471900Z"
+      },
       "provider_used": {
         "mode": "agent",
         "provider": "openai",
@@ -810,17 +967,24 @@
       "output": null,
       "started_at": "2026-11-23T14:33:58.489462836Z",
       "handler": "agent",
+      "timing": {
+        "wall_time_ms": 46450,
+        "inference_time_ms": 44347,
+        "tool_time_ms": 1515,
+        "active_time_ms": 45862
+      },
       "usage": {
         "input_tokens": 16879,
         "output_tokens": 1933,
         "total_tokens": 53581,
         "reasoning_tokens": 465,
         "cache_read_tokens": 34304,
-        "cache_write_tokens": 0
+        "cache_write_tokens": 0,
+        "total_usd_micros": 173487
       },
       "model": {
         "provider": "openai",
-        "model_id": "gpt-5.5-2026-04-23"
+        "model_id": "gpt-5.5"
       },
       "permission_level": "full",
       "agent_tools": [
@@ -984,6 +1148,29 @@
           }
         ],
         "warnings": []
+      },
+      "state": "succeeded"
+    },
+    "approve@1": {
+      "first_event_seq": 96,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-11-23T14:34:49.338165335Z",
+      "handler": "human",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
       },
       "state": "running"
     },
