@@ -5,7 +5,8 @@
   construct-build 12 15      build just these issues
   construct-build --list     show what would be built, start nothing
   construct-build --again    include issues that were already built
-  construct-build --yes      do not pause for spec approval (auto-approve)
+  construct-build --yes      do not pause for spec approval (auto-approve);
+                             a run that gets stuck is stopped, not retried
 
 Issues are built one after another. Each run pauses for
 you to approve the spec unless --yes is given. The workflow itself still
@@ -96,8 +97,11 @@ def run_issue(number, auto_approve):
         return "install failed", run_id
     if "implement" not in outcomes:
         return "spec rejected or not approved", run_id
-    if outcomes.get("verify") == "succeeded" and status == "succeeded":
+    if (outcomes.get("verify") == "succeeded" and outcomes.get("review_gate") == "succeeded"
+            and status == "succeeded"):
         return "built", run_id
+    if "stuck" in outcomes:
+        return "stopped: checks or review did not converge", run_id
     return "failed", run_id
 
 

@@ -1,6 +1,7 @@
 _version = 1
 
-# Issue -> spec -> human approval -> code -> tests -> draft PR, for Construct.
+# Issue -> spec -> human approval -> code -> checks -> independent review
+# -> draft PR, for Construct.
 #
 # Run (from the repo root):
 #   fabro run .fabro/workflows/issue-to-pr/workflow.toml -I issue=<number>
@@ -19,8 +20,26 @@ approval_label = "fabro-approved"
 # GitHub logins allowed to release an issue (comma separated, no spaces).
 maintainers = "RiieCco,blabla1337,JorgeCarvalhoPT"
 
+# Retry budgets. When a budget is used up the run pauses and asks a human.
+# Failed verifications in a row that the cheap model may try to fix.
+max_cheap_fixes = "2"
+# Failed verifications in a row before a human is asked (the strong model
+# handles the attempts after max_cheap_fixes).
+max_fix_attempts = "4"
+# Times the reviewer may reject the change before a human is asked.
+max_review_rounds = "3"
+
+# Review depth. A change gets the cheaper reviewer only if it is at most this
+# many changed lines, the spec says "Risk level: low", and it touches none of
+# the paths below. Everything else goes to the strong reviewer.
+max_light_review_lines = "40"
+# Comma separated, no spaces. Matched as substrings of changed non-test paths.
+sensitive_paths = "auth,secret,token,crypt,password,sandbox,policy,gateway,egress,proxy,orchestrator,launcher,adapters,dynamic,prsec/api,prsec/db,config,Dockerfile,pyproject.toml,requirements"
+
+# Default model for any stage the stylesheet in workflow.fabro does not cover.
+# Per-stage models (strong / balanced / cheap) are set in that stylesheet.
 [run.model]
-name = "gpt-5.5"
+name = "gpt-5.4"
 
 [run.environment]
 id = "construct"
