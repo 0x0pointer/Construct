@@ -1,0 +1,19 @@
+diff --git a/README.md b/README.md
+index bc05800..2234a45 100644
+--- a/README.md
++++ b/README.md
+@@ -34,6 +34,14 @@ Pick the path you need. Each one builds on the previous one.
+ | [4. Local pilot and evals](#4-local-pilot-and-evals) | the full pipeline, dynamic phase included, on a self-hosted model, scored against the eval corpus | path 1 + a model server (vLLM etc.) |
+ | [5. Kubernetes](#5-kubernetes) | the whole stack in a cluster, every agent stage and replay as a pod | kind locally; a managed cluster with RWX storage |
+ 
++### Building approved issues with Fabro
++
++Maintainers can turn approved issues into draft PRs with the Fabro issue-to-PR pipeline. Apply
++the `fabro-approved` label to an open issue, run `construct-build` (or the underlying Fabro
++workflow with the issue number), review and approve the generated spec, then review the draft PR
++before merge. See [`.fabro/README.md`](.fabro/README.md) for the full operational and security
++guidance.
++
+ ### 1. Run the tests
+ 
+ ```bash
