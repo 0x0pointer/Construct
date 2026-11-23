@@ -1,0 +1,6 @@
+{
+  "outcome": "succeeded",
+  "notes": "Script completed: pip install -q -e '.[dev]' && python -c 'import prsec; print(\"prsec importable\")'",
+  "failure_reason": null,
+  "timestamp": "2026-11-23T14:33:54.216806403Z"
+}
