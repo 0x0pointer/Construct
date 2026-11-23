@@ -414,7 +414,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-11-23T21:23:39.531670014Z",
-  "last_event_at": "2026-11-23T21:23:42.283469777Z",
+  "last_event_at": "2026-11-23T21:23:46.937892399Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -454,9 +454,9 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 28,
       "checkpoint": {
-        "timestamp": "2026-11-23T21:23:42.295043949Z",
+        "timestamp": "2026-11-23T21:23:46.937761555Z",
         "current_node": "check_issue",
         "completed_nodes": [
           "start",
@@ -464,21 +464,21 @@
         ],
         "node_retries": {},
         "context_values": {
-          "internal.node_visit_count": 1,
-          "internal.work_dir": "/workspace/Construct",
-          "graph.goal": "Resolve GitHub issue #0 of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
           "internal.retry_count.start": 0,
           "current_node": "check_issue",
+          "command.output": "blob://sha256/3da1f2dac7d91b6bdb86cf3167ff9eb224cbb19c4bf72ab02acdf703bfc28bf3",
+          "internal.retry_count.check_issue": 0,
+          "thread.start.current_node": "check_issue",
+          "outcome": "failed",
           "failure_signature": "check_issue|deterministic|script failed with exit code: <n> ## output refused: pass the issue number with -i issue=<number>",
           "failure_class": "deterministic",
-          "thread.start.current_node": "check_issue",
-          "internal.retry_count.check_issue": 0,
+          "graph.goal": "Resolve GitHub issue #0 of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
+          "graph.rankdir": "LR",
           "internal.thread_id": "start",
-          "outcome": "failed",
-          "command.output": "blob://sha256/3da1f2dac7d91b6bdb86cf3167ff9eb224cbb19c4bf72ab02acdf703bfc28bf3",
-          "internal.fidelity": "compact",
+          "internal.node_visit_count": 1,
+          "internal.work_dir": "/workspace/Construct",
           "internal.run_id": "01M854NY92RGX0J38DA2ZX4YH5",
-          "graph.rankdir": "LR"
+          "internal.fidelity": "compact"
         },
         "node_outcomes": {
           "start": {
@@ -504,15 +504,61 @@
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "1d69ad6d22670d844021a54f6fc8f2106a8255a8",
+        "loop_failure_signatures": {
+          "check_issue|deterministic|script failed with exit code: <n> ## output refused: pass the issue number with -i issue=<number>": 1
+        },
         "node_visits": {
           "start": 1,
           "check_issue": 1
         }
       },
-      "diff": {}
+      "diff": {
+        "summary": {
+          "files_changed": 0,
+          "additions": 0,
+          "deletions": 0
+        }
+      }
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-11-23T21:23:46.965900041Z",
+    "status": "succeeded",
+    "timing": {
+      "wall_time_ms": 7410,
+      "inference_time_ms": 0,
+      "tool_time_ms": 746,
+      "active_time_ms": 746
+    },
+    "final_git_commit_sha": "1d69ad6d22670d844021a54f6fc8f2106a8255a8",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "check_issue",
+        "stage_label": "check_issue",
+        "timing": {
+          "wall_time_ms": 752,
+          "inference_time_ms": 0,
+          "tool_time_ms": 746,
+          "active_time_ms": 746
+        },
+        "retries": 0
+      }
+    ],
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -539,6 +585,40 @@
   "superseded_by": null,
   "pending_interviews": {},
   "stages": {
+    "exit@1": {
+      "first_event_seq": 31,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-11-23T21:23:46.937892399Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-11-23T21:23:46.937874707Z",
+      "handler": "exit",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
     "start@1": {
       "first_event_seq": 17,
       "prompt": null,
