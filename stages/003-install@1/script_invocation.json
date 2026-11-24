@@ -1,0 +1,6 @@
+{
+  "script": "(command -v start-test-db >/dev/null && start-test-db) || echo 'no test database in this sandbox image: tests marked db will not run'; pip install -q -e '.[dev]' && python -c 'import prsec; print(\"prsec importable\")'",
+  "command": "exec 2>&1\n(command -v start-test-db >/dev/null && start-test-db) || echo 'no test database in this sandbox image: tests marked db will not run'; pip install -q -e '.[dev]' && python -c 'import prsec; print(\"prsec importable\")'",
+  "language": "shell",
+  "timeout_ms": 600000
+}
