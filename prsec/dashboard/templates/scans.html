@@ -63,8 +63,8 @@
   </div>
   {% endif %}
   <div class="pager">
-    {% if page > 1 %}<a href="?{{ filters | urlencode }}&page={{ page - 1 }}">&larr; newer</a>{% endif %}
-    {% if has_next %}<a href="?{{ filters | urlencode }}&page={{ page + 1 }}">older &rarr;</a>{% endif %}
+    {% if prev_href %}<a href="{{ prev_href }}">&larr; newer</a>{% endif %}
+    {% if next_href %}<a href="{{ next_href }}">older &rarr;</a>{% endif %}
   </div>
 </section>
 {% endblock %}

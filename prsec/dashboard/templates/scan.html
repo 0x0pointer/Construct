@@ -1,14 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Scan {{ scan.id }}{% endblock %}
 {% block content %}
-<section class="page-header hero">
-  <div>
-    <p class="page-header__eyebrow">Scan #{{ scan.id }}</p>
-    <h1 class="page-header__title wrap-anywhere">{{ scan.repo }}#{{ scan.pr }}</h1>
-    <p class="page-header__summary">Review scan triage, agent execution, timeline events, transcripts, SARIF, and linked findings.</p>
-  </div>
-  <div class="hero__badges">
-    <span class="badge st-{{ scan.status }}">{{ scan.status }}</span>
+<section class="page-header">
+  <div class="hero">
+    <div>
+      <p class="page-header__eyebrow">Scan #{{ scan.id }}</p>
+      <h1 class="page-header__title wrap-anywhere">{{ scan.repo }}#{{ scan.pr }}</h1>
+      <p class="page-header__summary">Review scan triage, agent execution, timeline events, transcripts, SARIF, and linked findings.</p>
+    </div>
+    <div class="hero__badges">
+      <span class="badge st-{{ scan.status }}">{{ scan.status }}</span>
+    </div>
   </div>
 </section>
 
