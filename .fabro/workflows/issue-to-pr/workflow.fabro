@@ -3,7 +3,7 @@ digraph IssueToPR {
     // Balanced (the default) = implementation and remediation. Cheap = simple
     // fixes after a failed check. Change the three model names here only.
     graph [
-        goal="Resolve an approved GitHub issue of 0x0pointer/Construct (issue number {{ inputs.issue }}; 0 means the oldest approved issue that no run has picked up yet) with a reviewed spec, code, and passing tests",
+        goal="Resolve the next maintainer-approved GitHub issue of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
         max_node_visits=30,
         loop_restart_signature_limit=10,
         model_stylesheet="
