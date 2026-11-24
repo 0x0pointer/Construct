@@ -6,7 +6,10 @@ A run started from the web UI picks its issue (issue-to-pr) or pull request
 watcher reads the first step's output and sets the title:
 
   Construct #8: construct dashboard needs to be re-styled
-  Fix CI: PR #11 (test)
+  Fix CI Construct: PR #11 (test)
+
+It serves every repository on the server that uses these two workflows; the
+title starts with the repository's name.
 
 It also tidies up after runs that found nothing to do, which matters once
 the automations run on a schedule: such a run is archived (hidden from the
@@ -36,8 +39,8 @@ STATE = os.path.expanduser("~/.fabro/run-titles.json")
 # Workflow graph name -> the node whose output names what the run works on.
 FIRST_STEP = {"IssueToPR": "check_issue", "FixCI": "pick_pr"}
 MAX_TITLE = 100
-# Titles this script gives to runs that ended at the first step with no work.
-NOTHING_TO_DO = ("Construct: no approved issue is waiting", "Fix CI: no pull request with failed checks")
+# Endings of the titles this script gives to runs that ended at the first step with no work.
+NOTHING_TO_DO = (": no approved issue is waiting", ": no pull request with failed checks")
 TERMINAL = ("succeeded", "failed", "cancelled", "canceled", "dead")
 SCRATCH_REPO = os.path.expanduser("~/.fabro/run-titles.git")
 MAX_AGE = timedelta(days=2)
@@ -74,28 +77,28 @@ def clean(text):
     return re.sub(r"\s+", " ", "".join(c for c in text if c.isprintable())).strip()
 
 
-def title_for(graph, output):
+def title_for(graph, output, repo):
     """The title for a run, from its first step's output. None leaves it alone."""
     if graph == "IssueToPR":
         picked = re.search(r"^APPROVED: issue (\d+)\b", output, re.M)
         if picked:
             name = re.search(r"^title: (.*)$", output, re.M)
-            return f"Construct #{picked.group(1)}: {clean(name.group(1)) if name else 'approved issue'}"
+            return f"{repo} #{picked.group(1)}: {clean(name.group(1)) if name else 'approved issue'}"
         if "NOTHING TO BUILD" in output:
-            return "Construct: no approved issue is waiting"
+            return f"{repo}: no approved issue is waiting"
         refused = re.search(r"^REFUSED: (.*)$", output, re.M)
         if refused:
-            return "Construct: refused - " + clean(refused.group(1))
+            return f"{repo}: refused - " + clean(refused.group(1))
     if graph == "FixCI":
         picked = re.search(r"^PICKED: pull request (\d+)\b", output, re.M)
         if picked:
             checks = re.search(r"^failed checks: (.*)$", output, re.M)
-            return f"Fix CI: PR #{picked.group(1)}" + (f" ({clean(checks.group(1))})" if checks else "")
+            return f"Fix CI {repo}: PR #{picked.group(1)}" + (f" ({clean(checks.group(1))})" if checks else "")
         if "NOTHING TO FIX" in output:
-            return "Fix CI: no pull request with failed checks"
+            return f"Fix CI {repo}: no pull request with failed checks"
         refused = re.search(r"^REFUSED: (.*)$", output, re.M)
         if refused:
-            return "Fix CI: refused - " + clean(refused.group(1))
+            return f"Fix CI {repo}: refused - " + clean(refused.group(1))
     return None
 
 
@@ -139,7 +142,7 @@ def sweep(state):
         run_id = run.get("id")
         graph = (run.get("workflow") or {}).get("graph_name")
         status = ((run.get("lifecycle") or {}).get("status") or {}).get("kind")
-        if run_id and state.get(run_id) in NOTHING_TO_DO and status in TERMINAL:
+        if run_id and str(state.get(run_id, "")).endswith(NOTHING_TO_DO) and status in TERMINAL:
             try:
                 state[run_id] = tidy(run)
                 print(f"{run_id}: {state[run_id]}", flush=True)
@@ -161,7 +164,8 @@ def sweep(state):
             if status in TERMINAL:
                 state[run_id] = "no first step"
             continue
-        title = title_for(graph, output)
+        repo = str((run.get("repository") or {}).get("name") or "").rsplit("/", 1)[-1] or "run"
+        title = title_for(graph, output, clean(repo))
         if title:
             title = title[:MAX_TITLE].strip()
             api(f"/runs/{run_id}", body={"title": title}, method="PATCH")
