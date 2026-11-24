@@ -856,14 +856,119 @@
     }
   },
   "web_url": "https://fabro.tail2ccfc9.ts.net/runs/01M86EBBP9Q7NK0DJ35TFF52ZK",
-  "start": null,
-  "status": {
-    "kind": "starting"
+  "start": {
+    "start_time": "2026-11-24T09:31:52.480017151Z",
+    "run_branch": "fabro/run/01M86EBBP9Q7NK0DJ35TFF52ZK",
+    "base_sha": "035d7be618d53cfed70be7d07ae007df3c098efb"
   },
-  "status_updated_at": "2026-11-24T09:31:49.992298062Z",
-  "last_event_at": "2026-11-24T09:31:51.974091563Z",
+  "status": {
+    "kind": "running"
+  },
+  "status_updated_at": "2026-11-24T09:31:52.481487322Z",
+  "last_event_at": "2026-11-24T09:31:55.472616238Z",
   "pending_control": null,
-  "checkpoints": [],
+  "checkpoints": [
+    {
+      "seq": 20,
+      "checkpoint": {
+        "timestamp": "2026-11-24T09:31:54.625230348Z",
+        "current_node": "start",
+        "completed_nodes": [
+          "start"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.fidelity": "compact",
+          "internal.retry_count.start": 0,
+          "current_node": "start",
+          "failure_class": "",
+          "internal.run_id": "01M86EBBP9Q7NK0DJ35TFF52ZK",
+          "internal.thread_id": null,
+          "failure_signature": "",
+          "outcome": "succeeded",
+          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n            .cheap  { model: gpt-5.4-mini; reasoning_effort: low; }\n        ",
+          "graph.max_node_visits": "30",
+          "internal.work_dir": "/workspace/Construct",
+          "internal.node_visit_count": 1,
+          "graph.goal": "Resolve GitHub issue #0 of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
+          "graph.loop_restart_signature_limit": "10",
+          "graph.rankdir": "LR"
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "check_issue",
+        "node_visits": {
+          "start": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-11-24T09:31:55.480306816Z",
+        "current_node": "check_issue",
+        "completed_nodes": [
+          "start",
+          "check_issue"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "command.output": "blob://sha256/3da1f2dac7d91b6bdb86cf3167ff9eb224cbb19c4bf72ab02acdf703bfc28bf3",
+          "internal.retry_count.check_issue": 0,
+          "graph.goal": "Resolve GitHub issue #0 of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
+          "internal.thread_id": "start",
+          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n            .cheap  { model: gpt-5.4-mini; reasoning_effort: low; }\n        ",
+          "failure_class": "deterministic",
+          "current_node": "check_issue",
+          "internal.run_id": "01M86EBBP9Q7NK0DJ35TFF52ZK",
+          "internal.retry_count.start": 0,
+          "internal.node_visit_count": 1,
+          "internal.fidelity": "compact",
+          "thread.start.current_node": "check_issue",
+          "graph.rankdir": "LR",
+          "failure_signature": "check_issue|deterministic|script failed with exit code: <n> ## output refused: pass the issue number with -i issue=<number>",
+          "outcome": "failed",
+          "internal.work_dir": "/workspace/Construct",
+          "graph.loop_restart_signature_limit": "10",
+          "graph.max_node_visits": "30"
+        },
+        "node_outcomes": {
+          "check_issue": {
+            "status": "failed",
+            "context_updates": {
+              "command.output": "blob://sha256/3da1f2dac7d91b6bdb86cf3167ff9eb224cbb19c4bf72ab02acdf703bfc28bf3"
+            },
+            "failure": {
+              "message": "Script failed with exit code: 1\n\n## output\nREFUSED: pass the issue number with -I issue=<number>\n",
+              "category": "deterministic"
+            },
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 841,
+              "active_time_ms": 841
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "exit",
+        "node_visits": {
+          "check_issue": 1,
+          "start": 1
+        }
+      },
+      "diff": {}
+    }
+  ],
   "conclusion": null,
   "sandbox": {
     "kind": "ready",
@@ -890,5 +995,78 @@
   "pull_request": null,
   "superseded_by": null,
   "pending_interviews": {},
-  "stages": {}
+  "stages": {
+    "start@1": {
+      "first_event_seq": 17,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-11-24T09:31:54.625118601Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-11-24T09:31:54.625011179Z",
+      "handler": "start",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "check_issue@1": {
+      "first_event_seq": 21,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "\nimport json, os, sys, urllib.request\nREPO_OWNER, REPO_NAME = '0x0pointer', 'Construct'\nNUMBER = int('0')\nLABEL = 'fabro-approved'\nMAINTAINERS = set(m.strip().lower() for m in 'RiieCco,blabla1337,JorgeCarvalhoPT'.split(',') if m.strip())\ndef refuse(msg):\n    print('REFUSED: ' + msg)\n    sys.exit(1)\ntoken = os.environ.get('GITHUB_TOKEN')\nif not token:\n    refuse('no GITHUB_TOKEN in the sandbox, cannot verify approval')\nif NUMBER <= 0:\n    refuse('pass the issue number with -I issue=<number>')\nquery = '''\nquery($o: String!, $n: String!, $i: Int!) {\n  repository(owner: $o, name: $n) {\n    issue(number: $i) {\n      title\n      body\n      state\n      lastEditedAt\n      author { login }\n      labels(first: 50) { nodes { name } }\n      timelineItems(itemTypes: [LABELED_EVENT], last: 100) {\n        nodes { ... on LabeledEvent { createdAt actor { login } label { name } } }\n      }\n    }\n  }\n}\n'''\npayload = json.dumps(dict(query=query, variables=dict(o=REPO_OWNER, n=REPO_NAME, i=NUMBER))).encode()\nreq = urllib.request.Request('https://api.github.com/graphql', data=payload,\n    headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\nreply = json.load(urllib.request.urlopen(req, timeout=30))\nif reply.get('errors'):\n    refuse('GitHub API error: ' + json.dumps(reply['errors'])[:300])\nissue = reply['data']['repository']['issue']\nif issue is None:\n    refuse('issue not found (pull requests are not accepted)')\nif issue['state'] != 'OPEN':\n    refuse('issue is not open')\nif LABEL not in [l['name'] for l in issue['labels']['nodes']]:\n    refuse('issue does not carry the label ' + LABEL)\nevents = [e for e in issue['timelineItems']['nodes'] if e and e['label']['name'] == LABEL]\nif not events:\n    refuse('no labelling event found for ' + LABEL)\nlast = events[-1]\nactor = ((last.get('actor') or dict()).get('login') or '').lower()\nif actor not in MAINTAINERS:\n    refuse('label was applied by ' + (actor or 'unknown') + ', who is not a listed maintainer')\nedited = issue.get('lastEditedAt')\nif edited and edited > last['createdAt']:\n    refuse('issue text was edited after approval; a maintainer must re-apply the label')\nos.makedirs('/tmp/fabro', exist_ok=True)\nwith open('/tmp/fabro/issue.md', 'w') as f:\n    f.write('# ' + issue['title'] + chr(10) + chr(10) + (issue['body'] or '') + chr(10))\nprint('APPROVED: issue', NUMBER, 'released by', actor, 'at', last['createdAt'])\nprint('title:', issue['title'])",
+        "command": "exec 2>&1\npython3 -c \"\nimport json, os, sys, urllib.request\nREPO_OWNER, REPO_NAME = '0x0pointer', 'Construct'\nNUMBER = int('0')\nLABEL = 'fabro-approved'\nMAINTAINERS = set(m.strip().lower() for m in 'RiieCco,blabla1337,JorgeCarvalhoPT'.split(',') if m.strip())\ndef refuse(msg):\n    print('REFUSED: ' + msg)\n    sys.exit(1)\ntoken = os.environ.get('GITHUB_TOKEN')\nif not token:\n    refuse('no GITHUB_TOKEN in the sandbox, cannot verify approval')\nif NUMBER <= 0:\n    refuse('pass the issue number with -I issue=<number>')\nquery = '''\nquery(\"'$o: String!, $n: String!, $i: Int!) {\n  repository(owner: $o, name: $n) {\n    issue(number: $i) {\n      title\n      body\n      state\n      lastEditedAt\n      author { login }\n      labels(first: 50) { nodes { name } }\n      timelineItems(itemTypes: [LABELED_EVENT], last: 100) {\n        nodes { ... on LabeledEvent { createdAt actor { login } label { name } } }\n      }\n    }\n  }\n}\n'\"'''\npayload = json.dumps(dict(query=query, variables=dict(o=REPO_OWNER, n=REPO_NAME, i=NUMBER))).encode()\nreq = urllib.request.Request('https://api.github.com/graphql', data=payload,\n    headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\nreply = json.load(urllib.request.urlopen(req, timeout=30))\nif reply.get('errors'):\n    refuse('GitHub API error: ' + json.dumps(reply['errors'])[:300])\nissue = reply['data']['repository']['issue']\nif issue is None:\n    refuse('issue not found (pull requests are not accepted)')\nif issue['state'] \"'!= '\"'OPEN':\n    refuse('issue is not open')\nif LABEL not in [l['name'] for l in issue['labels']['nodes']]:\n    refuse('issue does not carry the label ' + LABEL)\nevents = [e for e in issue['timelineItems']['nodes'] if e and e['label']['name'] == LABEL]\nif not events:\n    refuse('no labelling event found for ' + LABEL)\nlast = events[-1]\nactor = ((last.get('actor') or dict()).get('login') or '').lower()\nif actor not in MAINTAINERS:\n    refuse('label was applied by ' + (actor or 'unknown') + ', who is not a listed maintainer')\nedited = issue.get('lastEditedAt')\nif edited and edited > last['createdAt']:\n    refuse('issue text was edited after approval; a maintainer must re-apply the label')\nos.makedirs('/tmp/fabro', exist_ok=True)\nwith open('/tmp/fabro/issue.md', 'w') as f:\n    f.write('# ' + issue['title'] + chr(10) + chr(10) + (issue['body'] or '') + chr(10))\nprint('APPROVED: issue', NUMBER, 'released by', actor, 'at', last['createdAt'])\nprint('title:', issue['title'])\"",
+        "language": "python",
+        "timeout_ms": 120000
+      },
+      "script_timing": {
+        "output": "blob://sha256/3da1f2dac7d91b6bdb86cf3167ff9eb224cbb19c4bf72ab02acdf703bfc28bf3",
+        "exit_code": 1,
+        "duration_ms": 841,
+        "termination": "exited",
+        "output_bytes": 54,
+        "live_streaming": true
+      },
+      "parallel_results": null,
+      "output": null,
+      "output_bytes": 54,
+      "live_streaming": true,
+      "termination": "exited",
+      "started_at": "2026-11-24T09:31:54.625314474Z",
+      "handler": "command",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
+    }
+  }
 }
