@@ -56,7 +56,7 @@ def tclient(store):
 
 
 def _poll_url(html):
-    return re.search(r'hx-get="([^"]+)"', html).group(1).replace("&amp;", "&")
+    return re.search(r'data-poll-url="([^"]+)"', html).group(1).replace("&amp;", "&")
 
 
 def test_timeline_groups_agent_events_under_their_stage():
@@ -102,19 +102,24 @@ def test_scan_page_renders_timeline_escaped(tclient, store):
 
 def test_scan_page_polls_while_running(tclient, store):
     store.events = [ev(1), ev(2, kind="agent", task_id="5-hypothesise")]
-    url = _poll_url(tclient.get("/scans/5").text)
+    text = tclient.get("/scans/5").text
+    url = _poll_url(text)
     q = parse_qs(urlsplit(url).query)
     assert urlsplit(url).path == "/scans/5/events"
     assert q["after_id"] == ["2"]
     assert q["g"] == ["5-hypothesise"]
-    assert 'hx-trigger="every 2s"' in tclient.get("/scans/5").text
+    assert 'data-poll-live="true"' in text
+    assert 'data-poll-interval="2000"' in text
+    assert "https://" not in text
+    assert "htmx.org" not in text
 
 
 def test_finished_scan_does_not_poll(tclient, store):
     store.status = "done"
     store.events = [ev(1, kind="scan_finished")]
     text = tclient.get("/scans/5").text
-    assert "hx-get" not in text
+    assert 'id="timeline-poller"' in text
+    assert 'data-poll-live="false"' in text
     assert "timeline complete" in text
 
 
@@ -165,7 +170,7 @@ def test_poll_stops_when_scan_finished(tclient, store):
     store.events = [ev(8, kind="scan_finished", level="error", message="boom")]
     r = tclient.get("/scans/5/events", params={"after_id": 7})
     assert "boom" in r.text
-    assert "hx-get" not in r.text
+    assert 'data-poll-live="false"' in r.text
     assert 'href="/scans/5"' in r.text
 
 
@@ -203,4 +208,4 @@ def test_scan_page_reads_scan_events_table(client, seeded, pg_pool):
     text = client.get(f"/scans/{s1}").text
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in text
     assert "<dt>decision</dt>" in text
-    assert "hx-get" not in text  # scan 1 is done
+    assert 'data-poll-live="false"' in text  # scan 1 is done

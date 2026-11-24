@@ -165,6 +165,11 @@ def _clean(params: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in params.items() if v not in (None, "")}
 
 
+def _page_href(path: str, filters: dict[str, Any], page: int) -> str:
+    params = {**filters, "page": page}
+    return f"{path}?{urlencode(params, doseq=True)}"
+
+
 @app.get("/healthz", response_class=PlainTextResponse)
 def healthz() -> str:
     return "ok"
@@ -182,6 +187,8 @@ def scans(request: Request, repo: str | None = None, status: str | None = None, 
         filters=filters,
         page=page,
         has_next=len(rows) > PAGE_SIZE,
+        prev_href=_page_href("/", filters, page - 1) if page > 1 else None,
+        next_href=_page_href("/", filters, page + 1) if len(rows) > PAGE_SIZE else None,
         statuses=["queued", "running", "done", "skipped", "failed", "superseded"],
     )
 
@@ -318,7 +325,14 @@ def findings(
     )
     page = max(page, 1)
     rows = db.list_findings(filters, limit=PAGE_SIZE + 1, offset=(page - 1) * PAGE_SIZE)
-    ctx = {"findings": rows[:PAGE_SIZE], "filters": filters, "page": page, "has_next": len(rows) > PAGE_SIZE}
+    ctx = {
+        "findings": rows[:PAGE_SIZE],
+        "filters": filters,
+        "page": page,
+        "has_next": len(rows) > PAGE_SIZE,
+        "prev_href": _page_href("/findings", filters, page - 1) if page > 1 else None,
+        "next_href": _page_href("/findings", filters, page + 1) if len(rows) > PAGE_SIZE else None,
+    }
     if request.headers.get("hx-request") and request.headers.get("hx-target") == "findings-table":
         return _render(request, "_findings_table.html", **ctx)
     return _render(

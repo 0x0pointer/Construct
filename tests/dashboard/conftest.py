@@ -44,7 +44,7 @@ def pg_pool(monkeypatch):
 
 @pytest.fixture
 def seeded(pg_pool, tmp_path, monkeypatch):
-    """Two scans, stage runs, three findings, and a locally stored SARIF for scan 1."""
+    """Two scans, stage runs, five findings, and a locally stored SARIF for scan 1."""
     from _factories import finding, pr
 
     from prsec.adapters.sinks.sarif_store import SarifStoreSink
@@ -71,8 +71,13 @@ def seeded(pg_pool, tmp_path, monkeypatch):
              Jsonb({"summary": "adds endpoints", "hypotheses": [{"id": "H1"}, {"id": "H2"}]}), Jsonb([]),
              s1, Jsonb({"usd": 0.8}), Jsonb(None), Jsonb(["schema: citations missing"])),
         )
-    fs = [finding(scan_id=s1), finding(scan_id=s1, bug_class="idor", symbol="get", label="reproduced", severity="critical"),
-          finding(scan_id=s1, symbol="other", severity="low", label="inconclusive")]
+    fs = [
+        finding(scan_id=s1),
+        finding(scan_id=s1, symbol="save", entry="POST /orders"),
+        finding(scan_id=s1, bug_class="xss", symbol="render", entry="GET /orders/summary"),
+        finding(scan_id=s1, bug_class="idor", symbol="get", label="reproduced", severity="critical"),
+        finding(scan_id=s1, symbol="other", severity="low", label="inconclusive"),
+    ]
     uri = SarifStoreSink().write_scan(s1, pr(), fs, {"changed_files": ["app/orders.py"]})
     with pg_pool.connection() as c:
         c.execute("UPDATE scans SET sarif_uri = %s WHERE id = %s", (uri, s1))
