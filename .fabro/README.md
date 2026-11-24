@@ -14,7 +14,9 @@ on a machine where Fabro is installed and logged in.
 | `project.toml` | Fabro project settings (draft PRs on successful runs). |
 | `docker/Dockerfile` | Sandbox image: Python 3.12, git, `gh`, project dependencies. |
 | `workflows/issue-to-pr/` | The workflow graph (`workflow.fabro`) and its run settings (`workflow.toml`). |
+| `workflows/fix-ci/` | Second workflow: repairs a Fabro pull request whose CI checks failed. |
 | `scripts/construct-build` | Convenience command that builds every approved issue. |
+| `scripts/fabro-run-titles` | Watcher that titles runs after the issue or pull request they picked. |
 
 ## How an issue gets built
 
@@ -73,6 +75,40 @@ Runs that name an issue ignore the label.
 
 The automation reads the workflow from `main` each time it starts, so changes
 here take effect once they are merged.
+
+## When CI fails on a Fabro pull request
+
+The sandbox cannot run everything CI runs (no database, Docker daemon or
+cluster, and no SonarCloud), so a pull request can pass the pipeline and still
+fail on GitHub. The `fix-ci` workflow repairs such a pull request on its own
+branch. Start it from its automation in the web UI, or with
+`fabro run .fabro/workflows/fix-ci/workflow.toml [-I pr=<number>]`.
+
+1. **Picks the pull request.** Without a number it takes the oldest open pull
+   request that qualifies. A pull request qualifies only if it was opened by a
+   login in `pr_authors`, from a `fabro/run/` branch of this repository, all
+   its checks have finished, and at least one failed. Anything else is
+   skipped, so pull requests from people or forks are never touched.
+2. **Reads the failures.** For GitHub Actions jobs the relevant part of the
+   job log, for SonarCloud the failed quality gate conditions and open issues
+   (public API), for other checks their summary and annotations.
+3. **Fixes** (balanced model), with the same protected paths as the main
+   pipeline and a ban on weakening tests or silencing rules.
+4. **Verifies locally**: protected paths, syntax, install, skills lint, unit
+   tests. A failure goes to the strong model, at most `max_fix_attempts`
+   times; after that the run stops and pushes nothing.
+5. **Pushes** the fix to the pull request branch (never a force push, and not
+   if the branch moved meanwhile) and comments on the pull request. CI then
+   runs again on the same pull request.
+
+Limits: one fix run per commit, and `max_rounds` fix runs per pull request;
+after that it is left for a human. The run comments on the pull request when
+it starts, which is how later runs know a commit was already handled. There is
+no human gate and no model review in this workflow; the pull request stays a
+draft that a maintainer reviews in full.
+
+One click handles one pull request. A run started while checks are still
+running, or when nothing failed, ends at the first step with `NOTHING TO FIX`.
 
 ## Models and escalation
 
@@ -161,6 +197,38 @@ construct-build --yes      # do not pause for spec approval; stop when stuck
 
 Issues are built one after another. An issue that was built is skipped next
 time; removing and re-adding the label, or `--again`, builds it again.
+
+## Run titles
+
+A run started from the web UI picks its issue or pull request in its first
+step, after Fabro has titled the run, so its title cannot name it. The watcher
+`scripts/fabro-run-titles` reads the first step's output through the server's
+local API and sets the title, for example `Construct #8: <issue title>` or
+`Fix CI: PR #11 (test)`. It only changes titles. Run it on the machine that
+hosts the Fabro server, as a service:
+
+```ini
+# /etc/systemd/system/fabro-run-titles.service
+[Unit]
+Description=Title Fabro runs after the issue or pull request they picked
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /root/.fabro/bin/fabro-run-titles
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# A copy, not a symlink: the service must keep working whatever branch is checked out.
+install -m 755 .fabro/scripts/fabro-run-titles ~/.fabro/bin/fabro-run-titles
+systemctl daemon-reload && systemctl enable --now fabro-run-titles
+```
+
+After changing the script, copy it again and `systemctl restart fabro-run-titles`.
 
 ## Configuration
 
