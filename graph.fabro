@@ -1,0 +1,9 @@
+digraph Probe2 {
+    graph [goal="Probe: move the run branch onto an existing PR branch"]
+    start [shape=Mdiamond]
+    exit [shape=Msquare]
+    a [shape=parallelogram, script="set -e; git status -sb | head -3; git log --oneline -2; git fetch -q origin fabro/run/01M86EX302FZNDNV7QECEXDPPF; git reset -q --hard FETCH_HEAD; git log --oneline -2; git status -sb | head -3; git config --get-regexp 'credential|extraheader|insteadof' | sed -E 's/(gh[pousr]_|x-access-token:|basic |bearer )[A-Za-z0-9_=-]+/\\1***/Ig' | cut -c1-120 || true"]
+    b [shape=parallelogram, script="set -e; git log --oneline -3; echo probe >> README.md"]
+    c [shape=parallelogram, script="set -e; git log --oneline -4; git status --short; git merge-base --is-ancestor 26a0ed5 HEAD && echo PR_HEAD_IS_ANCESTOR; git push --dry-run origin HEAD:refs/heads/fabro/run/01M86EX302FZNDNV7QECEXDPPF 2>&1 | sed -E 's#//[^@/]+@#//***@#' | tail -3; python3 -c 'import urllib.request;print(urllib.request.urlopen(\"https://sonarcloud.io/api/qualitygates/project_status?projectKey=0x0pointer_Construct&pullRequest=10\",timeout=20).status)'"]
+    start -> a -> b -> c -> exit
+}

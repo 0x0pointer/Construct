@@ -1,0 +1,278 @@
+{
+  "title": "Probe: move the run branch onto an existing PR branch",
+  "spec": {
+    "run_id": "01M86JA25YVP1P3AST48MKVG2Y",
+    "settings": {
+      "project": {
+        "name": null,
+        "description": null,
+        "metadata": {}
+      },
+      "workflow": {
+        "name": null,
+        "description": null,
+        "graph": "workflow.fabro",
+        "metadata": {}
+      },
+      "run": {
+        "goal": {
+          "type": "inline",
+          "value": "Probe: move the run branch onto an existing PR branch"
+        },
+        "working_dir": null,
+        "metadata": {},
+        "inputs": {
+          "in_progress_label": "fabro-in-progress",
+          "max_cheap_fixes": "2",
+          "maintainers": "RiieCco,blabla1337,JorgeCarvalhoPT",
+          "approval_label": "fabro-approved",
+          "max_light_review_lines": "40",
+          "max_review_rounds": "3",
+          "sensitive_paths": "auth,secret,token,crypt,password,sandbox,policy,gateway,egress,proxy,orchestrator,launcher,adapters,dynamic,prsec/api,prsec/db,config,Dockerfile,pyproject.toml,requirements",
+          "issue": "0",
+          "max_fix_attempts": "4"
+        },
+        "model": {
+          "provider": "openai",
+          "name": "gpt-5.4",
+          "fallbacks": [],
+          "controls": {
+            "reasoning_effort": null,
+            "speed": null
+          }
+        },
+        "git": {
+          "author": null
+        },
+        "prepare": {
+          "commands": [],
+          "timeout_ms": 300000
+        },
+        "execution": {
+          "mode": "normal",
+          "approval": "prompt"
+        },
+        "checkpoint": {
+          "exclude_globs": [],
+          "skip_git_hooks": false
+        },
+        "clone": {
+          "enabled": true
+        },
+        "run_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "meta_branch": {
+          "enabled": true,
+          "push": true
+        },
+        "environment": {
+          "id": "construct",
+          "provider": "docker",
+          "image": {
+            "docker": "construct-fabro:latest",
+            "dockerfile": null
+          },
+          "resources": {
+            "cpu": 1,
+            "memory": "1500MB",
+            "disk": null
+          },
+          "network": {
+            "mode": "allow_all",
+            "allow": []
+          },
+          "lifecycle": {
+            "preserve": false,
+            "stop_on_terminal": true,
+            "auto_stop": null
+          },
+          "labels": {},
+          "volumes": [],
+          "env": {}
+        },
+        "notifications": {},
+        "interviews": {
+          "provider": null,
+          "slack": null
+        },
+        "agent": {
+          "fabro_tools": false,
+          "permissions": null,
+          "mcps": {}
+        },
+        "hooks": [],
+        "scm": {
+          "provider": null,
+          "owner": null,
+          "repository": null,
+          "github": null
+        },
+        "pull_request": null,
+        "artifacts": {
+          "include": []
+        },
+        "integrations": {
+          "github": {
+            "permissions": {
+              "issues": "write",
+              "contents": "write",
+              "pull_requests": "write"
+            }
+          }
+        }
+      }
+    },
+    "graph": {
+      "name": "Probe2",
+      "nodes": {
+        "start": {
+          "id": "start",
+          "attrs": {
+            "shape": {
+              "String": "Mdiamond"
+            }
+          }
+        },
+        "a": {
+          "id": "a",
+          "attrs": {
+            "shape": {
+              "String": "parallelogram"
+            },
+            "script": {
+              "String": "set -e; git status -sb | head -3; git log --oneline -2; git fetch -q origin fabro/run/01M86EX302FZNDNV7QECEXDPPF; git reset -q --hard FETCH_HEAD; git log --oneline -2; git status -sb | head -3; git config --get-regexp 'credential|extraheader|insteadof' | sed -E 's/(gh[pousr]_|x-access-token:|basic |bearer )[A-Za-z0-9_=-]+/\\1***/Ig' | cut -c1-120 || true"
+            }
+          }
+        },
+        "exit": {
+          "id": "exit",
+          "attrs": {
+            "shape": {
+              "String": "Msquare"
+            }
+          }
+        },
+        "b": {
+          "id": "b",
+          "attrs": {
+            "script": {
+              "String": "set -e; git log --oneline -3; echo probe >> README.md"
+            },
+            "shape": {
+              "String": "parallelogram"
+            }
+          }
+        },
+        "c": {
+          "id": "c",
+          "attrs": {
+            "shape": {
+              "String": "parallelogram"
+            },
+            "script": {
+              "String": "set -e; git log --oneline -4; git status --short; git merge-base --is-ancestor 26a0ed5 HEAD && echo PR_HEAD_IS_ANCESTOR; git push --dry-run origin HEAD:refs/heads/fabro/run/01M86EX302FZNDNV7QECEXDPPF 2>&1 | sed -E 's#//[^@/]+@#//***@#' | tail -3; python3 -c 'import urllib.request;print(urllib.request.urlopen(\"https://sonarcloud.io/api/qualitygates/project_status?projectKey=0x0pointer_Construct&pullRequest=10\",timeout=20).status)'"
+            }
+          }
+        }
+      },
+      "edges": [
+        {
+          "from": "start",
+          "to": "a",
+          "attrs": {}
+        },
+        {
+          "from": "a",
+          "to": "b",
+          "attrs": {}
+        },
+        {
+          "from": "b",
+          "to": "c",
+          "attrs": {}
+        },
+        {
+          "from": "c",
+          "to": "exit",
+          "attrs": {}
+        }
+      ],
+      "attrs": {
+        "goal": {
+          "String": "Probe: move the run branch onto an existing PR branch"
+        }
+      }
+    },
+    "graph_source": "digraph Probe2 {\n    graph [goal=\"Probe: move the run branch onto an existing PR branch\"]\n    start [shape=Mdiamond]\n    exit [shape=Msquare]\n    a [shape=parallelogram, script=\"set -e; git status -sb | head -3; git log --oneline -2; git fetch -q origin fabro/run/01M86EX302FZNDNV7QECEXDPPF; git reset -q --hard FETCH_HEAD; git log --oneline -2; git status -sb | head -3; git config --get-regexp 'credential|extraheader|insteadof' | sed -E 's/(gh[pousr]_|x-access-token:|basic |bearer )[A-Za-z0-9_=-]+/\\\\1***/Ig' | cut -c1-120 || true\"]\n    b [shape=parallelogram, script=\"set -e; git log --oneline -3; echo probe >> README.md\"]\n    c [shape=parallelogram, script=\"set -e; git log --oneline -4; git status --short; git merge-base --is-ancestor 26a0ed5 HEAD && echo PR_HEAD_IS_ANCESTOR; git push --dry-run origin HEAD:refs/heads/fabro/run/01M86EX302FZNDNV7QECEXDPPF 2>&1 | sed -E 's#//[^@/]+@#//***@#' | tail -3; python3 -c 'import urllib.request;print(urllib.request.urlopen(\\\"https://sonarcloud.io/api/qualitygates/project_status?projectKey=0x0pointer_Construct&pullRequest=10\\\",timeout=20).status)'\"]\n    start -> a -> b -> c -> exit\n}\n",
+    "workflow_slug": "zz-probe",
+    "source_directory": "/root/Construct",
+    "provenance": {
+      "server": {
+        "version": "0.254.0"
+      },
+      "client": {
+        "user_agent": "fabro-cli/0.254.0",
+        "name": "fabro-cli",
+        "version": "0.254.0"
+      },
+      "subject": {
+        "kind": "user",
+        "identity": {
+          "issuer": "fabro:dev",
+          "subject": "dev"
+        },
+        "login": "dev",
+        "auth_method": "dev_token"
+      }
+    },
+    "manifest_blob": "ffe8b0ccc4b403a57e527e4fd10313db6304039e8cf60b9e8919cf27c194bdb5",
+    "definition_blob": "cc2154566aa0db0f1f93ff0584d3dbcd6e765e6bb824c8feb19ca092d6f9139f",
+    "git": {
+      "origin_url": "https://github.com/0x0pointer/Construct",
+      "branch": "main",
+      "sha": "60533e545d46709c75e2e2b79bf40160519f0fa7",
+      "dirty": "dirty",
+      "push_outcome": {
+        "type": "not_attempted"
+      }
+    }
+  },
+  "web_url": "https://fabro.tail2ccfc9.ts.net/runs/01M86JA25YVP1P3AST48MKVG2Y",
+  "start": null,
+  "status": {
+    "kind": "starting"
+  },
+  "status_updated_at": "2026-11-24T10:41:00.717086258Z",
+  "last_event_at": "2026-11-24T10:41:03.288224324Z",
+  "pending_control": null,
+  "checkpoints": [],
+  "conclusion": null,
+  "sandbox": {
+    "kind": "ready",
+    "plan": {
+      "provider": "docker",
+      "image": "construct-fabro:latest"
+    },
+    "instance": {
+      "provider": "docker",
+      "image": "construct-fabro:latest",
+      "runtime": {
+        "id": "b69bee83075db91dadae0f22495f41dd89a872dc4e8091b477667fbe587df306",
+        "working_directory": "/workspace/Construct",
+        "repo_cloned": true,
+        "clone_origin_url": "https://github.com/0x0pointer/Construct",
+        "clone_branch": "main",
+        "workspace_root": "/workspace",
+        "repos_root": "/repos",
+        "primary_repo_path": "/repos/0x0pointer/Construct",
+        "primary_repo_link": "/workspace/Construct"
+      }
+    }
+  },
+  "pull_request": null,
+  "superseded_by": null,
+  "pending_interviews": {},
+  "stages": {}
+}
