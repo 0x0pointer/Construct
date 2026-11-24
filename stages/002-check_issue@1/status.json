@@ -1,0 +1,6 @@
+{
+  "outcome": "failed",
+  "notes": null,
+  "failure_reason": "Script failed with exit code: 1\n\n## output\nskipped issue 8 - already picked up (label fabro-in-progress)\nNOTHING TO BUILD: no open issue labelled fabro-approved is waiting (1 checked).\nTo build an issue again, remove its fabro-in-progress label.\n",
+  "timestamp": "2026-11-24T11:45:18.268931227Z"
+}
