@@ -1,0 +1,6 @@
+{
+  "outcome": "failed",
+  "notes": null,
+  "failure_reason": "Script failed with exit code: 1\n\n## output\nROUTE_implement\nREVIEW REJECTED, round 1 of 3, 1 blocking finding(s):\n1. [correctness] prsec/dashboard/templates/finding.html:20\n   Problem: The finding detail page renders description, label reasoning, and remediation as subsections inside a single `section class=\"card\"` headed `Description` (lines 20-38). Acceptance criterion 2 requires distinct card sections for description, label reasoning, and remediation, so two of the required finding-detail cards are missing even when their data is available.\n   Required fix: Split this block into separate `.card`/`section` elements: one for Description, one for Label reasoning, and one for Remediation (with the existing fallback text when remediation is absent), while keeping the existing escaped values and headings visible.\n",
+  "timestamp": "2026-11-24T10:14:48.767933749Z"
+}
