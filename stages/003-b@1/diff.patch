@@ -1,0 +1,9 @@
+diff --git a/README.md b/README.md
+index bc05800..1148747 100644
+--- a/README.md
++++ b/README.md
+@@ -518,3 +518,4 @@ make conformance-live LIVE_HARNESSES=claude-code   # real harness CLIs + LLM (de
+ 
+ DB tests read `PRSEC_TEST_DATABASE_URL` and create their own schema per test.
+ `make test-pg-down` removes the test database.
++probe

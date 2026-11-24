@@ -249,7 +249,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-11-24T10:41:03.970009977Z",
-  "last_event_at": "2026-11-24T10:41:11.716434502Z",
+  "last_event_at": "2026-11-24T10:41:16.557168138Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -350,9 +350,9 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 39,
       "checkpoint": {
-        "timestamp": "2026-11-24T10:41:11.735995019Z",
+        "timestamp": "2026-11-24T10:41:16.540494251Z",
         "current_node": "b",
         "completed_nodes": [
           "start",
@@ -361,20 +361,103 @@
         ],
         "node_retries": {},
         "context_values": {
+          "internal.fidelity": "compact",
+          "internal.thread_id": "a",
+          "outcome": "succeeded",
+          "failure_class": "",
+          "thread.a.current_node": "b",
+          "thread.start.current_node": "a",
+          "internal.work_dir": "/workspace/Construct",
+          "command.output": "blob://sha256/5c9153e13cb527aa61fb10cfb1a48680bb841af1b39a7711e33840f45c4a06bd",
+          "internal.retry_count.start": 0,
+          "internal.node_visit_count": 1,
+          "internal.retry_count.b": 0,
+          "failure_signature": "",
+          "internal.retry_count.a": 0,
+          "current_node": "b",
+          "graph.goal": "Probe: move the run branch onto an existing PR branch",
+          "internal.run_id": "01M86JA25YVP1P3AST48MKVG2Y"
+        },
+        "node_outcomes": {
+          "a": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/c810b6b3f0ab34b593c3b0fe3225805762e313aea3aa9335084a1d08b6193db6"
+            },
+            "notes": "Script completed: set -e; git status -sb | head -3; git log --oneline -2; git fetch -q origin fabro/run/01M86EX302FZNDNV7QECEXDPPF; git reset -q --hard FETCH_HEAD; git log --oneline -2; git status -sb | head -3; git config --get-regexp 'credential|extraheader|insteadof' | sed -E 's/(gh[pousr]_|x-access-token:|basic |bearer )[A-Za-z0-9_=-]+/\\1***/Ig' | cut -c1-120 || true",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 947,
+              "active_time_ms": 947
+            }
+          },
+          "b": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/5c9153e13cb527aa61fb10cfb1a48680bb841af1b39a7711e33840f45c4a06bd"
+            },
+            "notes": "Script completed: set -e; git log --oneline -3; echo probe >> README.md",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 238,
+              "active_time_ms": 238
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "c",
+        "git_commit_sha": "2d221005b26a47b5b1bdaa45f30c7c12d49ac68a",
+        "node_visits": {
+          "a": 1,
+          "b": 1,
+          "start": 1
+        }
+      },
+      "diff": {
+        "patch": "diff --git a/README.md b/README.md\nindex bc05800..1148747 100644\n--- a/README.md\n+++ b/README.md\n@@ -518,3 +518,4 @@ make conformance-live LIVE_HARNESSES=claude-code   # real harness CLIs + LLM (de\n \n DB tests read `PRSEC_TEST_DATABASE_URL` and create their own schema per test.\n `make test-pg-down` removes the test database.\n+probe\n",
+        "summary": {
+          "files_changed": 17,
+          "additions": 1347,
+          "deletions": 381
+        }
+      }
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-11-24T10:41:18.013304147Z",
+        "current_node": "c",
+        "completed_nodes": [
+          "start",
+          "a",
+          "b",
+          "c"
+        ],
+        "node_retries": {},
+        "context_values": {
           "graph.goal": "Probe: move the run branch onto an existing PR branch",
           "thread.start.current_node": "a",
-          "internal.thread_id": "a",
+          "internal.thread_id": "b",
           "internal.run_id": "01M86JA25YVP1P3AST48MKVG2Y",
           "outcome": "succeeded",
           "failure_class": "",
+          "internal.retry_count.c": 0,
           "internal.retry_count.start": 0,
-          "current_node": "b",
+          "current_node": "c",
           "internal.work_dir": "/workspace/Construct",
           "internal.fidelity": "compact",
           "failure_signature": "",
           "internal.retry_count.b": 0,
           "internal.retry_count.a": 0,
-          "command.output": "blob://sha256/5c9153e13cb527aa61fb10cfb1a48680bb841af1b39a7711e33840f45c4a06bd",
+          "command.output": "blob://sha256/08f27201ee3b81cd60dbbe7763171e8423deec73a35133dd62c2d643fb3109e0",
+          "thread.b.current_node": "c",
           "internal.node_visit_count": 1,
           "thread.a.current_node": "b"
         },
@@ -410,13 +493,28 @@
               "tool_time_ms": 947,
               "active_time_ms": 947
             }
+          },
+          "c": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/08f27201ee3b81cd60dbbe7763171e8423deec73a35133dd62c2d643fb3109e0"
+            },
+            "notes": "Script completed: set -e; git log --oneline -4; git status --short; git merge-base --is-ancestor 26a0ed5 HEAD && echo PR_HEAD_IS_ANCESTOR; git push --dry-run origin HEAD:refs/heads/fabro/run/01M86EX302FZNDNV7QECEXDPPF 2>&1 | sed -E 's#//[^@/]+@#//***@#' | tail -3; python3 -c 'import urllib.request;print(urllib.request.urlopen(\"https://sonarcloud.io/api/qualitygates/project_status?projectKey=0x0pointer_Construct&pullRequest=10\",timeout=20).status)'",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 1449,
+              "active_time_ms": 1449
+            }
           }
         },
-        "next_node_id": "c",
+        "next_node_id": "exit",
         "node_visits": {
           "b": 1,
+          "start": 1,
           "a": 1,
-          "start": 1
+          "c": 1
         }
       },
       "diff": {}
@@ -449,6 +547,33 @@
   "superseded_by": null,
   "pending_interviews": {},
   "stages": {
+    "c@1": {
+      "first_event_seq": 42,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "set -e; git log --oneline -4; git status --short; git merge-base --is-ancestor 26a0ed5 HEAD && echo PR_HEAD_IS_ANCESTOR; git push --dry-run origin HEAD:refs/heads/fabro/run/01M86EX302FZNDNV7QECEXDPPF 2>&1 | sed -E 's#//[^@/]+@#//***@#' | tail -3; python3 -c 'import urllib.request;print(urllib.request.urlopen(\"https://sonarcloud.io/api/qualitygates/project_status?projectKey=0x0pointer_Construct&pullRequest=10\",timeout=20).status)'",
+        "command": "exec 2>&1\nset -e; git log --oneline -4; git status --short; git merge-base --is-ancestor 26a0ed5 HEAD && echo PR_HEAD_IS_ANCESTOR; git push --dry-run origin HEAD:refs/heads/fabro/run/01M86EX302FZNDNV7QECEXDPPF 2>&1 | sed -E 's#//[^@/]+@#//***@#' | tail -3; python3 -c 'import urllib.request;print(urllib.request.urlopen(\"https://sonarcloud.io/api/qualitygates/project_status?projectKey=0x0pointer_Construct&pullRequest=10\",timeout=20).status)'",
+        "language": "shell"
+      },
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-11-24T10:41:16.555658709Z",
+      "handler": "command",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
+    },
     "start@1": {
       "first_event_seq": 18,
       "prompt": null,
@@ -535,7 +660,12 @@
       "first_event_seq": 32,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Script completed: set -e; git log --oneline -3; echo probe >> README.md",
+        "failure_reason": null,
+        "timestamp": "2026-11-24T10:41:11.719530046Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -558,6 +688,12 @@
       "termination": "exited",
       "started_at": "2026-11-24T10:41:11.468344815Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 248,
+        "inference_time_ms": 0,
+        "tool_time_ms": 238,
+        "active_time_ms": 238
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -566,7 +702,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "succeeded"
     }
   }
 }

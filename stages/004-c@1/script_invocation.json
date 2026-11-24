@@ -1,0 +1,5 @@
+{
+  "script": "set -e; git log --oneline -4; git status --short; git merge-base --is-ancestor 26a0ed5 HEAD && echo PR_HEAD_IS_ANCESTOR; git push --dry-run origin HEAD:refs/heads/fabro/run/01M86EX302FZNDNV7QECEXDPPF 2>&1 | sed -E 's#//[^@/]+@#//***@#' | tail -3; python3 -c 'import urllib.request;print(urllib.request.urlopen(\"https://sonarcloud.io/api/qualitygates/project_status?projectKey=0x0pointer_Construct&pullRequest=10\",timeout=20).status)'",
+  "command": "exec 2>&1\nset -e; git log --oneline -4; git status --short; git merge-base --is-ancestor 26a0ed5 HEAD && echo PR_HEAD_IS_ANCESTOR; git push --dry-run origin HEAD:refs/heads/fabro/run/01M86EX302FZNDNV7QECEXDPPF 2>&1 | sed -E 's#//[^@/]+@#//***@#' | tail -3; python3 -c 'import urllib.request;print(urllib.request.urlopen(\"https://sonarcloud.io/api/qualitygates/project_status?projectKey=0x0pointer_Construct&pullRequest=10\",timeout=20).status)'",
+  "language": "shell"
+}
