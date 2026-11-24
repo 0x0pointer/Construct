@@ -1,22 +1,35 @@
 {% extends "base.html" %}
 {% block title %}Metrics{% endblock %}
 {% block content %}
-<h1>Metrics</h1>
-<div class="grid2">
-  <div>
-    <h2 style="margin-top:0">Scans by status</h2>
-    <table>
-      <thead><tr><th>Status</th><th class="num">7 days</th><th class="num">30 days</th></tr></thead>
-      <tbody>
-      {% for status, n in m.scans_by_status['30d'].items() %}
-        <tr><td><span class="badge st-{{ status }}">{{ status }}</span></td>
-            <td class="num">{{ m.scans_by_status['7d'].get(status, 0) }}</td><td class="num">{{ n }}</td></tr>
-      {% else %}<tr><td colspan="3" class="muted">No scans in the last 30 days.</td></tr>{% endfor %}
-      </tbody>
-    </table>
-  </div>
-  <div class="panel">
-    <h2 style="margin-top:0">Last 30 days</h2>
+<section class="page-header">
+  <p class="page-header__eyebrow">Dashboard</p>
+  <h1 class="page-header__title">Metrics</h1>
+  <p class="page-header__summary">Operational health, cost, precision, and harness breakdowns across recent scans.</p>
+</section>
+
+<div class="grid2 grid2--equal">
+  <section class="card">
+    <div class="section-heading">
+      <h2>Scans by status</h2>
+      <p class="muted">Recent scan volume by terminal and active status.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Status</th><th class="num">7 days</th><th class="num">30 days</th></tr></thead>
+        <tbody>
+        {% for status, n in m.scans_by_status['30d'].items() %}
+          <tr><td><span class="badge st-{{ status }}">{{ status }}</span></td>
+              <td class="num">{{ m.scans_by_status['7d'].get(status, 0) }}</td><td class="num">{{ n }}</td></tr>
+        {% else %}<tr><td colspan="3" class="muted">No scans in the last 30 days.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card">
+    <div class="section-heading">
+      <h2>Last 30 days</h2>
+      <p class="muted">Top-level scan efficiency and spend.</p>
+    </div>
     <dl class="kv">
       <dt>Skip rate</dt><dd>{{ m.skip_rate | pct }}</dd>
       <dt>Finished scans</dt><dd>{{ m.finished_scans }}</dd>
@@ -24,7 +37,7 @@
       <dt>Total cost</dt><dd>{{ m.total_cost_usd | usd }}</dd>
       <dt>Avg duration</dt><dd>{{ m.avg_duration_s | dur }}</dd>
     </dl>
-  </div>
+  </section>
 </div>
 
 {% macro precision_table(rows, title) %}
@@ -41,50 +54,72 @@
 </table>
 {% endmacro %}
 
-<h2>Precision by label</h2>
-{{ precision_table(m.precision_by_label, 'Label') }}
-<h2>Precision by bug class</h2>
-{{ precision_table(m.precision_by_bug_class, 'Bug class') }}
-<p class="muted">Precision = TP / (TP + FP) over triaged findings; accepted (real, risk-accepted) is excluded.</p>
+<section class="card stack">
+  <div class="section-heading">
+    <h2>Precision by label</h2>
+  </div>
+  <div class="table-wrap">{{ precision_table(m.precision_by_label, 'Label') }}</div>
+  <div class="section-heading">
+    <h2>Precision by bug class</h2>
+  </div>
+  <div class="table-wrap">{{ precision_table(m.precision_by_bug_class, 'Bug class') }}</div>
+  <p class="muted">Precision = TP / (TP + FP) over triaged findings; accepted (real, risk-accepted) is excluded.</p>
+</section>
 
-<h2>By agent (30 days)</h2>
-<p class="muted" style="margin-top:0">One row per agent (pipeline stage): how reliably it runs, what it costs and how much work it does.</p>
-<table>
-  <thead><tr><th>Agent</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Failed</th>
-    <th class="num">Avg duration</th><th class="num">Avg cost</th><th class="num">Total cost</th>
-    <th class="num">Avg tokens</th><th class="num">Avg turns</th></tr></thead>
-  <tbody>
-  {% for r in m.per_stage %}
-    <tr><td><code>{{ r.stage }}</code></td><td class="num">{{ r.runs }}</td><td class="num">{{ r.ok_rate | pct }}</td>
-      <td class="num">{% if r.failed %}<span class="err">{{ r.failed }}</span>{% else %}0{% endif %}</td>
-      <td class="num">{{ r.avg_duration_s | dur }}</td><td class="num">{{ r.avg_cost | usd }}</td>
-      <td class="num">{{ r.total_cost | usd }}</td><td class="num">{{ r.avg_tokens | int }}</td>
-      <td class="num">{{ r.avg_turns | round(1) }}</td></tr>
-  {% else %}<tr><td colspan="9" class="muted">No stage runs.</td></tr>{% endfor %}
-  </tbody>
-</table>
+<section class="card">
+  <div class="section-heading">
+    <h2>By agent (30 days)</h2>
+    <p class="muted">One row per agent (pipeline stage): how reliably it runs, what it costs, and how much work it does.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Agent</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Failed</th>
+        <th class="num">Avg duration</th><th class="num">Avg cost</th><th class="num">Total cost</th>
+        <th class="num">Avg tokens</th><th class="num">Avg turns</th></tr></thead>
+      <tbody>
+      {% for r in m.per_stage %}
+        <tr><td><code>{{ r.stage }}</code></td><td class="num">{{ r.runs }}</td><td class="num">{{ r.ok_rate | pct }}</td>
+          <td class="num">{% if r.failed %}<span class="err">{{ r.failed }}</span>{% else %}0{% endif %}</td>
+          <td class="num">{{ r.avg_duration_s | dur }}</td><td class="num">{{ r.avg_cost | usd }}</td>
+          <td class="num">{{ r.total_cost | usd }}</td><td class="num">{{ r.avg_tokens | int }}</td>
+          <td class="num">{{ r.avg_turns | round(1) }}</td></tr>
+      {% else %}<tr><td colspan="9" class="muted">No stage runs.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 
 {% macro harness_row(r) %}
   <td class="num">{{ r.runs }}</td><td class="num">{{ r.ok_rate | pct }}</td>
   <td class="num">{{ r.avg_duration_s | dur }}</td><td class="num">{{ r.avg_cost | usd }}</td>
   <td class="num">{{ r.total_cost | usd }}</td><td class="num">{{ r.avg_tokens | int }}</td>
 {% endmacro %}
-<h2>Harness comparison (30 days)</h2>
-<table>
-  <thead><tr><th>Harness</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Avg duration</th>
-    <th class="num">Avg cost</th><th class="num">Total cost</th><th class="num">Avg tokens</th></tr></thead>
-  <tbody>
-  {% for r in m.per_harness %}<tr><td>{{ r.harness }}</td>{{ harness_row(r) }}</tr>
-  {% else %}<tr><td colspan="7" class="muted">No stage runs.</td></tr>{% endfor %}
-  </tbody>
-</table>
-<h2>By stage, harness and model</h2>
-<table>
-  <thead><tr><th>Stage</th><th>Harness</th><th>Model</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Avg duration</th>
-    <th class="num">Avg cost</th><th class="num">Total cost</th><th class="num">Avg tokens</th></tr></thead>
-  <tbody>
-  {% for r in m.per_stage_harness %}<tr><td>{{ r.stage }}</td><td>{{ r.harness }}</td><td>{{ r.model }}</td>{{ harness_row(r) }}</tr>
-  {% else %}<tr><td colspan="9" class="muted">No stage runs.</td></tr>{% endfor %}
-  </tbody>
-</table>
+<section class="card stack">
+  <div class="section-heading">
+    <h2>Harness comparison (30 days)</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Harness</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Avg duration</th>
+        <th class="num">Avg cost</th><th class="num">Total cost</th><th class="num">Avg tokens</th></tr></thead>
+      <tbody>
+      {% for r in m.per_harness %}<tr><td>{{ r.harness }}</td>{{ harness_row(r) }}</tr>
+      {% else %}<tr><td colspan="7" class="muted">No stage runs.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="section-heading">
+    <h2>By stage, harness and model</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Stage</th><th>Harness</th><th>Model</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Avg duration</th>
+        <th class="num">Avg cost</th><th class="num">Total cost</th><th class="num">Avg tokens</th></tr></thead>
+      <tbody>
+      {% for r in m.per_stage_harness %}<tr><td>{{ r.stage }}</td><td>{{ r.harness }}</td><td>{{ r.model }}</td>{{ harness_row(r) }}</tr>
+      {% else %}<tr><td colspan="9" class="muted">No stage runs.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 {% endblock %}
