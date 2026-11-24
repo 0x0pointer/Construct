@@ -1,0 +1,59 @@
+_version = 1
+
+# Failed CI on a Fabro pull request -> read the failures -> fix -> local
+# checks -> push the fix to the same PR branch, for Construct.
+#
+# Started by a Fabro automation (the Run button in the web UI) or:
+#   fabro run .fabro/workflows/fix-ci/workflow.toml [-I pr=<number>]
+#
+# No secrets belong in this file. Keys and tokens live in Fabro's vault.
+
+[workflow]
+graph = "workflow.fabro"
+
+[run.inputs]
+# Pull request to fix. "0" lets the run pick the oldest open pull request that
+# qualifies. Automations cannot pass inputs, so they always get "0".
+pr = "0"
+# Only pull requests opened by these logins, from a branch of this repository
+# that starts with branch_prefix, are ever touched (comma separated, no spaces).
+pr_authors = "0x0pointerbot"
+branch_prefix = "fabro/run/"
+# Fix runs allowed per pull request. After that it is left for a human.
+max_rounds = "3"
+# Failed local verifications in a row before the run gives up without pushing.
+max_fix_attempts = "2"
+# Failed checks with these names are ignored (comma separated, no spaces).
+ignore_checks = "notify"
+# SonarCloud project, read through its public API when the Sonar check fails.
+sonar_project = "0x0pointer_Construct"
+
+# Default model for any stage the stylesheet in workflow.fabro does not cover.
+[run.model]
+name = "gpt-5.4"
+
+[run.environment]
+id = "construct"
+
+[environments.construct]
+provider = "docker"
+
+[environments.construct.image]
+# Built from .fabro/docker/Dockerfile
+docker = "construct-fabro:latest"
+
+[environments.construct.resources]
+cpu = 1
+memory = "1500MB"
+
+# The run pushes to the existing pull request branch itself; it must not open
+# a second pull request.
+[run.pull_request]
+enabled = false
+
+[run.integrations.github.permissions]
+issues = "write"
+contents = "write"
+pull_requests = "write"
+checks = "read"
+actions = "read"
