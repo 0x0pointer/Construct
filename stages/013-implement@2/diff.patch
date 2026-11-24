@@ -1,0 +1,68 @@
+diff --git a/prsec/dashboard/templates/finding.html b/prsec/dashboard/templates/finding.html
+index f85fe40..e771b30 100644
+--- a/prsec/dashboard/templates/finding.html
++++ b/prsec/dashboard/templates/finding.html
+@@ -20,23 +20,26 @@
+     <section class="card">
+       <div class="section-heading">
+         <h2>Description</h2>
+-        <p class="muted">Summary and label reasoning captured for this finding.</p>
++        <p class="muted">Summary captured for this finding.</p>
+       </div>
+-      <div class="stack">
+-        <div>
+-          <h3>Description</h3>
+-          <p class="pre-wrap">{{ data.description or 'No description recorded.' }}</p>
+-        </div>
+-        <div>
+-          <h3>Label reasoning</h3>
+-          <p class="pre-wrap">{{ data.label_reason or 'No label reasoning recorded.' }}</p>
+-        </div>
+-        <div>
+-          <h3>Remediation</h3>
+-          {% if data.remediation %}<p class="pre-wrap">{{ data.remediation }}</p>
+-          {% else %}<p class="muted">No remediation recorded.</p>{% endif %}
+-        </div>
++      <p class="pre-wrap">{{ data.description or 'No description recorded.' }}</p>
++    </section>
++
++    <section class="card">
++      <div class="section-heading">
++        <h2>Label reasoning</h2>
++        <p class="muted">Why this finding was assigned its current label.</p>
++      </div>
++      <p class="pre-wrap">{{ data.label_reason or 'No label reasoning recorded.' }}</p>
++    </section>
++
++    <section class="card">
++      <div class="section-heading">
++        <h2>Remediation</h2>
++        <p class="muted">Suggested mitigation steps, when available.</p>
+       </div>
++      {% if data.remediation %}<p class="pre-wrap">{{ data.remediation }}</p>
++      {% else %}<p class="muted">No remediation recorded.</p>{% endif %}
+     </section>
+ 
+     <section class="card">
+diff --git a/tests/dashboard/test_prsec_dashboard_routes.py b/tests/dashboard/test_prsec_dashboard_routes.py
+index 85cc8b1..503c6c6 100644
+--- a/tests/dashboard/test_prsec_dashboard_routes.py
++++ b/tests/dashboard/test_prsec_dashboard_routes.py
+@@ -1,4 +1,5 @@
+ import json
++import re
+ 
+ import pytest
+ from psycopg.types.json import Jsonb
+@@ -202,6 +203,11 @@ def test_finding_detail_restyled_layout_preserves_sections(client, seeded, pg_po
+     assert r.status_code == 200
+     assert 'class="page-header hero"' in r.text
+     assert 'class="grid2"' in r.text
++    for heading in ("Description", "Label reasoning", "Remediation"):
++        assert re.search(
++            rf'<section class="card">\s*<div class="section-heading">\s*<h2>{re.escape(heading)}</h2>',
++            r.text,
++        )
+     for heading in ("Description", "Label reasoning", "Remediation", "Code flow", "Guards",
+                     "Dynamic validation", "Triage", "Metadata", "Provenance", "Occurrences"):
+         assert heading in r.text

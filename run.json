@@ -866,7 +866,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-11-24T09:55:00.257748908Z",
-  "last_event_at": "2026-11-24T10:20:24.688299435Z",
+  "last_event_at": "2026-11-24T10:20:28.869912055Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -2852,9 +2852,9 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 653,
       "checkpoint": {
-        "timestamp": "2026-11-24T10:20:24.705456333Z",
+        "timestamp": "2026-11-24T10:20:28.817252509Z",
         "current_node": "implement",
         "completed_nodes": [
           "start",
@@ -2873,8 +2873,309 @@
         ],
         "node_retries": {},
         "context_values": {
+          "response.implement": "Implemented the review fix for the finding detail page.\n\nWhat I changed:\n- Split the combined finding-detail content block in `prsec/dashboard/templates/finding.html` into three distinct cards:\n  - `Description`\n  - `Label reasoning`\n  - `Remediation`\n- Kept the existing escaped values and fallback text, including `No remediation recorded.` when remediation is absent.\n- Tightened the existing route regression test in `tests/dashboard/test_prsec_dashboard_routes.py` so it now asserts those three headings each appear as their own `.card` section.\n\nTest coverage for the finding:\n- Reviewer finding: missing distinct cards for description, label reasoning, and remediation\n  - Covered by `tests/dashboard/test_prsec_dashboard_routes.py::test_finding_detail_restyled_layout_preserves_sections`\n\nValidation:\n- Ran: `pytest -q -m 'not db and not docker and not k8s and not live_harness'`\n- Result: passed (`1846 passed, 19 skipped, 96 deselected`)",
           "human.gate.selected": "A",
-          "internal.thread_id": "review_gate",
+          "thread.approve.current_node": "implement",
+          "graph.goal": "Resolve an approved GitHub issue of 0x0pointer/Construct (issue number 0; 0 means the oldest approved issue that no run has picked up yet) with a reviewed spec, code, and passing tests",
+          "thread.implement.current_node": "verify",
+          "human.gate.approve.label": "[A] Approve",
+          "internal.retry_count.approve": 0,
+          "internal.retry_count.implement": 0,
+          "thread.start.current_node": "check_issue",
+          "preferred_label": "[A] Approve",
+          "internal.fidelity": "compact",
+          "internal.work_dir": "/workspace/Construct",
+          "internal.retry_count.verify": 0,
+          "internal.retry_count.spec": 0,
+          "graph.rankdir": "LR",
+          "internal.retry_count.start": 0,
+          "internal.node_visit_count": 2,
+          "outcome": "succeeded",
+          "response.review": "verdict: fail\n\nblocking findings: prsec/dashboard/templates/finding.html:20 — finding detail collapses description, label reasoning, and remediation into one card instead of the distinct card sections required by acceptance criterion 2.",
+          "thread.check_issue.current_node": "install",
+          "command.output": "blob://sha256/67d208216458da1748bc1fb058e16a38a4fb79836ef03f98d718263d739be65a",
+          "current_node": "implement",
+          "failure_signature": "",
+          "human.gate.label": "[A] Approve",
+          "graph.max_node_visits": "30",
+          "graph.loop_restart_signature_limit": "10",
+          "internal.retry_count.review": 0,
+          "last_response": "Implemented the review fix for the finding detail page.\n\nWhat I changed:\n- Split the combined finding-detail content block in `prsec/dashboard/templates/finding.html` into three distinct cards:\n  - `D",
+          "human.gate.approve.question": "Approve the spec?",
+          "response.spec": "1. Summary\nRestyle the PRSec/Construct dashboard so it is modern, readable, responsive, and self-contained. The finding detail page is the priority and must be reorganized around clear security-review sections without losing any existing data. Remove the remote HTMX CDN dependency and do not load styling, fonts, icons, JavaScript, or other assets from any remote/third-party online source.\n\n2. Acceptance criteria\n1. The full dashboard pages `/`, `/findings`, `/findings/{id}`, `/scans/{id}`, and `/metrics` render with a shared modern shell: branded top navigation, readable max-width content, page headers, card/panel sections, styled badges, styled forms, wrapped/scrollable tables, visible keyboard focus states, dark-mode CSS variables, and responsive layout below narrow widths.\n2. `/findings/{id}` is substantially reorganized for readability: a hero/header with title and key badges; a responsive main/aside layout; distinct card sections for description, label reasoning, remediation, code flow, guards, dynamic validation, triage, provenance, metadata, and occurrences; and every value/link currently rendered by `finding.html` remains present when available.\n3. Findings and scans filters keep working as plain GET forms with visible submit buttons. Existing query parameters still filter results, no-match results render a clear empty state, pagination remains usable, and the `/findings` partial response still works when requested with the existing `HX-Request`/`HX-Target` headers.\n4. Triage, timeline, evidence/transcript, SARIF, metrics, scan detail, and health routes keep their server-side behavior. Triage POST still validates state server-side, redirects on normal POST, returns only the triage partial for HX requests, and returns 404/422 as today. Timeline event partials keep cursor behavior and append/swap hints for progressive enhancement.\n5. No rendered dashboard template loads remote assets. Dashboard templates must not contain remote `<script src>`, `<link href>`, web font, icon, or stylesheet references such as `http://`, `https://`, `unpkg.com`, or `htmx.org`; `pyproject.toml` dependencies must not change for this restyle. If a frontend library is used, it must be bundled locally in this repository, served same-origin by the dashboard, pinned to a specific version in a comment or filename, and must not load additional remote assets.\n6. Core dashboard use works without JavaScript: navigation uses links, filtering uses GET forms, triage uses POST forms, downloads use ordinary links, and scan/timeline pages remain meaningful. Any async behavior must be progressive enhancement using either small first-party vanilla JavaScript or a locally bundled same-origin frontend library; if it fails, the plain HTML path still works.\n7. Escaping and trust boundaries are preserved. No dashboard template may introduce `|safe`, inline event-handler attributes, `javascript:` URLs, `eval`, `new Function`, or JavaScript interpolation of user-, agent-, PR-, header-, database-, or artifact-derived values into executable code.\n8. Existing dashboard tests continue to pass after intentional assertion updates for the removed remote HTMX script, and new tests cover the restyled shell, finding detail layout, no-remote-asset rule, no-JavaScript fallbacks, empty states, optional/missing data, long values, and XSS regressions.\n\n3. Scope\nFiles to change or add:\n- `prsec/dashboard/templates/base.html`\n- `prsec/dashboard/templates/finding.html`\n- `prsec/dashboard/templates/findings.html`\n- `prsec/dashboard/templates/_findings_table.html`\n- `prsec/dashboard/templates/scans.html`\n- `prsec/dashboard/templates/scan.html`\n- `prsec/dashboard/templates/metrics.html`\n- `prsec/dashboard/templates/_triage.html`\n- `prsec/dashboard/templates/_timeline.html`, `_timeline_poller.html`, `_timeline_poll.html`, and `_timeline_macros.html` only as needed to replace remote-HTMX assumptions with same-origin progressive-enhancement hooks while preserving partial route behavior\n- `prsec/dashboard/main.py` only if needed to serve locally bundled dashboard static assets\n- `prsec/dashboard/static/**` only if a small local frontend library or local dashboard JS/CSS file is used\n- `tests/dashboard/test_prsec_dashboard_routes.py`\n- `tests/dashboard/test_prsec_dashboard_timeline.py`\n- Add `tests/dashboard/test_prsec_dashboard_templates.py`\n\nOut of scope:\n- Database schema, database query semantics, and seed data changes except temporary test setup data\n- API, worker, orchestrator, runner, dynamic validation, SARIF generation, skills, policy, and queue logic\n- Authentication/authorization model changes\n- CI, deployment, Helm, compose, Docker, and workflow changes\n- Adding frontend package managers, build steps, remote external fonts/icons/images/scripts/styles, or new Python/project dependencies\n- Large frontend frameworks or broad static asset pipelines. A small vendored frontend library is allowed only if it is committed locally, served same-origin, version-pinned, and simpler than reimplementing the needed progressive behavior.\n- Broad refactors, route renames, or unrelated template/content changes\n\n4. Design\nUse the existing FastAPI + Jinja2 dashboard architecture and keep the UI self-contained. Prefer putting shared CSS and small progressive-enhancement JavaScript in `base.html`; if using a local bundled frontend library or local dashboard JS/CSS file, serve it from a dashboard-owned same-origin static path and keep the integration minimal. Do not introduce a package-manager or build-based asset pipeline. Build a simple design system from existing concepts (`panel`, `badge`, `grid2`, `kv`, `muted`, severity/status/triage classes) and extend it with clear dashboard classes such as a shell/topnav, page header, card, table wrapper, responsive grid, metadata list, flow list, empty state, and screen-reader/focus utilities.\n\nPrioritize `finding.html`. Keep the same context variables (`f`, `data`, `flow`, `dyn`, `triage_states`) and all current links to scans, triage, evidence, dynamic evidence, transcripts, SARIF, and occurrences. Move presentation into semantic sections rather than inline styles where practical. Long text/code should wrap or scroll within cards/tables rather than expanding the page horizontally.\n\nRemove the remote HTMX `<script>` from `base.html`. Forms and links must be correct without JavaScript first. If retaining async filters, triage partial replacement, or timeline polling in the browser, implement minimal progressive enhancement using either vanilla JavaScript or a locally bundled same-origin library. The enhancement must attach to explicit attributes/hooks, request only same-origin routes, send the existing HX compatibility headers only when requesting existing partial routes, update only known target elements, and handle failures by leaving the normal form/link path available. Do not use `eval`, dynamic script creation from remote URLs, inline event attributes, or untrusted values inside JavaScript templates.\n\n5. Code quality requirements\n- Follow the style and naming conventions of the surrounding Jinja templates and dashboard tests.\n- Keep changes focused on dashboard presentation and progressive enhancement; do not refactor unrelated Python logic.\n- Use existing partials (`_findings_table.html`, `_triage.html`, `_timeline*.html`) instead of duplicating large blocks.\n- Use clear class and `data-*` names tied to dashboard concepts; remove obsolete remote-HTMX assumptions if they are replaced.\n- Avoid dead CSS/JS, unused template fragments, speculative abstractions, and broad renames.\n- Preserve route paths, form field names, query parameter names, table data, links, status/severity/triage values, and error behavior.\n- Keep error handling and validation at the current Python route layer; templates must not hide 404/422 responses or client-side-bypass server validation.\n\n6. Security considerations\nUntrusted input rendered by these templates includes PR metadata, repository names, scan/finding data, agent outputs, SARIF-derived fields, code snippets, event messages/data, triage notes, request forwarded-user headers, filter query values, and artifact metadata. The change must preserve Jinja autoescaping and must not add `|safe`, inline event handlers, string-to-code execution, or JavaScript that converts untrusted values into executable HTML/script. Removing the remote HTMX CDN reduces third-party script supply-chain exposure. Any first-party JavaScript or locally bundled library integration must only request same-origin dashboard routes, update predetermined DOM targets, not make authorization decisions, not load additional remote code/assets, and degrade to normal full-page forms/links on failure. Authentication remains external behind the SSO proxy and must not be changed. Triage state changes must continue to depend on the existing POST route and server-side validation. Evidence and transcript responses must remain `text/plain` with `X-Content-Type-Options: nosniff`.\n\n7. Edge cases\n- Empty data: no scans, no findings, no matching filter results, no stage runs, no timeline events, no guards, no dynamic validation, no replay runs, no occurrences.\n- Malformed or unexpected display values: missing optional fields, unknown severity/status/label/triage values, absent source/path/sink details, missing timestamps, missing costs, and missing artifact URIs.\n- Oversized content: long titles, repository names, file paths, fingerprints, snippets, event messages, JSON/provenance, app logs, triage notes, filter values, and user headers must wrap or scroll without breaking layout.\n- Duplicate/repeated content: repeated findings, repeated timeline groups, repeated badges, repeated filter values, and repeated partial updates must not create invalid IDs or unreadable output.\n- Concurrent/state-changing input: multiple triage submissions must still be resolved by the existing server route; client-side enhancement must not bypass validation or force state out of order.\n- Failure/no-enhancement modes: JavaScript disabled, fetch failure, partial endpoint error, blocked script, or stale timeline cursor must leave filtering, triage, navigation, and reloads usable through ordinary page loads.\n- Security edge cases: malicious HTML/JS in finding titles/descriptions/snippets/events/triage notes/forwarded-user headers must render escaped; remote asset URLs must not be loaded from templates.\n\n8. Test plan\nUnit tests:\n- Add `tests/dashboard/test_prsec_dashboard_templates.py::test_dashboard_templates_do_not_load_remote_assets`: read `prsec/dashboard/templates/*.html` and any dashboard static files added for this issue; assert there are no remote script/link/font/icon/stylesheet references (`http://`, `https://`, `unpkg.com`, `htmx.org`) in asset-loading contexts and no locally bundled library tries to load additional remote assets.\n- Add `tests/dashboard/test_prsec_dashboard_templates.py::test_dashboard_templates_do_not_introduce_unsafe_rendering_hooks`: assert dashboard templates do not contain `|safe`, inline `on...=` event handlers, `javascript:` URLs, `eval(`, or `new Function`.\n- Add `tests/dashboard/test_prsec_dashboard_templates.py::test_base_template_defines_self_contained_responsive_design`: assert `base.html` includes the shared shell/topnav/card/table/form/badge/focus/dark-mode/responsive CSS tokens and no remote script tag.\n\nIntegration tests:\n- Update `tests/dashboard/test_prsec_dashboard_routes.py::test_scans_list`: remove the `htmx.org@2.0.4` expectation; assert the scans page renders the shared shell/navigation, visible GET filters, restyled table/card markup, seeded scan data, cost, duration, and filtered results.\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_dashboard_pages_share_restyled_shell`: request `/`, `/findings`, `/metrics`, and `/scans/{scan_id}`; assert status 200, shared shell/topnav/main classes are present, no remote asset strings are present, and key page-specific content still appears.\n- Update `tests/dashboard/test_prsec_dashboard_routes.py::test_findings_filters` or add `test_findings_filters_remain_plain_get_and_partial_compatible`: assert `/findings` has a visible submit button, selected query filters limit rows, no-match filters show the empty state, pager links remain local, and an HX partial request still returns only the findings table without a full `<html>` document.\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_finding_detail_restyled_layout_preserves_sections`: request a seeded finding and assert the hero/layout/card classes are present and title, severity, label, status, repo/PR, description, label reasoning, remediation when present, code flow, guards, dynamic validation when present, triage, fingerprint, provenance, evidence links, scan links, and occurrences remain visible.\n- Keep `tests/dashboard/test_prsec_dashboard_routes.py::test_finding_detail_and_triage` passing with updated markup assertions as needed: HX triage partial still works, normal POST redirects to `/findings/{id}`, invalid state returns 422, and missing finding returns 404.\n- Keep `tests/dashboard/test_prsec_dashboard_routes.py::test_transcript_and_evidence_routes`, `test_metrics_page`, `test_sarif_download`, `test_local_path_refuses_off_site_redirects`, and `test_run_binds_loopback_unless_configured` passing.\n- Update `tests/dashboard/test_prsec_dashboard_timeline.py::test_scan_page_polls_while_running` to assert the running scan page exposes first-party poll metadata/hooks and no remote HTMX script; keep asserting the poll URL cursor includes the latest event and known groups.\n- Keep/update `tests/dashboard/test_prsec_dashboard_timeline.py::test_finished_scan_does_not_poll`, `test_poll_returns_only_new_events_out_of_band`, `test_poll_without_new_events_keeps_cursor`, `test_poll_stops_when_scan_finished`, `test_poll_continues_while_backlog_is_full`, and `test_scan_page_renders_timeline_escaped` so they still prove escaped rendering, cursor behavior, completion behavior, and partial append/swap behavior after any markup rename.\n\nRegression tests:\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_dashboard_restyle_escapes_untrusted_finding_and_scan_content`: insert or patch a finding, scan event, triage note, and forwarded user header containing `<script>`, HTML attributes, and `javascript:` text; assert raw executable markup/attributes do not appear and escaped text appears on finding and scan pages.\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_finding_detail_handles_missing_optional_sections`: render a finding with no remediation, guards, dynamic validation, source/path details, occurrences beyond the current row, or evidence URI; assert 200, meaningful fallback/empty text, and no broken evidence/dynamic-evidence links.\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_long_dashboard_values_use_wrapping_layout`: render or patch long title, repo, file path, fingerprint, snippet, provenance, app log, and triage-note values; assert the values are present inside expected wrapping/scrolling elements/classes such as cards, table wrappers, `code`, `pre`, or flow items.\n- Add or update a no-JavaScript fallback assertion in the route tests: forms have normal `method`/`action`, submit buttons are not inside `<noscript>`, and links/downloads are ordinary anchors.\nTests required: yes\n\n9. Risks\n- Visual quality is partly subjective; tests should verify structure, preserved content, and dependency/security rules rather than exact appearance.\n- Removing the remote HTMX library can regress async filtering, triage partial updates, or timeline polling if the first-party enhancement or plain fallbacks are incomplete.\n- Template restructuring can accidentally drop fields, links, empty states, escaping, or artifact download protections.\n- Larger CSS changes can introduce mobile overflow, poor contrast, or unreadable long security-scan content.\n- Static template tests can be brittle if they over-match non-asset text; keep them scoped to asset-loading and unsafe-rendering patterns.\n\n10. Suspicious content\nnone\n\nRisk level: medium\nReason: The change is mostly presentation, but it touches all dashboard templates that render untrusted security-scan data and removes/replaces a third-party JavaScript dependency used by existing progressive UI behavior.",
+          "thread.review_gate.current_node": "implement",
+          "human.gate.approve.answer": "A",
+          "thread.strong.current_node": "review",
+          "thread.verify.current_node": "risk_gate",
+          "internal.retry_count.install": 0,
+          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n            .cheap  { model: gpt-5.4-mini; reasoning_effort: low; }\n        ",
+          "thread.review.current_node": "review_gate",
+          "internal.retry_count.review_gate": 0,
+          "internal.retry_count.risk_gate": 0,
+          "last_stage": "implement",
+          "internal.run_id": "01M86EX302FZNDNV7QECEXDPPF",
+          "failure_class": "",
+          "internal.retry_count.check_issue": 0,
+          "thread.spec.current_node": "approve",
+          "internal.thread_id": "review_gate"
+        },
+        "node_outcomes": {
+          "check_issue": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/e0d8e55f8e73c6ff51a10f52c29294a6c9fda450fd8eb8e3c2c3eeb5bf445c79"
+            },
+            "notes": "Script completed: \nimport json, os, sys, urllib.request\nREPO_OWNER, REPO_NAME = '0x0pointer', 'Construct'\nRAW_NUMBER = '0'.strip()\nLABEL = 'fabro-approved'\nCLAIM = 'fabro-in-progress'\nMAINTAINERS = set(m.strip().lower() for m in 'RiieCco,blabla1337,JorgeCarvalhoPT'.split(',') if m.strip())\nclass Refused(Exception):\n    pass\ndef refuse(msg):\n    print('REFUSED: ' + msg)\n    sys.exit(1)\ntoken = os.environ.get('GITHUB_TOKEN')\nif not token:\n    refuse('no GITHUB_TOKEN in the sandbox, cannot verify approval')\nif not RAW_NUMBER.isdigit():\n    refuse('issue must be a number; 0 picks the oldest approved issue')\nNUMBER = int(RAW_NUMBER)\ndef send(url, body):\n    req = urllib.request.Request(url, data=json.dumps(body).encode(),\n        headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\n    return json.load(urllib.request.urlopen(req, timeout=30))\ndef graphql(query, **variables):\n    reply = send('https://api.github.com/graphql',\n        dict(query=query, variables=dict(variables, o=REPO_OWNER, n=REPO_NAME)))\n    if reply.get('errors'):\n        refuse('GitHub API error: ' + json.dumps(reply['errors'])[:300])\n    return reply['data']['repository']\nISSUE_QUERY = '''\nquery($o: String!, $n: String!, $i: Int!) {\n  repository(owner: $o, name: $n) {\n    issue(number: $i) {\n      title\n      body\n      state\n      lastEditedAt\n      author { login }\n      labels(first: 50) { nodes { name } }\n      timelineItems(itemTypes: [LABELED_EVENT], last: 100) {\n        nodes { ... on LabeledEvent { createdAt actor { login } label { name } } }\n      }\n    }\n  }\n}\n'''\nLIST_QUERY = '''\nquery($o: String!, $n: String!, $l: String!) {\n  repository(owner: $o, name: $n) {\n    issues(first: 100, states: [OPEN], labels: [$l], orderBy: { field: CREATED_AT, direction: ASC }) {\n      nodes { number labels(first: 50) { nodes { name } } }\n    }\n  }\n}\n'''\ndef approved(number):\n    # The approval check itself. Raises Refused unless every condition holds.\n    issue = graphql(ISSUE_QUERY, i=number)['issue']\n    if issue is None:\n        raise Refused('issue not found (pull requests are not accepted)')\n    if issue['state'] != 'OPEN':\n        raise Refused('issue is not open')\n    if LABEL not in [l['name'] for l in issue['labels']['nodes']]:\n        raise Refused('issue does not carry the label ' + LABEL)\n    events = [e for e in issue['timelineItems']['nodes'] if e and e['label']['name'] == LABEL]\n    if not events:\n        raise Refused('no labelling event found for ' + LABEL)\n    last = events[-1]\n    actor = ((last.get('actor') or dict()).get('login') or '').lower()\n    if actor not in MAINTAINERS:\n        raise Refused('label was applied by ' + (actor or 'unknown') + ', who is not a listed maintainer')\n    edited = issue.get('lastEditedAt')\n    if edited and edited > last['createdAt']:\n        raise Refused('issue text was edited after approval; a maintainer must re-apply the label')\n    return issue, actor, last['createdAt']\ndef claim(number):\n    # Mark the issue as picked up, so a run started without a number skips it.\n    send('https://api.github.com/repos/' + REPO_OWNER + '/' + REPO_NAME + '/issues/' + str(number) + '/labels',\n        dict(labels=[CLAIM]))\nif NUMBER > 0:\n    # A specific issue was asked for (-I issue=<number>, or construct-build).\n    try:\n        issue, actor, when = approved(NUMBER)\n    except Refused as exc:\n        refuse(str(exc))\n    try:\n        claim(NUMBER)\n    except Exception as exc:\n        print('warning: could not add the label ' + CLAIM + ' (' + type(exc).__name__ + ')')\nelse:\n    # No issue given (the automation's Run button): take the oldest open,\n    # approved issue that no run has picked up yet. Every candidate still has\n    # to pass the full approval check; one that fails is skipped, not built.\n    issue = None\n    candidates = graphql(LIST_QUERY, l=LABEL)['issues']['nodes']\n    for node in candidates:\n        number = node['number']\n        if CLAIM in [l['name'] for l in node['labels']['nodes']]:\n            print('skipped issue', number, '- already picked up (label ' + CLAIM + ')')\n            continue\n        try:\n            issue, actor, when = approved(number)\n        except Refused as exc:\n            print('skipped issue', number, '-', exc)\n            continue\n        NUMBER = number\n        break\n    if issue is None:\n        print('NOTHING TO BUILD: no open issue labelled ' + LABEL + ' is waiting (' + str(len(candidates)) + ' checked).')\n        print('To build an issue again, remove its ' + CLAIM + ' label.')\n        sys.exit(1)\n    try:\n        claim(NUMBER)\n    except Exception as exc:\n        refuse('could not add the label ' + CLAIM + ' to issue ' + str(NUMBER) + ' (' + type(exc).__name__ + '); not building it, because the next run would pick it again')\nos.makedirs('/tmp/fabro', exist_ok=True)\nwith open('/tmp/fabro/issue.md', 'w') as f:\n    f.write('# ' + issue['title'] + chr(10) + chr(10) + (issue['body'] or '') + chr(10))\nprint('APPROVED: issue', NUMBER, 'released by', actor, 'at', when)\nprint('title:', issue['title'])",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 3103,
+              "active_time_ms": 3103
+            }
+          },
+          "spec": {
+            "status": "succeeded",
+            "context_updates": {
+              "last_response": "1. Summary\nRestyle the PRSec/Construct dashboard so it is modern, readable, responsive, and self-contained. The finding detail page is the priority and must be reorganized around clear security-review",
+              "last_stage": "spec",
+              "response.spec": "1. Summary\nRestyle the PRSec/Construct dashboard so it is modern, readable, responsive, and self-contained. The finding detail page is the priority and must be reorganized around clear security-review sections without losing any existing data. Remove the remote HTMX CDN dependency and do not load styling, fonts, icons, JavaScript, or other assets from any remote/third-party online source.\n\n2. Acceptance criteria\n1. The full dashboard pages `/`, `/findings`, `/findings/{id}`, `/scans/{id}`, and `/metrics` render with a shared modern shell: branded top navigation, readable max-width content, page headers, card/panel sections, styled badges, styled forms, wrapped/scrollable tables, visible keyboard focus states, dark-mode CSS variables, and responsive layout below narrow widths.\n2. `/findings/{id}` is substantially reorganized for readability: a hero/header with title and key badges; a responsive main/aside layout; distinct card sections for description, label reasoning, remediation, code flow, guards, dynamic validation, triage, provenance, metadata, and occurrences; and every value/link currently rendered by `finding.html` remains present when available.\n3. Findings and scans filters keep working as plain GET forms with visible submit buttons. Existing query parameters still filter results, no-match results render a clear empty state, pagination remains usable, and the `/findings` partial response still works when requested with the existing `HX-Request`/`HX-Target` headers.\n4. Triage, timeline, evidence/transcript, SARIF, metrics, scan detail, and health routes keep their server-side behavior. Triage POST still validates state server-side, redirects on normal POST, returns only the triage partial for HX requests, and returns 404/422 as today. Timeline event partials keep cursor behavior and append/swap hints for progressive enhancement.\n5. No rendered dashboard template loads remote assets. Dashboard templates must not contain remote `<script src>`, `<link href>`, web font, icon, or stylesheet references such as `http://`, `https://`, `unpkg.com`, or `htmx.org`; `pyproject.toml` dependencies must not change for this restyle. If a frontend library is used, it must be bundled locally in this repository, served same-origin by the dashboard, pinned to a specific version in a comment or filename, and must not load additional remote assets.\n6. Core dashboard use works without JavaScript: navigation uses links, filtering uses GET forms, triage uses POST forms, downloads use ordinary links, and scan/timeline pages remain meaningful. Any async behavior must be progressive enhancement using either small first-party vanilla JavaScript or a locally bundled same-origin frontend library; if it fails, the plain HTML path still works.\n7. Escaping and trust boundaries are preserved. No dashboard template may introduce `|safe`, inline event-handler attributes, `javascript:` URLs, `eval`, `new Function`, or JavaScript interpolation of user-, agent-, PR-, header-, database-, or artifact-derived values into executable code.\n8. Existing dashboard tests continue to pass after intentional assertion updates for the removed remote HTMX script, and new tests cover the restyled shell, finding detail layout, no-remote-asset rule, no-JavaScript fallbacks, empty states, optional/missing data, long values, and XSS regressions.\n\n3. Scope\nFiles to change or add:\n- `prsec/dashboard/templates/base.html`\n- `prsec/dashboard/templates/finding.html`\n- `prsec/dashboard/templates/findings.html`\n- `prsec/dashboard/templates/_findings_table.html`\n- `prsec/dashboard/templates/scans.html`\n- `prsec/dashboard/templates/scan.html`\n- `prsec/dashboard/templates/metrics.html`\n- `prsec/dashboard/templates/_triage.html`\n- `prsec/dashboard/templates/_timeline.html`, `_timeline_poller.html`, `_timeline_poll.html`, and `_timeline_macros.html` only as needed to replace remote-HTMX assumptions with same-origin progressive-enhancement hooks while preserving partial route behavior\n- `prsec/dashboard/main.py` only if needed to serve locally bundled dashboard static assets\n- `prsec/dashboard/static/**` only if a small local frontend library or local dashboard JS/CSS file is used\n- `tests/dashboard/test_prsec_dashboard_routes.py`\n- `tests/dashboard/test_prsec_dashboard_timeline.py`\n- Add `tests/dashboard/test_prsec_dashboard_templates.py`\n\nOut of scope:\n- Database schema, database query semantics, and seed data changes except temporary test setup data\n- API, worker, orchestrator, runner, dynamic validation, SARIF generation, skills, policy, and queue logic\n- Authentication/authorization model changes\n- CI, deployment, Helm, compose, Docker, and workflow changes\n- Adding frontend package managers, build steps, remote external fonts/icons/images/scripts/styles, or new Python/project dependencies\n- Large frontend frameworks or broad static asset pipelines. A small vendored frontend library is allowed only if it is committed locally, served same-origin, version-pinned, and simpler than reimplementing the needed progressive behavior.\n- Broad refactors, route renames, or unrelated template/content changes\n\n4. Design\nUse the existing FastAPI + Jinja2 dashboard architecture and keep the UI self-contained. Prefer putting shared CSS and small progressive-enhancement JavaScript in `base.html`; if using a local bundled frontend library or local dashboard JS/CSS file, serve it from a dashboard-owned same-origin static path and keep the integration minimal. Do not introduce a package-manager or build-based asset pipeline. Build a simple design system from existing concepts (`panel`, `badge`, `grid2`, `kv`, `muted`, severity/status/triage classes) and extend it with clear dashboard classes such as a shell/topnav, page header, card, table wrapper, responsive grid, metadata list, flow list, empty state, and screen-reader/focus utilities.\n\nPrioritize `finding.html`. Keep the same context variables (`f`, `data`, `flow`, `dyn`, `triage_states`) and all current links to scans, triage, evidence, dynamic evidence, transcripts, SARIF, and occurrences. Move presentation into semantic sections rather than inline styles where practical. Long text/code should wrap or scroll within cards/tables rather than expanding the page horizontally.\n\nRemove the remote HTMX `<script>` from `base.html`. Forms and links must be correct without JavaScript first. If retaining async filters, triage partial replacement, or timeline polling in the browser, implement minimal progressive enhancement using either vanilla JavaScript or a locally bundled same-origin library. The enhancement must attach to explicit attributes/hooks, request only same-origin routes, send the existing HX compatibility headers only when requesting existing partial routes, update only known target elements, and handle failures by leaving the normal form/link path available. Do not use `eval`, dynamic script creation from remote URLs, inline event attributes, or untrusted values inside JavaScript templates.\n\n5. Code quality requirements\n- Follow the style and naming conventions of the surrounding Jinja templates and dashboard tests.\n- Keep changes focused on dashboard presentation and progressive enhancement; do not refactor unrelated Python logic.\n- Use existing partials (`_findings_table.html`, `_triage.html`, `_timeline*.html`) instead of duplicating large blocks.\n- Use clear class and `data-*` names tied to dashboard concepts; remove obsolete remote-HTMX assumptions if they are replaced.\n- Avoid dead CSS/JS, unused template fragments, speculative abstractions, and broad renames.\n- Preserve route paths, form field names, query parameter names, table data, links, status/severity/triage values, and error behavior.\n- Keep error handling and validation at the current Python route layer; templates must not hide 404/422 responses or client-side-bypass server validation.\n\n6. Security considerations\nUntrusted input rendered by these templates includes PR metadata, repository names, scan/finding data, agent outputs, SARIF-derived fields, code snippets, event messages/data, triage notes, request forwarded-user headers, filter query values, and artifact metadata. The change must preserve Jinja autoescaping and must not add `|safe`, inline event handlers, string-to-code execution, or JavaScript that converts untrusted values into executable HTML/script. Removing the remote HTMX CDN reduces third-party script supply-chain exposure. Any first-party JavaScript or locally bundled library integration must only request same-origin dashboard routes, update predetermined DOM targets, not make authorization decisions, not load additional remote code/assets, and degrade to normal full-page forms/links on failure. Authentication remains external behind the SSO proxy and must not be changed. Triage state changes must continue to depend on the existing POST route and server-side validation. Evidence and transcript responses must remain `text/plain` with `X-Content-Type-Options: nosniff`.\n\n7. Edge cases\n- Empty data: no scans, no findings, no matching filter results, no stage runs, no timeline events, no guards, no dynamic validation, no replay runs, no occurrences.\n- Malformed or unexpected display values: missing optional fields, unknown severity/status/label/triage values, absent source/path/sink details, missing timestamps, missing costs, and missing artifact URIs.\n- Oversized content: long titles, repository names, file paths, fingerprints, snippets, event messages, JSON/provenance, app logs, triage notes, filter values, and user headers must wrap or scroll without breaking layout.\n- Duplicate/repeated content: repeated findings, repeated timeline groups, repeated badges, repeated filter values, and repeated partial updates must not create invalid IDs or unreadable output.\n- Concurrent/state-changing input: multiple triage submissions must still be resolved by the existing server route; client-side enhancement must not bypass validation or force state out of order.\n- Failure/no-enhancement modes: JavaScript disabled, fetch failure, partial endpoint error, blocked script, or stale timeline cursor must leave filtering, triage, navigation, and reloads usable through ordinary page loads.\n- Security edge cases: malicious HTML/JS in finding titles/descriptions/snippets/events/triage notes/forwarded-user headers must render escaped; remote asset URLs must not be loaded from templates.\n\n8. Test plan\nUnit tests:\n- Add `tests/dashboard/test_prsec_dashboard_templates.py::test_dashboard_templates_do_not_load_remote_assets`: read `prsec/dashboard/templates/*.html` and any dashboard static files added for this issue; assert there are no remote script/link/font/icon/stylesheet references (`http://`, `https://`, `unpkg.com`, `htmx.org`) in asset-loading contexts and no locally bundled library tries to load additional remote assets.\n- Add `tests/dashboard/test_prsec_dashboard_templates.py::test_dashboard_templates_do_not_introduce_unsafe_rendering_hooks`: assert dashboard templates do not contain `|safe`, inline `on...=` event handlers, `javascript:` URLs, `eval(`, or `new Function`.\n- Add `tests/dashboard/test_prsec_dashboard_templates.py::test_base_template_defines_self_contained_responsive_design`: assert `base.html` includes the shared shell/topnav/card/table/form/badge/focus/dark-mode/responsive CSS tokens and no remote script tag.\n\nIntegration tests:\n- Update `tests/dashboard/test_prsec_dashboard_routes.py::test_scans_list`: remove the `htmx.org@2.0.4` expectation; assert the scans page renders the shared shell/navigation, visible GET filters, restyled table/card markup, seeded scan data, cost, duration, and filtered results.\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_dashboard_pages_share_restyled_shell`: request `/`, `/findings`, `/metrics`, and `/scans/{scan_id}`; assert status 200, shared shell/topnav/main classes are present, no remote asset strings are present, and key page-specific content still appears.\n- Update `tests/dashboard/test_prsec_dashboard_routes.py::test_findings_filters` or add `test_findings_filters_remain_plain_get_and_partial_compatible`: assert `/findings` has a visible submit button, selected query filters limit rows, no-match filters show the empty state, pager links remain local, and an HX partial request still returns only the findings table without a full `<html>` document.\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_finding_detail_restyled_layout_preserves_sections`: request a seeded finding and assert the hero/layout/card classes are present and title, severity, label, status, repo/PR, description, label reasoning, remediation when present, code flow, guards, dynamic validation when present, triage, fingerprint, provenance, evidence links, scan links, and occurrences remain visible.\n- Keep `tests/dashboard/test_prsec_dashboard_routes.py::test_finding_detail_and_triage` passing with updated markup assertions as needed: HX triage partial still works, normal POST redirects to `/findings/{id}`, invalid state returns 422, and missing finding returns 404.\n- Keep `tests/dashboard/test_prsec_dashboard_routes.py::test_transcript_and_evidence_routes`, `test_metrics_page`, `test_sarif_download`, `test_local_path_refuses_off_site_redirects`, and `test_run_binds_loopback_unless_configured` passing.\n- Update `tests/dashboard/test_prsec_dashboard_timeline.py::test_scan_page_polls_while_running` to assert the running scan page exposes first-party poll metadata/hooks and no remote HTMX script; keep asserting the poll URL cursor includes the latest event and known groups.\n- Keep/update `tests/dashboard/test_prsec_dashboard_timeline.py::test_finished_scan_does_not_poll`, `test_poll_returns_only_new_events_out_of_band`, `test_poll_without_new_events_keeps_cursor`, `test_poll_stops_when_scan_finished`, `test_poll_continues_while_backlog_is_full`, and `test_scan_page_renders_timeline_escaped` so they still prove escaped rendering, cursor behavior, completion behavior, and partial append/swap behavior after any markup rename.\n\nRegression tests:\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_dashboard_restyle_escapes_untrusted_finding_and_scan_content`: insert or patch a finding, scan event, triage note, and forwarded user header containing `<script>`, HTML attributes, and `javascript:` text; assert raw executable markup/attributes do not appear and escaped text appears on finding and scan pages.\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_finding_detail_handles_missing_optional_sections`: render a finding with no remediation, guards, dynamic validation, source/path details, occurrences beyond the current row, or evidence URI; assert 200, meaningful fallback/empty text, and no broken evidence/dynamic-evidence links.\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_long_dashboard_values_use_wrapping_layout`: render or patch long title, repo, file path, fingerprint, snippet, provenance, app log, and triage-note values; assert the values are present inside expected wrapping/scrolling elements/classes such as cards, table wrappers, `code`, `pre`, or flow items.\n- Add or update a no-JavaScript fallback assertion in the route tests: forms have normal `method`/`action`, submit buttons are not inside `<noscript>`, and links/downloads are ordinary anchors.\nTests required: yes\n\n9. Risks\n- Visual quality is partly subjective; tests should verify structure, preserved content, and dependency/security rules rather than exact appearance.\n- Removing the remote HTMX library can regress async filtering, triage partial updates, or timeline polling if the first-party enhancement or plain fallbacks are incomplete.\n- Template restructuring can accidentally drop fields, links, empty states, escaping, or artifact download protections.\n- Larger CSS changes can introduce mobile overflow, poor contrast, or unreadable long security-scan content.\n- Static template tests can be brittle if they over-match non-asset text; keep them scoped to asset-loading and unsafe-rendering patterns.\n\n10. Suspicious content\nnone\n\nRisk level: medium\nReason: The change is mostly presentation, but it touches all dashboard templates that render untrusted security-scan data and removes/replaces a third-party JavaScript dependency used by existing progressive UI behavior."
+            },
+            "notes": "Stage completed: spec",
+            "usage": {
+              "input": {
+                "usage": {
+                  "model": {
+                    "provider": "openai",
+                    "model_id": "gpt-5.5"
+                  },
+                  "tokens": {
+                    "input_tokens": 89675,
+                    "output_tokens": 11573,
+                    "reasoning_tokens": 5560,
+                    "cache_read_tokens": 330240,
+                    "cache_write_tokens": 0
+                  }
+                },
+                "facts": {
+                  "algorithm": "openai"
+                }
+              },
+              "total_usd_micros": 1127485
+            },
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 177068,
+              "tool_time_ms": 3438,
+              "active_time_ms": 180506
+            }
+          },
+          "verify": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/15f63a6b7a709611edc1880fcf504ca5c9b3a4e1c67c91eee0bd91d446cc5524"
+            },
+            "notes": "Script completed: \nimport os, shlex, subprocess, sys\nD = '/tmp/fabro'\nNL = chr(10)\nMAX_CHEAP = int('2')\nMAX_FIXES = int('4')\nMARK = 'not db and not docker and not k8s and not live_harness'\nos.makedirs(D, exist_ok=True)\ndef run(cmd):\n    p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')\n    return p.returncode, p.stdout\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\ndef changed_files():\n    rc1, tracked = run('git diff --name-only origin/main')\n    rc2, others = run('git ls-files --others --exclude-standard')\n    if rc1 != 0 or rc2 != 0:\n        return None, tracked + others\n    return sorted(set(l.strip() for l in (tracked + NL + others).splitlines() if l.strip())), ''\nchanged, git_error = changed_files()\ndef guard():\n    if changed is None:\n        return False, 'Could not list changed files:' + NL + git_error\n    bad = [f for f in changed if f.startswith(('.github/', '.fabro/', 'deploy/', '.env')) or f in ('LICENSE', 'sonar-project.properties')]\n    if bad:\n        return False, 'PROTECTED FILES CHANGED - revert these:' + NL + NL.join(bad)\n    if not changed:\n        return False, 'No files were changed, so there is nothing to verify.'\n    return True, 'changed files:' + NL + NL.join(changed)\ndef tests_present():\n    code = [f for f in changed if f.endswith('.py') and not f.startswith('tests/')]\n    tests = [f for f in changed if f.startswith('tests/')]\n    waived = 'tests required: no' in read(D + '/spec.md').lower()\n    if code and not tests and not waived:\n        return False, 'Python code changed but nothing under tests/ was added or updated. Write the tests named in the spec Test plan. Changed code:' + NL + NL.join(code)\n    return True, str(len(tests)) + ' test file(s) changed'\ndef syntax():\n    py = [f for f in changed if f.endswith('.py') and os.path.exists(f)]\n    if not py:\n        return True, 'no python files changed'\n    rc, out = run(shlex.quote(sys.executable) + ' -m py_compile ' + ' '.join(shlex.quote(f) for f in py))\n    return rc == 0, out\ndef command(cmd):\n    def go():\n        rc, out = run(cmd)\n        return rc == 0, out\n    return go\nSTEPS = [\n    ('protected paths', guard),\n    ('tests present', tests_present),\n    ('syntax', syntax),\n    ('install', command('pip install -q -e ' + shlex.quote('.[dev]'))),\n    ('skills lint', command('prsec-skills-lint prsec-skills')),\n    ('unit tests', command('pytest -q -m ' + shlex.quote(MARK))),\n]\nlog = []\nfailure = None\nfor name, step in STEPS:\n    ok, out = step()\n    log.append('===== ' + name + ': ' + ('ok' if ok else 'FAILED') + NL + out)\n    if not ok:\n        failure = (name, out)\n        break\nwrite(D + '/verify.log', (NL + NL).join(log) + NL)\nif failure is None:\n    write(D + '/verify_fails', '0')\n    if os.path.exists(D + '/verify-summary.md'):\n        os.remove(D + '/verify-summary.md')\n    print('VERIFIED: ' + ', '.join(name for name, _ in STEPS) + ' all passed')\n    sys.exit(0)\nname, out = failure\nlines = out.splitlines()\nfailing = [l for l in lines if l.startswith(('FAILED ', 'ERROR '))][:25]\nsummary = 'Verification failed at step: ' + name + NL\nif failing:\n    summary += NL + 'Failing tests:' + NL + NL.join(failing) + NL\nsummary += NL + 'Last lines of output:' + NL + NL.join(lines[-30:]) + NL\nsummary += NL + 'Full log: /tmp/fabro/verify.log' + NL\nsummary = summary[-6000:]\nwrite(D + '/verify-summary.md', summary)\ntry:\n    fails = int(read(D + '/verify_fails').strip() or 0) + 1\nexcept ValueError:\n    fails = MAX_FIXES + 1\nwrite(D + '/verify_fails', str(fails))\nif fails <= MAX_CHEAP:\n    route = 'ROUTE_quick'\nelif fails <= MAX_FIXES:\n    route = 'ROUTE_deep'\nelse:\n    route = 'ROUTE_human'\nprint(route + ' (consecutive failed verifications: ' + str(fails) + ')')\nprint(summary.replace('ROUTE_', 'ROUTE-')[-3000:])\nsys.exit(1)",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 125347,
+              "active_time_ms": 125347
+            }
+          },
+          "install": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/b29412db3ae5fafae23855906ef445965ef3d006458d12517ade3727363570fc"
+            },
+            "notes": "Script completed: pip install -q -e '.[dev]' && python -c 'import prsec; print(\"prsec importable\")'",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 23778,
+              "active_time_ms": 23778
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "approve": {
+            "status": "succeeded",
+            "preferred_label": "[A] Approve",
+            "suggested_next_ids": [
+              "implement"
+            ],
+            "context_updates": {
+              "human.gate.approve.answer": "A",
+              "human.gate.approve.question": "Approve the spec?",
+              "human.gate.label": "[A] Approve",
+              "human.gate.selected": "A",
+              "human.gate.approve.label": "[A] Approve"
+            },
+            "usage": null
+          },
+          "implement": {
+            "status": "succeeded",
+            "context_updates": {
+              "last_response": "Implemented the review fix for the finding detail page.\n\nWhat I changed:\n- Split the combined finding-detail content block in `prsec/dashboard/templates/finding.html` into three distinct cards:\n  - `D",
+              "last_stage": "implement",
+              "response.implement": "Implemented the review fix for the finding detail page.\n\nWhat I changed:\n- Split the combined finding-detail content block in `prsec/dashboard/templates/finding.html` into three distinct cards:\n  - `Description`\n  - `Label reasoning`\n  - `Remediation`\n- Kept the existing escaped values and fallback text, including `No remediation recorded.` when remediation is absent.\n- Tightened the existing route regression test in `tests/dashboard/test_prsec_dashboard_routes.py` so it now asserts those three headings each appear as their own `.card` section.\n\nTest coverage for the finding:\n- Reviewer finding: missing distinct cards for description, label reasoning, and remediation\n  - Covered by `tests/dashboard/test_prsec_dashboard_routes.py::test_finding_detail_restyled_layout_preserves_sections`\n\nValidation:\n- Ran: `pytest -q -m 'not db and not docker and not k8s and not live_harness'`\n- Result: passed (`1846 passed, 19 skipped, 96 deselected`)"
+            },
+            "notes": "Stage completed: implement",
+            "usage": {
+              "input": {
+                "usage": {
+                  "model": {
+                    "provider": "openai",
+                    "model_id": "gpt-5.4"
+                  },
+                  "tokens": {
+                    "input_tokens": 32842,
+                    "output_tokens": 2060,
+                    "reasoning_tokens": 820,
+                    "cache_read_tokens": 261120,
+                    "cache_write_tokens": 0
+                  }
+                },
+                "facts": {
+                  "algorithm": "openai"
+                }
+              },
+              "total_usd_micros": 190585
+            },
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 46450,
+              "tool_time_ms": 285034,
+              "active_time_ms": 331484
+            }
+          },
+          "review": {
+            "status": "succeeded",
+            "context_updates": {
+              "last_stage": "review",
+              "response.review": "verdict: fail\n\nblocking findings: prsec/dashboard/templates/finding.html:20 — finding detail collapses description, label reasoning, and remediation into one card instead of the distinct card sections required by acceptance criterion 2.",
+              "last_response": "verdict: fail\n\nblocking findings: prsec/dashboard/templates/finding.html:20 — finding detail collapses description, label reasoning, and remediation into one card instead of the distinct card sectio"
+            },
+            "notes": "Stage completed: review",
+            "usage": {
+              "input": {
+                "usage": {
+                  "model": {
+                    "provider": "openai",
+                    "model_id": "gpt-5.5"
+                  },
+                  "tokens": {
+                    "input_tokens": 82315,
+                    "output_tokens": 2076,
+                    "reasoning_tokens": 7982,
+                    "cache_read_tokens": 824320,
+                    "cache_write_tokens": 0
+                  }
+                },
+                "facts": {
+                  "algorithm": "openai"
+                }
+              },
+              "total_usd_micros": 1125475
+            },
+            "files_touched": [
+              "/tmp/fabro/review.json"
+            ],
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 155111,
+              "tool_time_ms": 2013,
+              "active_time_ms": 157124
+            }
+          },
+          "review_gate": {
+            "status": "failed",
+            "context_updates": {
+              "command.output": "blob://sha256/67d208216458da1748bc1fb058e16a38a4fb79836ef03f98d718263d739be65a"
+            },
+            "failure": {
+              "message": "Script failed with exit code: 1\n\n## output\nROUTE_implement\nREVIEW REJECTED, round 1 of 3, 1 blocking finding(s):\n1. [correctness] prsec/dashboard/templates/finding.html:20\n   Problem: The finding detail page renders description, label reasoning, and remediation as subsections inside a single `section class=\"card\"` headed `Description` (lines 20-38). Acceptance criterion 2 requires distinct card sections for description, label reasoning, and remediation, so two of the required finding-detail cards are missing even when their data is available.\n   Required fix: Split this block into separate `.card`/`section` elements: one for Description, one for Label reasoning, and one for Remediation (with the existing fallback text when remediation is absent), while keeping the existing escaped values and headings visible.\n",
+              "category": "deterministic"
+            },
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 163,
+              "active_time_ms": 163
+            }
+          },
+          "risk_gate": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/986be2c9ec2b22d3240f3a57eb74d349e29104baa755737684d781889caa83f9"
+            },
+            "notes": "Script completed: \nimport hashlib, os, shlex, subprocess\nD = '/tmp/fabro'\nNL = chr(10)\nMAX_LIGHT_LINES = int('40')\nSENSITIVE = [s.strip().lower() for s in 'auth,secret,token,crypt,password,sandbox,policy,gateway,egress,proxy,orchestrator,launcher,adapters,dynamic,prsec/api,prsec/db,config,Dockerfile,pyproject.toml,requirements'.split(',') if s.strip()]\nRISKY = ['subprocess', 'os.system', 'eval(', 'exec(', 'pickle', 'yaml.load', 'shell=True', '.execute(', 'urlopen', 'requests.', 'httpx.', 'jinja', 'token', 'secret', 'password', 'authoriz', 'permission']\ndef run(cmd):\n    p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)\n    return p.returncode, p.stdout\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\nreasons = []\nrc1, diff = run('git diff origin/main')\nrc2, others_raw = run('git ls-files --others --exclude-standard')\nrc3, names_raw = run('git diff --name-only origin/main')\nif rc1 != 0 or rc2 != 0 or rc3 != 0:\n    reasons.append('could not read the diff')\nothers = [l.strip() for l in others_raw.decode(errors='replace').splitlines() if l.strip()]\ntracked = [l.strip() for l in names_raw.decode(errors='replace').splitlines() if l.strip()]\ndigest = hashlib.sha256(diff)\nadded = []\ncurrent = ''\nfor line in diff.decode(errors='replace').splitlines():\n    if line.startswith('+++ '):\n        current = line[6:] if line.startswith('+++ b/') else ''\n    elif line.startswith('+'):\n        added.append((current, line[1:]))\nfor name in sorted(others):\n    digest.update(name.encode())\n    try:\n        with open(name, 'rb') as f:\n            body = f.read()\n    except OSError:\n        body = bytes()\n    digest.update(body)\n    added.extend((name, l) for l in body.decode(errors='replace').splitlines())\nwrite(D + '/review_fp', digest.hexdigest())\nchanged = sorted(set(tracked + others))\ncode_files = [f for f in changed if not f.startswith('tests/')]\nremoved = sum(1 for l in diff.decode(errors='replace').splitlines() if l.startswith('-') and not l.startswith('---'))\nsize = len(added) + removed\ntry:\n    rounds = int(read(D + '/review_rounds').strip() or 0)\nexcept ValueError:\n    rounds = 1\nif rounds > 0:\n    reasons.append('a previous review round rejected this change')\nspec_risk = ''\nfor line in read(D + '/spec.md').splitlines():\n    text = line.strip().lstrip('#*- ').lower()\n    if text.startswith('risk level'):\n        spec_risk = text.split(':', 1)[-1].strip().strip('*`. ')\nif not spec_risk.startswith('low'):\n    reasons.append('spec risk level is ' + (spec_risk or 'not stated'))\nif size > MAX_LIGHT_LINES:\n    reasons.append(str(size) + ' changed lines (limit for a light review: ' + str(MAX_LIGHT_LINES) + ')')\nhits = sorted(set(f for f in code_files for s in SENSITIVE if s in f.lower()))\nif hits:\n    reasons.append('security-sensitive paths: ' + ', '.join(hits[:8]))\nrisky = sorted(set(r for name, l in added if not name.startswith('tests/') for r in RISKY if r in l))\nif risky:\n    reasons.append('risky constructs in added code: ' + ', '.join(risky))\nif os.path.exists(D + '/review.json'):\n    os.remove(D + '/review.json')\ntier = 'strong' if reasons else 'light'\nwrite(D + '/review_tier', tier)\nprint('ROUTE_' + tier)\nprint('files changed: ' + str(len(changed)) + ', lines changed: ' + str(size))\nfor r in reasons:\n    print('- ' + r.replace('ROUTE_', 'ROUTE-'))",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 170,
+              "active_time_ms": 170
+            }
+          }
+        },
+        "next_node_id": "verify",
+        "git_commit_sha": "4d3ba284e1b2b8ca35d6929fd65401fa874d43ac",
+        "loop_failure_signatures": {
+          "review_gate|deterministic|script failed with exit code: <n> ## output route_implement review rejected,round <n> of <n>,<n> blocking finding(s): <n>. [correctness] prsec/dashboard/templates/finding.html:<n> problem: the finding detail page renders description,label r": 1
+        },
+        "node_visits": {
+          "review": 1,
+          "check_issue": 1,
+          "approve": 2,
+          "review_gate": 1,
+          "start": 1,
+          "implement": 2,
+          "risk_gate": 1,
+          "spec": 2,
+          "install": 1,
+          "verify": 1
+        }
+      },
+      "diff": {
+        "patch": "diff --git a/prsec/dashboard/templates/finding.html b/prsec/dashboard/templates/finding.html\nindex f85fe40..e771b30 100644\n--- a/prsec/dashboard/templates/finding.html\n+++ b/prsec/dashboard/templates/finding.html\n@@ -20,23 +20,26 @@\n     <section class=\"card\">\n       <div class=\"section-heading\">\n         <h2>Description</h2>\n-        <p class=\"muted\">Summary and label reasoning captured for this finding.</p>\n+        <p class=\"muted\">Summary captured for this finding.</p>\n       </div>\n-      <div class=\"stack\">\n-        <div>\n-          <h3>Description</h3>\n-          <p class=\"pre-wrap\">{{ data.description or 'No description recorded.' }}</p>\n-        </div>\n-        <div>\n-          <h3>Label reasoning</h3>\n-          <p class=\"pre-wrap\">{{ data.label_reason or 'No label reasoning recorded.' }}</p>\n-        </div>\n-        <div>\n-          <h3>Remediation</h3>\n-          {% if data.remediation %}<p class=\"pre-wrap\">{{ data.remediation }}</p>\n-          {% else %}<p class=\"muted\">No remediation recorded.</p>{% endif %}\n-        </div>\n+      <p class=\"pre-wrap\">{{ data.description or 'No description recorded.' }}</p>\n+    </section>\n+\n+    <section class=\"card\">\n+      <div class=\"section-heading\">\n+        <h2>Label reasoning</h2>\n+        <p class=\"muted\">Why this finding was assigned its current label.</p>\n+      </div>\n+      <p class=\"pre-wrap\">{{ data.label_reason or 'No label reasoning recorded.' }}</p>\n+    </section>\n+\n+    <section class=\"card\">\n+      <div class=\"section-heading\">\n+        <h2>Remediation</h2>\n+        <p class=\"muted\">Suggested mitigation steps, when available.</p>\n       </div>\n+      {% if data.remediation %}<p class=\"pre-wrap\">{{ data.remediation }}</p>\n+      {% else %}<p class=\"muted\">No remediation recorded.</p>{% endif %}\n     </section>\n \n     <section class=\"card\">\ndiff --git a/tests/dashboard/test_prsec_dashboard_routes.py b/tests/dashboard/test_prsec_dashboard_routes.py\nindex 85cc8b1..503c6c6 100644\n--- a/tests/dashboard/test_prsec_dashboard_routes.py\n+++ b/tests/dashboard/test_prsec_dashboard_routes.py\n@@ -1,4 +1,5 @@\n import json\n+import re\n \n import pytest\n from psycopg.types.json import Jsonb\n@@ -202,6 +203,11 @@ def test_finding_detail_restyled_layout_preserves_sections(client, seeded, pg_po\n     assert r.status_code == 200\n     assert 'class=\"page-header hero\"' in r.text\n     assert 'class=\"grid2\"' in r.text\n+    for heading in (\"Description\", \"Label reasoning\", \"Remediation\"):\n+        assert re.search(\n+            rf'<section class=\"card\">\\s*<div class=\"section-heading\">\\s*<h2>{re.escape(heading)}</h2>',\n+            r.text,\n+        )\n     for heading in (\"Description\", \"Label reasoning\", \"Remediation\", \"Code flow\", \"Guards\",\n                     \"Dynamic validation\", \"Triage\", \"Metadata\", \"Provenance\", \"Occurrences\"):\n         assert heading in r.text\n",
+        "summary": {
+          "files_changed": 13,
+          "additions": 1339,
+          "deletions": 365
+        }
+      }
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-11-24T10:22:35.486764222Z",
+        "current_node": "verify",
+        "completed_nodes": [
+          "start",
+          "check_issue",
+          "install",
+          "spec",
+          "approve",
+          "spec",
+          "approve",
+          "implement",
+          "verify",
+          "risk_gate",
+          "review",
+          "review_gate",
+          "implement",
+          "verify"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "human.gate.selected": "A",
+          "internal.thread_id": "implement",
           "thread.check_issue.current_node": "install",
           "internal.retry_count.review": 0,
           "human.gate.approve.label": "[A] Approve",
@@ -2882,7 +3183,7 @@
           "thread.implement.current_node": "verify",
           "internal.retry_count.implement": 0,
           "internal.retry_count.risk_gate": 0,
-          "current_node": "implement",
+          "current_node": "verify",
           "last_stage": "implement",
           "thread.verify.current_node": "risk_gate",
           "graph.max_node_visits": "30",
@@ -2917,7 +3218,7 @@
           "preferred_label": "[A] Approve",
           "response.implement": "Implemented the review fix for the finding detail page.\n\nWhat I changed:\n- Split the combined finding-detail content block in `prsec/dashboard/templates/finding.html` into three distinct cards:\n  - `Description`\n  - `Label reasoning`\n  - `Remediation`\n- Kept the existing escaped values and fallback text, including `No remediation recorded.` when remediation is absent.\n- Tightened the existing route regression test in `tests/dashboard/test_prsec_dashboard_routes.py` so it now asserts those three headings each appear as their own `.card` section.\n\nTest coverage for the finding:\n- Reviewer finding: missing distinct cards for description, label reasoning, and remediation\n  - Covered by `tests/dashboard/test_prsec_dashboard_routes.py::test_finding_detail_restyled_layout_preserves_sections`\n\nValidation:\n- Ran: `pytest -q -m 'not db and not docker and not k8s and not live_harness'`\n- Result: passed (`1846 passed, 19 skipped, 96 deselected`)",
           "thread.review.current_node": "review_gate",
-          "command.output": "blob://sha256/67d208216458da1748bc1fb058e16a38a4fb79836ef03f98d718263d739be65a"
+          "command.output": "blob://sha256/15f63a6b7a709611edc1880fcf504ca5c9b3a4e1c67c91eee0bd91d446cc5524"
         },
         "node_outcomes": {
           "check_issue": {
@@ -3080,8 +3381,8 @@
             "timing": {
               "wall_time_ms": 0,
               "inference_time_ms": 0,
-              "tool_time_ms": 125347,
-              "active_time_ms": 125347
+              "tool_time_ms": 126609,
+              "active_time_ms": 126609
             }
           },
           "review": {
@@ -3124,12 +3425,12 @@
             }
           }
         },
-        "next_node_id": "verify",
+        "next_node_id": "risk_gate",
         "node_visits": {
           "approve": 2,
           "check_issue": 1,
           "install": 1,
-          "verify": 1,
+          "verify": 2,
           "risk_gate": 1,
           "review_gate": 1,
           "spec": 2,
@@ -3511,7 +3812,12 @@
       "first_event_seq": 575,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Stage completed: implement",
+        "failure_reason": null,
+        "timestamp": "2026-11-24T10:20:24.703694650Z"
+      },
       "provider_used": {
         "mode": "agent",
         "provider": "openai",
@@ -3525,17 +3831,24 @@
       "output": null,
       "started_at": "2026-11-24T10:14:52.794923835Z",
       "handler": "agent",
+      "timing": {
+        "wall_time_ms": 331907,
+        "inference_time_ms": 46450,
+        "tool_time_ms": 285034,
+        "active_time_ms": 331484
+      },
       "usage": {
         "input_tokens": 32842,
         "output_tokens": 2060,
         "total_tokens": 296842,
         "reasoning_tokens": 820,
         "cache_read_tokens": 261120,
-        "cache_write_tokens": 0
+        "cache_write_tokens": 0,
+        "total_usd_micros": 190585
       },
       "model": {
         "provider": "openai",
-        "model_id": "gpt-5.4-2026-03-05"
+        "model_id": "gpt-5.4"
       },
       "permission_level": "full",
       "agent_tools": [
@@ -3700,7 +4013,7 @@
         ],
         "warnings": []
       },
-      "state": "running"
+      "state": "succeeded"
     },
     "check_issue@1": {
       "first_event_seq": 21,
@@ -3750,6 +4063,34 @@
         "cache_write_tokens": 0
       },
       "state": "succeeded"
+    },
+    "verify@2": {
+      "first_event_seq": 656,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "\nimport os, shlex, subprocess, sys\nD = '/tmp/fabro'\nNL = chr(10)\nMAX_CHEAP = int('2')\nMAX_FIXES = int('4')\nMARK = 'not db and not docker and not k8s and not live_harness'\nos.makedirs(D, exist_ok=True)\ndef run(cmd):\n    p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')\n    return p.returncode, p.stdout\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\ndef changed_files():\n    rc1, tracked = run('git diff --name-only origin/main')\n    rc2, others = run('git ls-files --others --exclude-standard')\n    if rc1 != 0 or rc2 != 0:\n        return None, tracked + others\n    return sorted(set(l.strip() for l in (tracked + NL + others).splitlines() if l.strip())), ''\nchanged, git_error = changed_files()\ndef guard():\n    if changed is None:\n        return False, 'Could not list changed files:' + NL + git_error\n    bad = [f for f in changed if f.startswith(('.github/', '.fabro/', 'deploy/', '.env')) or f in ('LICENSE', 'sonar-project.properties')]\n    if bad:\n        return False, 'PROTECTED FILES CHANGED - revert these:' + NL + NL.join(bad)\n    if not changed:\n        return False, 'No files were changed, so there is nothing to verify.'\n    return True, 'changed files:' + NL + NL.join(changed)\ndef tests_present():\n    code = [f for f in changed if f.endswith('.py') and not f.startswith('tests/')]\n    tests = [f for f in changed if f.startswith('tests/')]\n    waived = 'tests required: no' in read(D + '/spec.md').lower()\n    if code and not tests and not waived:\n        return False, 'Python code changed but nothing under tests/ was added or updated. Write the tests named in the spec Test plan. Changed code:' + NL + NL.join(code)\n    return True, str(len(tests)) + ' test file(s) changed'\ndef syntax():\n    py = [f for f in changed if f.endswith('.py') and os.path.exists(f)]\n    if not py:\n        return True, 'no python files changed'\n    rc, out = run(shlex.quote(sys.executable) + ' -m py_compile ' + ' '.join(shlex.quote(f) for f in py))\n    return rc == 0, out\ndef command(cmd):\n    def go():\n        rc, out = run(cmd)\n        return rc == 0, out\n    return go\nSTEPS = [\n    ('protected paths', guard),\n    ('tests present', tests_present),\n    ('syntax', syntax),\n    ('install', command('pip install -q -e ' + shlex.quote('.[dev]'))),\n    ('skills lint', command('prsec-skills-lint prsec-skills')),\n    ('unit tests', command('pytest -q -m ' + shlex.quote(MARK))),\n]\nlog = []\nfailure = None\nfor name, step in STEPS:\n    ok, out = step()\n    log.append('===== ' + name + ': ' + ('ok' if ok else 'FAILED') + NL + out)\n    if not ok:\n        failure = (name, out)\n        break\nwrite(D + '/verify.log', (NL + NL).join(log) + NL)\nif failure is None:\n    write(D + '/verify_fails', '0')\n    if os.path.exists(D + '/verify-summary.md'):\n        os.remove(D + '/verify-summary.md')\n    print('VERIFIED: ' + ', '.join(name for name, _ in STEPS) + ' all passed')\n    sys.exit(0)\nname, out = failure\nlines = out.splitlines()\nfailing = [l for l in lines if l.startswith(('FAILED ', 'ERROR '))][:25]\nsummary = 'Verification failed at step: ' + name + NL\nif failing:\n    summary += NL + 'Failing tests:' + NL + NL.join(failing) + NL\nsummary += NL + 'Last lines of output:' + NL + NL.join(lines[-30:]) + NL\nsummary += NL + 'Full log: /tmp/fabro/verify.log' + NL\nsummary = summary[-6000:]\nwrite(D + '/verify-summary.md', summary)\ntry:\n    fails = int(read(D + '/verify_fails').strip() or 0) + 1\nexcept ValueError:\n    fails = MAX_FIXES + 1\nwrite(D + '/verify_fails', str(fails))\nif fails <= MAX_CHEAP:\n    route = 'ROUTE_quick'\nelif fails <= MAX_FIXES:\n    route = 'ROUTE_deep'\nelse:\n    route = 'ROUTE_human'\nprint(route + ' (consecutive failed verifications: ' + str(fails) + ')')\nprint(summary.replace('ROUTE_', 'ROUTE-')[-3000:])\nsys.exit(1)",
+        "command": "exec 2>&1\npython3 -c \"\nimport os, shlex, subprocess, sys\nD = '/tmp/fabro'\nNL = chr(10)\nMAX_CHEAP = int('2')\nMAX_FIXES = int('4')\nMARK = 'not db and not docker and not k8s and not live_harness'\nos.makedirs(D, exist_ok=True)\ndef run(cmd):\n    p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')\n    return p.returncode, p.stdout\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\ndef changed_files():\n    rc1, tracked = run('git diff --name-only origin/main')\n    rc2, others = run('git ls-files --others --exclude-standard')\n    if rc1 \"'!= 0 or rc2 != 0:\n        return None, tracked + others\n    return sorted(set(l.strip() for l in (tracked + NL + others).splitlines() if l.strip())), '\"''\nchanged, git_error = changed_files()\ndef guard():\n    if changed is None:\n        return False, 'Could not list changed files:' + NL + git_error\n    bad = [f for f in changed if f.startswith(('.github/', '.fabro/', 'deploy/', '.env')) or f in ('LICENSE', 'sonar-project.properties')]\n    if bad:\n        return False, 'PROTECTED FILES CHANGED - revert these:' + NL + NL.join(bad)\n    if not changed:\n        return False, 'No files were changed, so there is nothing to verify.'\n    return True, 'changed files:' + NL + NL.join(changed)\ndef tests_present():\n    code = [f for f in changed if f.endswith('.py') and not f.startswith('tests/')]\n    tests = [f for f in changed if f.startswith('tests/')]\n    waived = 'tests required: no' in read(D + '/spec.md').lower()\n    if code and not tests and not waived:\n        return False, 'Python code changed but nothing under tests/ was added or updated. Write the tests named in the spec Test plan. Changed code:' + NL + NL.join(code)\n    return True, str(len(tests)) + ' test file(s) changed'\ndef syntax():\n    py = [f for f in changed if f.endswith('.py') and os.path.exists(f)]\n    if not py:\n        return True, 'no python files changed'\n    rc, out = run(shlex.quote(sys.executable) + ' -m py_compile ' + ' '.join(shlex.quote(f) for f in py))\n    return rc == 0, out\ndef command(cmd):\n    def go():\n        rc, out = run(cmd)\n        return rc == 0, out\n    return go\nSTEPS = [\n    ('protected paths', guard),\n    ('tests present', tests_present),\n    ('syntax', syntax),\n    ('install', command('pip install -q -e ' + shlex.quote('.[dev]'))),\n    ('skills lint', command('prsec-skills-lint prsec-skills')),\n    ('unit tests', command('pytest -q -m ' + shlex.quote(MARK))),\n]\nlog = []\nfailure = None\nfor name, step in STEPS:\n    ok, out = step()\n    log.append('===== ' + name + ': ' + ('ok' if ok else 'FAILED') + NL + out)\n    if not ok:\n        failure = (name, out)\n        break\nwrite(D + '/verify.log', (NL + NL).join(log) + NL)\nif failure is None:\n    write(D + '/verify_fails', '0')\n    if os.path.exists(D + '/verify-summary.md'):\n        os.remove(D + '/verify-summary.md')\n    print('VERIFIED: ' + ', '.join(name for name, _ in STEPS) + ' all passed')\n    sys.exit(0)\nname, out = failure\nlines = out.splitlines()\nfailing = [l for l in lines if l.startswith(('FAILED ', 'ERROR '))][:25]\nsummary = 'Verification failed at step: ' + name + NL\nif failing:\n    summary += NL + 'Failing tests:' + NL + NL.join(failing) + NL\nsummary += NL + 'Last lines of output:' + NL + NL.join(lines[-30:]) + NL\nsummary += NL + 'Full log: /tmp/fabro/verify.log' + NL\nsummary = summary[-6000:]\nwrite(D + '/verify-summary.md', summary)\ntry:\n    fails = int(read(D + '/verify_fails').strip() or 0) + 1\nexcept ValueError:\n    fails = MAX_FIXES + 1\nwrite(D + '/verify_fails', str(fails))\nif fails <= MAX_CHEAP:\n    route = 'ROUTE_quick'\nelif fails <= MAX_FIXES:\n    route = 'ROUTE_deep'\nelse:\n    route = 'ROUTE_human'\nprint(route + ' (consecutive failed verifications: ' + str(fails) + ')')\nprint(summary.replace('ROUTE_', 'ROUTE-')[-3000:])\nsys.exit(1)\"",
+        "language": "python",
+        "timeout_ms": 1500000
+      },
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-11-24T10:20:28.867666792Z",
+      "handler": "command",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
     },
     "install@1": {
       "first_event_seq": 31,
