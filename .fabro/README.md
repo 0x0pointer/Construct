@@ -35,7 +35,8 @@ on a machine where Fabro is installed and logged in.
       acceptance criteria, design, code quality requirements, security
       considerations, edge cases, a test plan naming every test to write, and
       a risk level.
-   4. **Pauses for a human** to approve, revise, or reject the spec.
+   4. **Pauses for a human** to approve or reject the spec. Typing text
+      instead sends the spec back to the planner with that text as feedback.
    5. **Implements** the spec and its tests (balanced model).
    6. **Verifies** with tools only, no model: protected paths, tests present,
       syntax, install, skills lint, unit tests. It stops at the first failure
