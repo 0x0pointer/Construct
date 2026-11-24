@@ -1,4 +1,5 @@
 import json
+import re
 
 import pytest
 from psycopg.types.json import Jsonb
@@ -202,6 +203,11 @@ def test_finding_detail_restyled_layout_preserves_sections(client, seeded, pg_po
     assert r.status_code == 200
     assert 'class="page-header hero"' in r.text
     assert 'class="grid2"' in r.text
+    for heading in ("Description", "Label reasoning", "Remediation"):
+        assert re.search(
+            rf'<section class="card">\s*<div class="section-heading">\s*<h2>{re.escape(heading)}</h2>',
+            r.text,
+        )
     for heading in ("Description", "Label reasoning", "Remediation", "Code flow", "Guards",
                     "Dynamic validation", "Triage", "Metadata", "Provenance", "Occurrences"):
         assert heading in r.text

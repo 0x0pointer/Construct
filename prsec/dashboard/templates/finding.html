@@ -20,23 +20,26 @@
     <section class="card">
       <div class="section-heading">
         <h2>Description</h2>
-        <p class="muted">Summary and label reasoning captured for this finding.</p>
+        <p class="muted">Summary captured for this finding.</p>
       </div>
-      <div class="stack">
-        <div>
-          <h3>Description</h3>
-          <p class="pre-wrap">{{ data.description or 'No description recorded.' }}</p>
-        </div>
-        <div>
-          <h3>Label reasoning</h3>
-          <p class="pre-wrap">{{ data.label_reason or 'No label reasoning recorded.' }}</p>
-        </div>
-        <div>
-          <h3>Remediation</h3>
-          {% if data.remediation %}<p class="pre-wrap">{{ data.remediation }}</p>
-          {% else %}<p class="muted">No remediation recorded.</p>{% endif %}
-        </div>
+      <p class="pre-wrap">{{ data.description or 'No description recorded.' }}</p>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <h2>Label reasoning</h2>
+        <p class="muted">Why this finding was assigned its current label.</p>
       </div>
+      <p class="pre-wrap">{{ data.label_reason or 'No label reasoning recorded.' }}</p>
+    </section>
+
+    <section class="card">
+      <div class="section-heading">
+        <h2>Remediation</h2>
+        <p class="muted">Suggested mitigation steps, when available.</p>
+      </div>
+      {% if data.remediation %}<p class="pre-wrap">{{ data.remediation }}</p>
+      {% else %}<p class="muted">No remediation recorded.</p>{% endif %}
     </section>
 
     <section class="card">
