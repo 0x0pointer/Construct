@@ -1,0 +1,6 @@
+{
+  "outcome": "succeeded",
+  "notes": "Script completed: set -e; git status -sb | head -3; git log --oneline -2; git fetch -q origin fabro/run/01M86EX302FZNDNV7QECEXDPPF; git reset -q --hard FETCH_HEAD; git log --oneline -2; git status -sb | head -3; git config --get-regexp 'credential|extraheader|insteadof' | sed -E 's/(gh[pousr]_|x-access-token:|basic |bearer )[A-Za-z0-9_=-]+/\\1***/Ig' | cut -c1-120 || true",
+  "failure_reason": null,
+  "timestamp": "2026-11-24T10:41:06.873404314Z"
+}

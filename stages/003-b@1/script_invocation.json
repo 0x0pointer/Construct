@@ -1,0 +1,5 @@
+{
+  "script": "set -e; git log --oneline -3; echo probe >> README.md",
+  "command": "exec 2>&1\nset -e; git log --oneline -3; echo probe >> README.md",
+  "language": "shell"
+}
