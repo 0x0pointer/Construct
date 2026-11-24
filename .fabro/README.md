@@ -12,7 +12,7 @@ on a machine where Fabro is installed and logged in.
 | Path | What it is |
 |---|---|
 | `project.toml` | Fabro project settings (draft PRs on successful runs). |
-| `docker/Dockerfile` | Sandbox image: Python 3.12, git, `gh`, project dependencies. |
+| `docker/Dockerfile` | Sandbox image: Python 3.12, git, `gh`, project dependencies, and a Postgres for the tests marked `db`. |
 | `workflows/issue-to-pr/` | The workflow graph (`workflow.fabro`) and its run settings (`workflow.toml`). |
 | `workflows/fix-ci/` | Second workflow: repairs a Fabro pull request whose CI checks failed. |
 | `scripts/construct-build` | Convenience command that builds every approved issue. |
@@ -78,9 +78,8 @@ here take effect once they are merged.
 
 ## When CI fails on a Fabro pull request
 
-The sandbox cannot run everything CI runs (no database, Docker daemon or
-cluster, and no SonarCloud), so a pull request can pass the pipeline and still
-fail on GitHub. The `fix-ci` workflow repairs such a pull request on its own
+The sandbox cannot run everything CI runs (no Docker daemon or cluster, and no
+SonarCloud), so a pull request can pass the pipeline and still fail on GitHub. The `fix-ci` workflow repairs such a pull request on its own
 branch. Start it from its automation in the web UI, or with
 `fabro run .fabro/workflows/fix-ci/workflow.toml [-I pr=<number>]`.
 
@@ -187,7 +186,12 @@ fabro preflight .fabro/workflows/issue-to-pr/workflow.toml
 ln -s "$PWD/.fabro/scripts/construct-build" ~/.fabro/bin/construct-build
 ```
 
-Rebuild the image when `pyproject.toml` dependencies change.
+Rebuild the image when `pyproject.toml` dependencies or `.fabro/docker/` change.
+
+The image carries its own Postgres so that tests marked `db` run in the
+sandbox as they do in CI. The install step starts it with `start-test-db`.
+With an older image that has no Postgres, runs still work but skip those
+tests and say so in the verify output.
 
 ## The `construct-build` command
 

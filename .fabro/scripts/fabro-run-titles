@@ -8,17 +8,23 @@ watcher reads the first step's output and sets the title:
   Construct #8: construct dashboard needs to be re-styled
   Fix CI: PR #11 (test)
 
+It also tidies up after runs that found nothing to do, which matters once
+the automations run on a schedule: such a run is archived (hidden from the
+default run list) and its empty `fabro/run/<id>` branch is deleted on GitHub.
+Runs that picked an issue or pull request are never archived or pruned.
+
   fabro-run-titles          keep watching (run it as a service)
   fabro-run-titles --once   look once and exit
 
 Runs on the machine that hosts the Fabro server and talks to its local API
-with the server's dev token. It only ever changes run titles.
+with the server's dev token; branches are deleted over this machine's SSH key.
 State: ~/.fabro/run-titles.json (runs already handled).
 """
 import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.request
@@ -30,6 +36,10 @@ STATE = os.path.expanduser("~/.fabro/run-titles.json")
 # Workflow graph name -> the node whose output names what the run works on.
 FIRST_STEP = {"IssueToPR": "check_issue", "FixCI": "pick_pr"}
 MAX_TITLE = 100
+# Titles this script gives to runs that ended at the first step with no work.
+NOTHING_TO_DO = ("Construct: no approved issue is waiting", "Fix CI: no pull request with failed checks")
+TERMINAL = ("succeeded", "failed", "cancelled", "canceled", "dead")
+SCRATCH_REPO = os.path.expanduser("~/.fabro/run-titles.git")
 MAX_AGE = timedelta(days=2)
 
 
@@ -89,6 +99,23 @@ def title_for(graph, output):
     return None
 
 
+def tidy(run):
+    """Archive a finished run that had nothing to do and delete its empty branch."""
+    run_id = run["id"]
+    api(f"/runs/{run_id}/archive", method="POST")
+    slug = str((run.get("repository") or {}).get("name") or "")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", slug):
+        return "archived"
+    if not os.path.isdir(SCRATCH_REPO):
+        subprocess.run(["git", "init", "-q", "--bare", SCRATCH_REPO], check=True)
+    pushed = subprocess.run(
+        ["git", "-C", SCRATCH_REPO, "push", "-q", f"git@github.com:{slug}.git", "--delete", f"refs/heads/fabro/run/{run_id}"],
+        capture_output=True, text=True, timeout=60,
+        env=dict(os.environ, GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new"))
+    # A branch that is already gone is fine.
+    return "archived, branch deleted" if pushed.returncode == 0 else "archived"
+
+
 def load_state():
     try:
         with open(STATE) as f:
@@ -111,6 +138,15 @@ def sweep(state):
     for run in items(api("/runs?page%5Blimit%5D=50")):
         run_id = run.get("id")
         graph = (run.get("workflow") or {}).get("graph_name")
+        status = ((run.get("lifecycle") or {}).get("status") or {}).get("kind")
+        if run_id and state.get(run_id) in NOTHING_TO_DO and status in TERMINAL:
+            try:
+                state[run_id] = tidy(run)
+                print(f"{run_id}: {state[run_id]}", flush=True)
+            except Exception as exc:
+                print(f"{run_id}: could not tidy up: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+                state[run_id] = "tidy failed"
+            continue
         if not run_id or run_id in state or graph not in FIRST_STEP:
             continue
         created = str((run.get("timestamps") or {}).get("created_at") or "")
@@ -122,8 +158,7 @@ def sweep(state):
             pass
         output = first_step_output(run_id, FIRST_STEP[graph])
         if output is None:
-            status = ((run.get("lifecycle") or {}).get("status") or {}).get("kind")
-            if status in ("succeeded", "failed", "cancelled", "canceled"):
+            if status in TERMINAL:
                 state[run_id] = "no first step"
             continue
         title = title_for(graph, output)
