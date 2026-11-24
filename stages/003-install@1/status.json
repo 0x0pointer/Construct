@@ -1,0 +1,6 @@
+{
+  "outcome": "succeeded",
+  "notes": "Script completed: (command -v start-test-db >/dev/null && start-test-db) || echo 'no test database in this sandbox image: tests marked db will not run'; pip install -q -e '.[dev]' && python -c 'import prsec; print(\"prsec importable\")'",
+  "failure_reason": null,
+  "timestamp": "2026-11-24T11:33:30.171666363Z"
+}
