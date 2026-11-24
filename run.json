@@ -513,7 +513,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-11-24T11:33:06.539742404Z",
-  "last_event_at": "2026-11-24T11:40:06.508835341Z",
+  "last_event_at": "2026-11-24T11:40:10.957486374Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -828,9 +828,9 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 187,
       "checkpoint": {
-        "timestamp": "2026-11-24T11:40:06.516841088Z",
+        "timestamp": "2026-11-24T11:40:10.957376559Z",
         "current_node": "verify",
         "completed_nodes": [
           "start",
@@ -841,42 +841,34 @@
         ],
         "node_retries": {},
         "context_values": {
+          "internal.retry_count.fix": 0,
+          "failure_class": "canceled",
+          "graph.rankdir": "LR",
+          "internal.node_visit_count": 1,
+          "last_stage": "fix",
+          "thread.pick_pr.current_node": "install",
+          "response.fix": "Fixed the CI failures on the PR branch.\n\nWhat I changed\n- **Failed test (`test_sarif_download`)**\n  - **Cause:** The seeded dashboard fixture now creates **5 findings**, and the SARIF download correctly includes all 5 results. The test still expected the old count of 3.\n  - **Fix:** Updated `tests/dashboard/test_prsec_dashboard_routes.py` to assert against `len(seeded[\"findings\"])` instead of a stale hard-coded value.\n\n- **SonarCloud issue: duplicated `\"/findings\"` literal**\n  - **Cause:** `prsec/dashboard/main.py` repeated the same route string in multiple places.\n  - **Fix:** Added a `FINDINGS_PATH` constant and reused it for the route, `_local_path` fallback, and pagination links.\n\n- **SonarCloud issue: deprecated CSS `word-break: break-word`**\n  - **Cause:** `prsec/dashboard/templates/base.html` used a deprecated CSS value.\n  - **Fix:** Removed `word-break: break-word` and kept `overflow-wrap: anywhere`, which already provides the desired wrapping behavior.\n\nValidation\n- Reproduced the failing test locally first.\n- Ran targeted tests:\n  - `pytest -q tests/dashboard/test_prsec_dashboard_routes.py`\n- Ran the required full suite:\n  - `pytest -q -m 'not docker and not k8s and not live_harness'`\n\nResult\n- Targeted dashboard tests: **passed**\n- Full required pytest run: **1924 passed, 19 skipped, 18 deselected**",
+          "thread.install.current_node": "fix",
+          "failure_signature": "verify|canceled|script cancelled: import json,os,shlex,subprocess,sys d = '/tmp/fabro' nl = chr(<n>) max_fixes = int('<n>') # tests marked db need the sandbox's postgres. if it cannot be started they # are left out,as before,and the result says so. db = su",
+          "graph.max_node_visits": "12",
+          "internal.thread_id": "fix",
+          "internal.fidelity": "compact",
+          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
           "outcome": "failed",
           "thread.fix.current_node": "verify",
+          "internal.retry_count.pick_pr": 0,
           "internal.retry_count.verify": 0,
           "internal.run_id": "01M86N9CYHSAEN1QWT2RPFXAQX",
-          "failure_class": "canceled",
-          "internal.retry_count.start": 0,
-          "last_response": "Fixed the CI failures on the PR branch.\n\nWhat I changed\n- **Failed test (`test_sarif_download`)**\n  - **Cause:** The seeded dashboard fixture now creates **5 findings**, and the SARIF download correct",
-          "internal.thread_id": "fix",
-          "response.fix": "Fixed the CI failures on the PR branch.\n\nWhat I changed\n- **Failed test (`test_sarif_download`)**\n  - **Cause:** The seeded dashboard fixture now creates **5 findings**, and the SARIF download correctly includes all 5 results. The test still expected the old count of 3.\n  - **Fix:** Updated `tests/dashboard/test_prsec_dashboard_routes.py` to assert against `len(seeded[\"findings\"])` instead of a stale hard-coded value.\n\n- **SonarCloud issue: duplicated `\"/findings\"` literal**\n  - **Cause:** `prsec/dashboard/main.py` repeated the same route string in multiple places.\n  - **Fix:** Added a `FINDINGS_PATH` constant and reused it for the route, `_local_path` fallback, and pagination links.\n\n- **SonarCloud issue: deprecated CSS `word-break: break-word`**\n  - **Cause:** `prsec/dashboard/templates/base.html` used a deprecated CSS value.\n  - **Fix:** Removed `word-break: break-word` and kept `overflow-wrap: anywhere`, which already provides the desired wrapping behavior.\n\nValidation\n- Reproduced the failing test locally first.\n- Ran targeted tests:\n  - `pytest -q tests/dashboard/test_prsec_dashboard_routes.py`\n- Ran the required full suite:\n  - `pytest -q -m 'not docker and not k8s and not live_harness'`\n\nResult\n- Targeted dashboard tests: **passed**\n- Full required pytest run: **1924 passed, 19 skipped, 18 deselected**",
-          "last_stage": "fix",
-          "thread.start.current_node": "pick_pr",
-          "internal.work_dir": "/workspace/Construct",
-          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
-          "internal.fidelity": "compact",
-          "graph.max_node_visits": "12",
-          "graph.rankdir": "LR",
-          "current_node": "verify",
-          "failure_signature": "verify|canceled|script cancelled: import json,os,shlex,subprocess,sys d = '/tmp/fabro' nl = chr(<n>) max_fixes = int('<n>') # tests marked db need the sandbox's postgres. if it cannot be started they # are left out,as before,and the result says so. db = su",
-          "command.output": "blob://sha256/16ee1a726445e62a8e1f48f90e9021830b921c275144b797755eba318229cb48",
-          "internal.retry_count.pick_pr": 0,
-          "thread.pick_pr.current_node": "install",
-          "internal.node_visit_count": 1,
-          "internal.retry_count.install": 0,
-          "thread.install.current_node": "fix",
           "graph.goal": "Fix the failed CI checks on a Fabro pull request of 0x0pointer/Construct and push the fix to the same branch",
-          "internal.retry_count.fix": 0
+          "internal.retry_count.install": 0,
+          "current_node": "verify",
+          "internal.work_dir": "/workspace/Construct",
+          "thread.start.current_node": "pick_pr",
+          "command.output": "blob://sha256/16ee1a726445e62a8e1f48f90e9021830b921c275144b797755eba318229cb48",
+          "last_response": "Fixed the CI failures on the PR branch.\n\nWhat I changed\n- **Failed test (`test_sarif_download`)**\n  - **Cause:** The seeded dashboard fixture now creates **5 findings**, and the SARIF download correct",
+          "internal.retry_count.start": 0
         },
         "node_outcomes": {
-          "verify": {
-            "status": "failed",
-            "failure": {
-              "message": "Script cancelled: \nimport json, os, shlex, subprocess, sys\nD = '/tmp/fabro'\nNL = chr(10)\nMAX_FIXES = int('2')\n# Tests marked db need the sandbox's Postgres. If it cannot be started they\n# are left out, as before, and the result says so.\nDB = subprocess.run('command -v start-test-db >/dev/null && start-test-db', shell=True,\n    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0\nif not DB:\n    os.environ.pop('PRSEC_TEST_DATABASE_URL', None)\nMARK = ('' if DB else 'not db and ') + 'not docker and not k8s and not live_harness'\ndef run(cmd):\n    p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')\n    return p.returncode, p.stdout\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\ntry:\n    BASE = json.loads(read(D + '/pr.json'))['sha']\nexcept Exception:\n    print('ROUTE_stop')\n    print('No pull request was picked in this run.')\n    sys.exit(1)\ndef changed_files():\n    rc1, tracked = run('git diff --name-only ' + shlex.quote(BASE))\n    rc2, others = run('git ls-files --others --exclude-standard')\n    if rc1 != 0 or rc2 != 0:\n        return None, tracked + others\n    return sorted(set(l.strip() for l in (tracked + NL + others).splitlines() if l.strip())), ''\nchanged, git_error = changed_files()\ndef guard():\n    if changed is None:\n        return False, 'Could not list changed files:' + NL + git_error\n    bad = [f for f in changed if f.startswith(('.github/', '.fabro/', 'deploy/', '.env')) or f in ('LICENSE', 'sonar-project.properties')]\n    if bad:\n        return False, 'PROTECTED FILES CHANGED - revert these:' + NL + NL.join(bad)\n    if not changed:\n        return False, 'No files were changed, so the failed checks cannot have been fixed.'\n    return True, 'files changed by this run:' + NL + NL.join(changed)\ndef syntax():\n    py = [f for f in changed if f.endswith('.py') and os.path.exists(f)]\n    if not py:\n        return True, 'no python files changed'\n    rc, out = run(shlex.quote(sys.executable) + ' -m py_compile ' + ' '.join(shlex.quote(f) for f in py))\n    return rc == 0, out\ndef command(cmd):\n    def go():\n        rc, out = run(cmd)\n        return rc == 0, out\n    return go\nSTEPS = [\n    ('protected paths', guard),\n    ('syntax', syntax),\n    ('install', command('pip install -q -e ' + shlex.quote('.[dev]'))),\n    ('skills lint', command('prsec-skills-lint prsec-skills')),\n    ('unit tests', command('pytest -q -m ' + shlex.quote(MARK))),\n]\nlog = []\nfailure = None\nfor name, step in STEPS:\n    ok, out = step()\n    log.append('===== ' + name + ': ' + ('ok' if ok else 'FAILED') + NL + out)\n    if not ok:\n        failure = (name, out)\n        break\nwrite(D + '/verify.log', (NL + NL).join(log) + NL)\nif failure is None:\n    if os.path.exists(D + '/verify-summary.md'):\n        os.remove(D + '/verify-summary.md')\n    print('VERIFIED: ' + ', '.join(name for name, _ in STEPS) + ' all passed')\n    print('Database tests ran.' if DB else 'WARNING: no test database in this sandbox, tests marked db did NOT run.')\n    print('Tests that need Docker or a cluster did not run here; CI on the pull request runs them.')\n    sys.exit(0)\nname, out = failure\nlines = out.splitlines()\nfailing = [l for l in lines if l.startswith(('FAILED ', 'ERROR '))][:25]\nsummary = 'Local verification failed at step: ' + name + NL\nif failing:\n    summary += NL + 'Failing tests:' + NL + NL.join(failing) + NL\nsummary += NL + 'Last lines of output:' + NL + NL.join(lines[-30:]) + NL\nsummary += NL + 'Full log: /tmp/fabro/verify.log' + NL\nsummary = summary[-6000:]\nwrite(D + '/verify-summary.md', summary)\ntry:\n    fails = int(read(D + '/verify_fails').strip() or 0) + 1\nexcept ValueError:\n    fails = MAX_FIXES + 1\nwrite(D + '/verify_fails', str(fails))\nroute = 'ROUTE_deep' if fails <= MAX_FIXES else 'ROUTE_stop'\nprint(route + ' (failed local verifications: ' + str(fails) + ')')\nprint(summary.replace('ROUTE_', 'ROUTE-')[-3000:])\nsys.exit(1)",
-              "category": "canceled"
-            },
-            "usage": null
-          },
           "fix": {
             "status": "succeeded",
             "context_updates": {
@@ -913,6 +905,10 @@
               "active_time_ms": 268668
             }
           },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
           "install": {
             "status": "succeeded",
             "context_updates": {
@@ -941,24 +937,121 @@
               "active_time_ms": 6310
             }
           },
-          "start": {
-            "status": "succeeded",
+          "verify": {
+            "status": "failed",
+            "failure": {
+              "message": "Script cancelled: \nimport json, os, shlex, subprocess, sys\nD = '/tmp/fabro'\nNL = chr(10)\nMAX_FIXES = int('2')\n# Tests marked db need the sandbox's Postgres. If it cannot be started they\n# are left out, as before, and the result says so.\nDB = subprocess.run('command -v start-test-db >/dev/null && start-test-db', shell=True,\n    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0\nif not DB:\n    os.environ.pop('PRSEC_TEST_DATABASE_URL', None)\nMARK = ('' if DB else 'not db and ') + 'not docker and not k8s and not live_harness'\ndef run(cmd):\n    p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')\n    return p.returncode, p.stdout\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\ntry:\n    BASE = json.loads(read(D + '/pr.json'))['sha']\nexcept Exception:\n    print('ROUTE_stop')\n    print('No pull request was picked in this run.')\n    sys.exit(1)\ndef changed_files():\n    rc1, tracked = run('git diff --name-only ' + shlex.quote(BASE))\n    rc2, others = run('git ls-files --others --exclude-standard')\n    if rc1 != 0 or rc2 != 0:\n        return None, tracked + others\n    return sorted(set(l.strip() for l in (tracked + NL + others).splitlines() if l.strip())), ''\nchanged, git_error = changed_files()\ndef guard():\n    if changed is None:\n        return False, 'Could not list changed files:' + NL + git_error\n    bad = [f for f in changed if f.startswith(('.github/', '.fabro/', 'deploy/', '.env')) or f in ('LICENSE', 'sonar-project.properties')]\n    if bad:\n        return False, 'PROTECTED FILES CHANGED - revert these:' + NL + NL.join(bad)\n    if not changed:\n        return False, 'No files were changed, so the failed checks cannot have been fixed.'\n    return True, 'files changed by this run:' + NL + NL.join(changed)\ndef syntax():\n    py = [f for f in changed if f.endswith('.py') and os.path.exists(f)]\n    if not py:\n        return True, 'no python files changed'\n    rc, out = run(shlex.quote(sys.executable) + ' -m py_compile ' + ' '.join(shlex.quote(f) for f in py))\n    return rc == 0, out\ndef command(cmd):\n    def go():\n        rc, out = run(cmd)\n        return rc == 0, out\n    return go\nSTEPS = [\n    ('protected paths', guard),\n    ('syntax', syntax),\n    ('install', command('pip install -q -e ' + shlex.quote('.[dev]'))),\n    ('skills lint', command('prsec-skills-lint prsec-skills')),\n    ('unit tests', command('pytest -q -m ' + shlex.quote(MARK))),\n]\nlog = []\nfailure = None\nfor name, step in STEPS:\n    ok, out = step()\n    log.append('===== ' + name + ': ' + ('ok' if ok else 'FAILED') + NL + out)\n    if not ok:\n        failure = (name, out)\n        break\nwrite(D + '/verify.log', (NL + NL).join(log) + NL)\nif failure is None:\n    if os.path.exists(D + '/verify-summary.md'):\n        os.remove(D + '/verify-summary.md')\n    print('VERIFIED: ' + ', '.join(name for name, _ in STEPS) + ' all passed')\n    print('Database tests ran.' if DB else 'WARNING: no test database in this sandbox, tests marked db did NOT run.')\n    print('Tests that need Docker or a cluster did not run here; CI on the pull request runs them.')\n    sys.exit(0)\nname, out = failure\nlines = out.splitlines()\nfailing = [l for l in lines if l.startswith(('FAILED ', 'ERROR '))][:25]\nsummary = 'Local verification failed at step: ' + name + NL\nif failing:\n    summary += NL + 'Failing tests:' + NL + NL.join(failing) + NL\nsummary += NL + 'Last lines of output:' + NL + NL.join(lines[-30:]) + NL\nsummary += NL + 'Full log: /tmp/fabro/verify.log' + NL\nsummary = summary[-6000:]\nwrite(D + '/verify-summary.md', summary)\ntry:\n    fails = int(read(D + '/verify_fails').strip() or 0) + 1\nexcept ValueError:\n    fails = MAX_FIXES + 1\nwrite(D + '/verify_fails', str(fails))\nroute = 'ROUTE_deep' if fails <= MAX_FIXES else 'ROUTE_stop'\nprint(route + ' (failed local verifications: ' + str(fails) + ')')\nprint(summary.replace('ROUTE_', 'ROUTE-')[-3000:])\nsys.exit(1)",
+              "category": "canceled"
+            },
             "usage": null
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "79edf5aa88d3c1db0c88658c480d2de656ddae34",
         "node_visits": {
+          "start": 1,
           "fix": 1,
           "pick_pr": 1,
-          "start": 1,
           "install": 1,
           "verify": 1
         }
       },
-      "diff": {}
+      "diff": {
+        "summary": {
+          "files_changed": 22,
+          "additions": 1376,
+          "deletions": 1211
+        }
+      }
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-11-24T11:40:10.980645962Z",
+    "status": "failed",
+    "timing": {
+      "wall_time_ms": 424422,
+      "inference_time_ms": 59130,
+      "tool_time_ms": 226797,
+      "active_time_ms": 285927
+    },
+    "failure": {
+      "reason": "cancelled",
+      "detail": {
+        "message": "Pipeline cancelled",
+        "category": "canceled"
+      }
+    },
+    "final_git_commit_sha": "79edf5aa88d3c1db0c88658c480d2de656ddae34",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "pick_pr",
+        "stage_label": "pick_pr",
+        "timing": {
+          "wall_time_ms": 6315,
+          "inference_time_ms": 0,
+          "tool_time_ms": 6310,
+          "active_time_ms": 6310
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "install",
+        "stage_label": "install",
+        "timing": {
+          "wall_time_ms": 11025,
+          "inference_time_ms": 0,
+          "tool_time_ms": 10949,
+          "active_time_ms": 10949
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "fix",
+        "stage_label": "fix",
+        "timing": {
+          "wall_time_ms": 269114,
+          "inference_time_ms": 59130,
+          "tool_time_ms": 209538,
+          "active_time_ms": 268668
+        },
+        "billing_usd_micros": 278495,
+        "retries": 0
+      },
+      {
+        "stage_id": "verify",
+        "stage_label": "verify",
+        "timing": {
+          "wall_time_ms": 118951,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      }
+    ],
+    "billing": {
+      "input_tokens": 41398,
+      "output_tokens": 3100,
+      "total_tokens": 493598,
+      "reasoning_tokens": 1100,
+      "cache_read_tokens": 448000,
+      "cache_write_tokens": 0,
+      "total_usd_micros": 278495
+    },
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -1023,7 +1116,12 @@
       "first_event_seq": 179,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "failed",
+        "notes": null,
+        "failure_reason": "Script cancelled: \nimport json, os, shlex, subprocess, sys\nD = '/tmp/fabro'\nNL = chr(10)\nMAX_FIXES = int('2')\n# Tests marked db need the sandbox's Postgres. If it cannot be started they\n# are left out, as before, and the result says so.\nDB = subprocess.run('command -v start-test-db >/dev/null && start-test-db', shell=True,\n    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0\nif not DB:\n    os.environ.pop('PRSEC_TEST_DATABASE_URL', None)\nMARK = ('' if DB else 'not db and ') + 'not docker and not k8s and not live_harness'\ndef run(cmd):\n    p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')\n    return p.returncode, p.stdout\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\ntry:\n    BASE = json.loads(read(D + '/pr.json'))['sha']\nexcept Exception:\n    print('ROUTE_stop')\n    print('No pull request was picked in this run.')\n    sys.exit(1)\ndef changed_files():\n    rc1, tracked = run('git diff --name-only ' + shlex.quote(BASE))\n    rc2, others = run('git ls-files --others --exclude-standard')\n    if rc1 != 0 or rc2 != 0:\n        return None, tracked + others\n    return sorted(set(l.strip() for l in (tracked + NL + others).splitlines() if l.strip())), ''\nchanged, git_error = changed_files()\ndef guard():\n    if changed is None:\n        return False, 'Could not list changed files:' + NL + git_error\n    bad = [f for f in changed if f.startswith(('.github/', '.fabro/', 'deploy/', '.env')) or f in ('LICENSE', 'sonar-project.properties')]\n    if bad:\n        return False, 'PROTECTED FILES CHANGED - revert these:' + NL + NL.join(bad)\n    if not changed:\n        return False, 'No files were changed, so the failed checks cannot have been fixed.'\n    return True, 'files changed by this run:' + NL + NL.join(changed)\ndef syntax():\n    py = [f for f in changed if f.endswith('.py') and os.path.exists(f)]\n    if not py:\n        return True, 'no python files changed'\n    rc, out = run(shlex.quote(sys.executable) + ' -m py_compile ' + ' '.join(shlex.quote(f) for f in py))\n    return rc == 0, out\ndef command(cmd):\n    def go():\n        rc, out = run(cmd)\n        return rc == 0, out\n    return go\nSTEPS = [\n    ('protected paths', guard),\n    ('syntax', syntax),\n    ('install', command('pip install -q -e ' + shlex.quote('.[dev]'))),\n    ('skills lint', command('prsec-skills-lint prsec-skills')),\n    ('unit tests', command('pytest -q -m ' + shlex.quote(MARK))),\n]\nlog = []\nfailure = None\nfor name, step in STEPS:\n    ok, out = step()\n    log.append('===== ' + name + ': ' + ('ok' if ok else 'FAILED') + NL + out)\n    if not ok:\n        failure = (name, out)\n        break\nwrite(D + '/verify.log', (NL + NL).join(log) + NL)\nif failure is None:\n    if os.path.exists(D + '/verify-summary.md'):\n        os.remove(D + '/verify-summary.md')\n    print('VERIFIED: ' + ', '.join(name for name, _ in STEPS) + ' all passed')\n    print('Database tests ran.' if DB else 'WARNING: no test database in this sandbox, tests marked db did NOT run.')\n    print('Tests that need Docker or a cluster did not run here; CI on the pull request runs them.')\n    sys.exit(0)\nname, out = failure\nlines = out.splitlines()\nfailing = [l for l in lines if l.startswith(('FAILED ', 'ERROR '))][:25]\nsummary = 'Local verification failed at step: ' + name + NL\nif failing:\n    summary += NL + 'Failing tests:' + NL + NL.join(failing) + NL\nsummary += NL + 'Last lines of output:' + NL + NL.join(lines[-30:]) + NL\nsummary += NL + 'Full log: /tmp/fabro/verify.log' + NL\nsummary = summary[-6000:]\nwrite(D + '/verify-summary.md', summary)\ntry:\n    fails = int(read(D + '/verify_fails').strip() or 0) + 1\nexcept ValueError:\n    fails = MAX_FIXES + 1\nwrite(D + '/verify_fails', str(fails))\nroute = 'ROUTE_deep' if fails <= MAX_FIXES else 'ROUTE_stop'\nprint(route + ' (failed local verifications: ' + str(fails) + ')')\nprint(summary.replace('ROUTE_', 'ROUTE-')[-3000:])\nsys.exit(1)",
+        "timestamp": "2026-11-24T11:40:06.513627103Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -1046,6 +1144,12 @@
       "termination": "cancelled",
       "started_at": "2026-11-24T11:38:07.557692996Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 118951,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -1054,7 +1158,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "cancelled"
     },
     "pick_pr@1": {
       "first_event_seq": 22,
