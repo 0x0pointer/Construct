@@ -31,7 +31,8 @@ on a machine where Fabro is installed and logged in.
       the label was applied by a login listed under `maintainers` in
       `workflow.toml`, and the issue text was not edited afterwards. Only the
       title and body are passed on; comments are never read. It then adds
-      the label `fabro-in-progress` to the issue.
+      the label `fabro-in-progress` to the issue; the last step of the run
+      replaces it with `fabro-built` or `fabro-failed`.
    2. **Installs** the project in a fresh Docker sandbox cloned from `main`.
    3. **Plans** (strong model). Writes a spec without changing any files:
       acceptance criteria, design, code quality requirements, security
@@ -59,19 +60,36 @@ A Fabro automation that targets this repository, `main` and the workflow
 `issue-to-pr` gives maintainers a **Run** button under `/automations`.
 Automations cannot pass an issue number, so such a run chooses its own issue:
 
-- It takes the oldest open issue that carries `fabro-approved` and does not
-  carry `fabro-in-progress`.
+- **One build at a time.** While any open issue carries `fabro-in-progress`,
+  the run picks nothing and ends at its first step with `WAITING`.
+- Otherwise it takes the oldest open issue that carries `fabro-approved` and
+  neither `fabro-built` nor `fabro-failed`.
 - The issue must pass the same approval check as any other run. An issue that
   fails it (labelled by someone who is not a maintainer, or edited after
   approval) is skipped, never built, and the next candidate is tried.
-- The run adds `fabro-in-progress` to the issue it takes. One click builds one
-  issue; click again for the next one.
+- The run adds `fabro-in-progress` to the issue it takes. Its last step
+  replaces that with `fabro-built` (the change passed checks and review, and a
+  draft pull request follows) or `fabro-failed` (rejected spec, failed
+  install, or stopped by a human).
 - If nothing is waiting, the run ends after a few seconds at the first step
-  with `NOTHING TO BUILD` in its output.
+  with `NOTHING TO BUILD`.
 
-To build an issue again after a failed or rejected run, remove its
-`fabro-in-progress` label, or name it explicitly with `construct-build <number>`.
-Runs that name an issue ignore the label.
+Labels on an issue therefore read as its state:
+
+| Label | Meaning |
+|---|---|
+| `fabro-approved` | A maintainer released it. Waiting for its turn. |
+| `fabro-in-progress` | A run is building it. Nothing else starts meanwhile. |
+| `fabro-built` | Built; see the draft pull request. |
+| `fabro-failed` | The run ended without a change to propose. |
+
+To build an issue again, remove its `fabro-built` or `fabro-failed` label, or
+name it explicitly with `construct-build <number>`. Runs that name an issue
+ignore these labels and are not held back by another build.
+
+If a run is killed (cancelled, server restart) it never reaches its last step
+and `fabro-in-progress` stays on the issue, which holds up the queue. Remove
+the label by hand in that case.
 
 The automation reads the workflow from `main` each time it starts, so changes
 here take effect once they are merged.

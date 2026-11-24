@@ -40,7 +40,7 @@ STATE = os.path.expanduser("~/.fabro/run-titles.json")
 FIRST_STEP = {"IssueToPR": "check_issue", "FixCI": "pick_pr"}
 MAX_TITLE = 100
 # Endings of the titles this script gives to runs that ended at the first step with no work.
-NOTHING_TO_DO = (": no approved issue is waiting", ": no pull request with failed checks")
+NOTHING_TO_DO = (": no approved issue is waiting", ": no pull request with failed checks", " to finish")
 TERMINAL = ("succeeded", "failed", "cancelled", "canceled", "dead")
 SCRATCH_REPO = os.path.expanduser("~/.fabro/run-titles.git")
 MAX_AGE = timedelta(days=2)
@@ -84,6 +84,9 @@ def title_for(graph, output, repo):
         if picked:
             name = re.search(r"^title: (.*)$", output, re.M)
             return f"{repo} #{picked.group(1)}: {clean(name.group(1)) if name else 'approved issue'}"
+        waiting = re.search(r"^WAITING: issue (\d+)\b", output, re.M)
+        if waiting:
+            return f"{repo}: waiting for issue #{waiting.group(1)} to finish"
         if "NOTHING TO BUILD" in output:
             return f"{repo}: no approved issue is waiting"
         refused = re.search(r"^REFUSED: (.*)$", output, re.M)
