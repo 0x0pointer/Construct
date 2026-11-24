@@ -4,8 +4,8 @@ This folder configures [Fabro](https://docs.fabro.sh) to turn an approved GitHub
 issue into a draft pull request: spec, human approval, code, automated checks,
 independent review, PR.
 
-Nothing here runs by itself. A maintainer starts it on a machine where Fabro is
-installed and logged in.
+Nothing here runs by itself. A maintainer starts it, from the Fabro web UI or
+on a machine where Fabro is installed and logged in.
 
 ## Contents
 
@@ -19,13 +19,17 @@ installed and logged in.
 ## How an issue gets built
 
 1. A maintainer reads the issue and adds the label `fabro-approved`.
-2. A maintainer runs `construct-build` (all approved issues) or
-   `fabro run .fabro/workflows/issue-to-pr/workflow.toml -I issue=<number>`.
+2. A maintainer starts a build in one of three ways:
+   - clicks **Run** on the automation in the Fabro web UI (builds the next
+     approved issue, see below);
+   - runs `construct-build` (all approved issues, one after another);
+   - runs `fabro run .fabro/workflows/issue-to-pr/workflow.toml -I issue=<number>`.
 3. The run:
    1. **Checks the issue.** Stops unless the issue is open, carries the label,
       the label was applied by a login listed under `maintainers` in
       `workflow.toml`, and the issue text was not edited afterwards. Only the
-      title and body are passed on; comments are never read.
+      title and body are passed on; comments are never read. It then adds
+      the label `fabro-in-progress` to the issue.
    2. **Installs** the project in a fresh Docker sandbox cloned from `main`.
    3. **Plans** (strong model). Writes a spec without changing any files:
       acceptance criteria, design, code quality requirements, security
@@ -45,6 +49,29 @@ installed and logged in.
       steps 6 and 7 run again. Nothing reaches the exit without passing both.
 4. On success Fabro pushes the branch `fabro/run/<run id>` and opens a draft PR
    into `main`. A maintainer reviews and merges as usual.
+
+## Starting a build from the web UI
+
+A Fabro automation that targets this repository, `main` and the workflow
+`issue-to-pr` gives maintainers a **Run** button under `/automations`.
+Automations cannot pass an issue number, so such a run chooses its own issue:
+
+- It takes the oldest open issue that carries `fabro-approved` and does not
+  carry `fabro-in-progress`.
+- The issue must pass the same approval check as any other run. An issue that
+  fails it (labelled by someone who is not a maintainer, or edited after
+  approval) is skipped, never built, and the next candidate is tried.
+- The run adds `fabro-in-progress` to the issue it takes. One click builds one
+  issue; click again for the next one.
+- If nothing is waiting, the run ends after a few seconds at the first step
+  with `NOTHING TO BUILD` in its output.
+
+To build an issue again after a failed or rejected run, remove its
+`fabro-in-progress` label, or name it explicitly with `construct-build <number>`.
+Runs that name an issue ignore the label.
+
+The automation reads the workflow from `main` each time it starts, so changes
+here take effect once they are merged.
 
 ## Models and escalation
 
@@ -140,6 +167,7 @@ Edit `workflows/issue-to-pr/workflow.toml`:
 
 - `maintainers`: GitHub logins allowed to release an issue.
 - `approval_label`: the label name.
+- `in_progress_label`: the label a run adds to the issue it accepts.
 - `max_cheap_fixes`, `max_fix_attempts`, `max_review_rounds`: retry budgets.
 - `max_light_review_lines`, `sensitive_paths`: when the cheaper reviewer is
   allowed.
