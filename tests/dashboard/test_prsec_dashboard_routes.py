@@ -355,7 +355,7 @@ def test_sarif_download(client, seeded):
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/sarif+json")
     assert "attachment" in r.headers["content-disposition"]
-    assert len(json.loads(r.content)["runs"][0]["results"]) == 3
+    assert len(json.loads(r.content)["runs"][0]["results"]) == len(seeded["findings"])
     assert client.get(f"/sarif/{s2}").status_code == 404
 
 

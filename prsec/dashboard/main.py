@@ -24,6 +24,7 @@ TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 PAGE_SIZE = 50
 FINDING_NOT_FOUND = "finding not found"
 SCAN_NOT_FOUND = "scan not found"
+FINDINGS_PATH = "/findings"
 TIMELINE_INITIAL = 2000  # events rendered with the page; the poller fetches the rest
 TIMELINE_PAGE = 500  # events per poll
 ACTIVE_STATUSES = frozenset({"queued", "running"})
@@ -142,7 +143,7 @@ def _render(request: Request, name: str, **ctx: Any) -> HTMLResponse:
     return TEMPLATES.TemplateResponse(request, name, {"user": _user(request), **ctx})
 
 
-def _local_path(path: str, fallback: str = "/findings") -> str:
+def _local_path(path: str, fallback: str = FINDINGS_PATH) -> str:
     """`path` if it is a same-site absolute path, else `fallback`: never redirect off-site.
 
     Refuses anything with a scheme or host, protocol-relative `//host`, backslashes (browsers read
@@ -309,7 +310,7 @@ def _timeline_ctx(
     }
 
 
-@app.get("/findings", response_class=HTMLResponse)
+@app.get(FINDINGS_PATH, response_class=HTMLResponse)
 def findings(
     request: Request,
     repo: str | None = None,
@@ -330,8 +331,8 @@ def findings(
         "filters": filters,
         "page": page,
         "has_next": len(rows) > PAGE_SIZE,
-        "prev_href": _page_href("/findings", filters, page - 1) if page > 1 else None,
-        "next_href": _page_href("/findings", filters, page + 1) if len(rows) > PAGE_SIZE else None,
+        "prev_href": _page_href(FINDINGS_PATH, filters, page - 1) if page > 1 else None,
+        "next_href": _page_href(FINDINGS_PATH, filters, page + 1) if len(rows) > PAGE_SIZE else None,
     }
     if request.headers.get("hx-request") and request.headers.get("hx-target") == "findings-table":
         return _render(request, "_findings_table.html", **ctx)
