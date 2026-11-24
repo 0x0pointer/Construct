@@ -1,0 +1,99 @@
+diff --git a/prsec/dashboard/main.py b/prsec/dashboard/main.py
+index 1f9a0f7..2f7763d 100644
+--- a/prsec/dashboard/main.py
++++ b/prsec/dashboard/main.py
+@@ -165,6 +165,11 @@ def _clean(params: dict[str, Any]) -> dict[str, Any]:
+     return {k: v for k, v in params.items() if v not in (None, "")}
+ 
+ 
++def _page_href(path: str, filters: dict[str, Any], page: int) -> str:
++    params = {**filters, "page": page}
++    return f"{path}?{urlencode(params, doseq=True)}"
++
++
+ @app.get("/healthz", response_class=PlainTextResponse)
+ def healthz() -> str:
+     return "ok"
+@@ -182,6 +187,8 @@ def scans(request: Request, repo: str | None = None, status: str | None = None,
+         filters=filters,
+         page=page,
+         has_next=len(rows) > PAGE_SIZE,
++        prev_href=_page_href("/", filters, page - 1) if page > 1 else None,
++        next_href=_page_href("/", filters, page + 1) if len(rows) > PAGE_SIZE else None,
+         statuses=["queued", "running", "done", "skipped", "failed", "superseded"],
+     )
+ 
+@@ -318,7 +325,14 @@ def findings(
+     )
+     page = max(page, 1)
+     rows = db.list_findings(filters, limit=PAGE_SIZE + 1, offset=(page - 1) * PAGE_SIZE)
+-    ctx = {"findings": rows[:PAGE_SIZE], "filters": filters, "page": page, "has_next": len(rows) > PAGE_SIZE}
++    ctx = {
++        "findings": rows[:PAGE_SIZE],
++        "filters": filters,
++        "page": page,
++        "has_next": len(rows) > PAGE_SIZE,
++        "prev_href": _page_href("/findings", filters, page - 1) if page > 1 else None,
++        "next_href": _page_href("/findings", filters, page + 1) if len(rows) > PAGE_SIZE else None,
++    }
+     if request.headers.get("hx-request") and request.headers.get("hx-target") == "findings-table":
+         return _render(request, "_findings_table.html", **ctx)
+     return _render(
+diff --git a/prsec/dashboard/templates/_findings_table.html b/prsec/dashboard/templates/_findings_table.html
+index 8c8eff2..5c28b24 100644
+--- a/prsec/dashboard/templates/_findings_table.html
++++ b/prsec/dashboard/templates/_findings_table.html
+@@ -34,7 +34,7 @@
+   </div>
+   {% endif %}
+   <div class="pager">
+-    {% if page > 1 %}<a href="/findings?{{ filters | urlencode }}&page={{ page - 1 }}">&larr; prev</a>{% endif %}
+-    {% if has_next %}<a href="/findings?{{ filters | urlencode }}&page={{ page + 1 }}">next &rarr;</a>{% endif %}
++    {% if prev_href %}<a href="{{ prev_href }}">&larr; prev</a>{% endif %}
++    {% if next_href %}<a href="{{ next_href }}">next &rarr;</a>{% endif %}
+   </div>
+ </section>
+diff --git a/prsec/dashboard/templates/scan.html b/prsec/dashboard/templates/scan.html
+index f4d93d5..e6c1838 100644
+--- a/prsec/dashboard/templates/scan.html
++++ b/prsec/dashboard/templates/scan.html
+@@ -1,14 +1,16 @@
+ {% extends "base.html" %}
+ {% block title %}Scan {{ scan.id }}{% endblock %}
+ {% block content %}
+-<section class="page-header hero">
+-  <div>
+-    <p class="page-header__eyebrow">Scan #{{ scan.id }}</p>
+-    <h1 class="page-header__title wrap-anywhere">{{ scan.repo }}#{{ scan.pr }}</h1>
+-    <p class="page-header__summary">Review scan triage, agent execution, timeline events, transcripts, SARIF, and linked findings.</p>
+-  </div>
+-  <div class="hero__badges">
+-    <span class="badge st-{{ scan.status }}">{{ scan.status }}</span>
++<section class="page-header">
++  <div class="hero">
++    <div>
++      <p class="page-header__eyebrow">Scan #{{ scan.id }}</p>
++      <h1 class="page-header__title wrap-anywhere">{{ scan.repo }}#{{ scan.pr }}</h1>
++      <p class="page-header__summary">Review scan triage, agent execution, timeline events, transcripts, SARIF, and linked findings.</p>
++    </div>
++    <div class="hero__badges">
++      <span class="badge st-{{ scan.status }}">{{ scan.status }}</span>
++    </div>
+   </div>
+ </section>
+ 
+diff --git a/prsec/dashboard/templates/scans.html b/prsec/dashboard/templates/scans.html
+index 0f20b6d..2bead4b 100644
+--- a/prsec/dashboard/templates/scans.html
++++ b/prsec/dashboard/templates/scans.html
+@@ -63,8 +63,8 @@
+   </div>
+   {% endif %}
+   <div class="pager">
+-    {% if page > 1 %}<a href="?{{ filters | urlencode }}&page={{ page - 1 }}">&larr; newer</a>{% endif %}
+-    {% if has_next %}<a href="?{{ filters | urlencode }}&page={{ page + 1 }}">older &rarr;</a>{% endif %}
++    {% if prev_href %}<a href="{{ prev_href }}">&larr; newer</a>{% endif %}
++    {% if next_href %}<a href="{{ next_href }}">older &rarr;</a>{% endif %}
+   </div>
+ </section>
+ {% endblock %}
