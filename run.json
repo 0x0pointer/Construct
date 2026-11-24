@@ -516,7 +516,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-11-24T11:13:15.606523611Z",
-  "last_event_at": "2026-11-24T11:20:38.117438675Z",
+  "last_event_at": "2026-11-24T11:20:46.425889591Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -974,9 +974,9 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 148,
       "checkpoint": {
-        "timestamp": "2026-11-24T11:20:41.641756823Z",
+        "timestamp": "2026-11-24T11:20:46.425745593Z",
         "current_node": "publish",
         "completed_nodes": [
           "start",
@@ -988,49 +988,39 @@
         ],
         "node_retries": {},
         "context_values": {
-          "graph.goal": "Fix the failed CI checks on a Fabro pull request of 0x0pointer/Construct and push the fix to the same branch",
-          "response.fix": "Fixed the CI failure.\n\nWhat failed\n- `test`: `test_findings_filters_remain_plain_get_and_partial_compatible` expected a page-2 pagination link for `repo=acme/shop&severity=high`, but the shared dashboard DB fixture only seeded one matching high-severity finding, so there was no second page.\n\nWhat I changed\n- Updated `tests/dashboard/conftest.py` to seed two additional high-severity findings for the same scan/repo, giving that filtered result set enough rows to paginate.\n- Updated the fixture docstring from “three findings” to “five findings”.\n\nWhy this is the right fix\n- The PR explicitly adds coverage for preserved filtered pagination links on the restyled findings page.\n- The code path already preserves filters correctly; the regression test was failing because its fixture did not create a multi-page filtered dataset.\n\nValidation\n- Ran: `pytest -q -m 'not db and not docker and not k8s and not live_harness'`\n- Result: `1846 passed, 19 skipped, 96 deselected`\n\nNote\n- The specific failing test is DB-backed and may be skipped locally without `PRSEC_TEST_DATABASE_URL`, but the fixture change directly addresses the CI failure scenario.",
-          "outcome": "succeeded",
-          "graph.max_node_visits": "12",
-          "internal.retry_count.publish": 0,
-          "thread.start.current_node": "pick_pr",
-          "command.output": "blob://sha256/35f43a660030e359e95ebe90221b1833d9c12d4aff748bb03b16bf7fbc537987",
-          "internal.work_dir": "/workspace/Construct",
-          "current_node": "publish",
-          "last_stage": "fix",
-          "internal.fidelity": "compact",
-          "thread.pick_pr.current_node": "install",
-          "failure_class": "",
-          "thread.verify.current_node": "publish",
-          "internal.thread_id": "verify",
-          "internal.node_visit_count": 1,
-          "internal.retry_count.fix": 0,
-          "internal.retry_count.pick_pr": 0,
-          "thread.fix.current_node": "verify",
-          "thread.install.current_node": "fix",
-          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
-          "failure_signature": "",
-          "internal.retry_count.install": 0,
-          "internal.retry_count.start": 0,
-          "internal.run_id": "01M86M5085ADHW8D91358GK27C",
-          "internal.retry_count.verify": 0,
           "last_response": "Fixed the CI failure.\n\nWhat failed\n- `test`: `test_findings_filters_remain_plain_get_and_partial_compatible` expected a page-2 pagination link for `repo=acme/shop&severity=high`, but the shared dashbo",
-          "graph.rankdir": "LR"
+          "thread.start.current_node": "pick_pr",
+          "thread.verify.current_node": "publish",
+          "thread.fix.current_node": "verify",
+          "internal.run_id": "01M86M5085ADHW8D91358GK27C",
+          "internal.thread_id": "verify",
+          "failure_signature": "",
+          "graph.max_node_visits": "12",
+          "internal.retry_count.verify": 0,
+          "internal.retry_count.publish": 0,
+          "internal.work_dir": "/workspace/Construct",
+          "last_stage": "fix",
+          "current_node": "publish",
+          "outcome": "succeeded",
+          "internal.node_visit_count": 1,
+          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
+          "internal.retry_count.pick_pr": 0,
+          "failure_class": "",
+          "command.output": "blob://sha256/35f43a660030e359e95ebe90221b1833d9c12d4aff748bb03b16bf7fbc537987",
+          "graph.goal": "Fix the failed CI checks on a Fabro pull request of 0x0pointer/Construct and push the fix to the same branch",
+          "internal.retry_count.start": 0,
+          "response.fix": "Fixed the CI failure.\n\nWhat failed\n- `test`: `test_findings_filters_remain_plain_get_and_partial_compatible` expected a page-2 pagination link for `repo=acme/shop&severity=high`, but the shared dashboard DB fixture only seeded one matching high-severity finding, so there was no second page.\n\nWhat I changed\n- Updated `tests/dashboard/conftest.py` to seed two additional high-severity findings for the same scan/repo, giving that filtered result set enough rows to paginate.\n- Updated the fixture docstring from “three findings” to “five findings”.\n\nWhy this is the right fix\n- The PR explicitly adds coverage for preserved filtered pagination links on the restyled findings page.\n- The code path already preserves filters correctly; the regression test was failing because its fixture did not create a multi-page filtered dataset.\n\nValidation\n- Ran: `pytest -q -m 'not db and not docker and not k8s and not live_harness'`\n- Result: `1846 passed, 19 skipped, 96 deselected`\n\nNote\n- The specific failing test is DB-backed and may be skipped locally without `PRSEC_TEST_DATABASE_URL`, but the fixture change directly addresses the CI failure scenario.",
+          "thread.install.current_node": "fix",
+          "thread.pick_pr.current_node": "install",
+          "internal.fidelity": "compact",
+          "graph.rankdir": "LR",
+          "internal.retry_count.fix": 0,
+          "internal.retry_count.install": 0
         },
         "node_outcomes": {
-          "install": {
+          "start": {
             "status": "succeeded",
-            "context_updates": {
-              "command.output": "blob://sha256/b29412db3ae5fafae23855906ef445965ef3d006458d12517ade3727363570fc"
-            },
-            "notes": "Script completed: pip install -q -e '.[dev]' && python -c 'import prsec; print(\"prsec importable\")'",
-            "usage": null,
-            "timing": {
-              "wall_time_ms": 0,
-              "inference_time_ms": 0,
-              "tool_time_ms": 16414,
-              "active_time_ms": 16414
-            }
+            "usage": null
           },
           "fix": {
             "status": "succeeded",
@@ -1068,23 +1058,19 @@
               "active_time_ms": 272533
             }
           },
-          "publish": {
+          "install": {
             "status": "succeeded",
             "context_updates": {
-              "command.output": "blob://sha256/35f43a660030e359e95ebe90221b1833d9c12d4aff748bb03b16bf7fbc537987"
+              "command.output": "blob://sha256/b29412db3ae5fafae23855906ef445965ef3d006458d12517ade3727363570fc"
             },
-            "notes": "Script completed: \nimport json, os, subprocess, sys, urllib.request\nOWNER, NAME = '0x0pointer', 'Construct'\nD = '/tmp/fabro'\nNL = chr(10)\ndef refuse(msg):\n    print('NOT PUSHED: ' + msg)\n    sys.exit(1)\ndef git(*args, check=True):\n    p = subprocess.run(('git',) + args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')\n    if check and p.returncode != 0:\n        refuse('git ' + args[0] + ' failed: ' + p.stdout[-300:])\n    return p.returncode, p.stdout.strip()\ntry:\n    with open(D + '/pr.json') as f:\n        pr = json.load(f)\nexcept Exception:\n    refuse('no pull request was picked in this run')\nnumber, ref, sha = pr['number'], pr['ref'], pr['sha']\ngit('fetch', '-q', 'origin', ref)\nif git('rev-parse', 'FETCH_HEAD')[1] != sha:\n    refuse('the branch ' + ref + ' changed while this run was working; the fix was made for an older commit')\nif git('status', '--porcelain')[1]:\n    git('add', '-A')\n    git('-c', 'user.name=Fabro', '-c', 'user.email=noreply@fabro.sh', 'commit', '-q', '-m',\n        'Fix failed CI checks (' + str(pr.get('checks')) + ')')\nif git('merge-base', '--is-ancestor', sha, 'HEAD', check=False)[0] != 0:\n    refuse('the work is not based on the pull request branch')\nfiles = [l for l in git('diff', '--name-only', sha, 'HEAD')[1].splitlines() if l.strip()]\nif not files:\n    refuse('nothing changed, so there is nothing to push')\ngit('push', '-q', 'origin', 'HEAD:refs/heads/' + ref)\nhead = git('rev-parse', 'HEAD')[1]\nprint('PUSHED:', len(files), 'file(s) to', ref, '- pull request', number, 'is now at', head[:8])\nprint(NL.join(files))\ntoken = os.environ.get('GITHUB_TOKEN')\nbody = ('Fabro fix run ' + str(pr.get('round')) + ' pushed ' + head[:8] + ' for the failed checks (' + str(pr.get('checks')) + ').' + NL + NL\n    + 'Files changed:' + NL + NL.join('- ' + f for f in files[:50]) + NL + NL\n    + 'Tests that need a database, Docker or a cluster were not run before pushing; CI on this pull request runs them now.')\ntry:\n    req = urllib.request.Request('https://api.github.com/repos/' + OWNER + '/' + NAME + '/issues/' + str(number) + '/comments',\n        data=json.dumps(dict(body=body)).encode(),\n        headers=dict(Authorization='Bearer ' + str(token), Accept='application/vnd.github+json'))\n    urllib.request.urlopen(req, timeout=30).read()\nexcept Exception as exc:\n    print('warning: pushed, but could not comment on the pull request (' + type(exc).__name__ + ')')\n",
+            "notes": "Script completed: pip install -q -e '.[dev]' && python -c 'import prsec; print(\"prsec importable\")'",
             "usage": null,
             "timing": {
               "wall_time_ms": 0,
               "inference_time_ms": 0,
-              "tool_time_ms": 3518,
-              "active_time_ms": 3518
+              "tool_time_ms": 16414,
+              "active_time_ms": 16414
             }
-          },
-          "start": {
-            "status": "succeeded",
-            "usage": null
           },
           "pick_pr": {
             "status": "succeeded",
@@ -1098,6 +1084,20 @@
               "inference_time_ms": 0,
               "tool_time_ms": 6068,
               "active_time_ms": 6068
+            }
+          },
+          "publish": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/35f43a660030e359e95ebe90221b1833d9c12d4aff748bb03b16bf7fbc537987"
+            },
+            "notes": "Script completed: \nimport json, os, subprocess, sys, urllib.request\nOWNER, NAME = '0x0pointer', 'Construct'\nD = '/tmp/fabro'\nNL = chr(10)\ndef refuse(msg):\n    print('NOT PUSHED: ' + msg)\n    sys.exit(1)\ndef git(*args, check=True):\n    p = subprocess.run(('git',) + args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')\n    if check and p.returncode != 0:\n        refuse('git ' + args[0] + ' failed: ' + p.stdout[-300:])\n    return p.returncode, p.stdout.strip()\ntry:\n    with open(D + '/pr.json') as f:\n        pr = json.load(f)\nexcept Exception:\n    refuse('no pull request was picked in this run')\nnumber, ref, sha = pr['number'], pr['ref'], pr['sha']\ngit('fetch', '-q', 'origin', ref)\nif git('rev-parse', 'FETCH_HEAD')[1] != sha:\n    refuse('the branch ' + ref + ' changed while this run was working; the fix was made for an older commit')\nif git('status', '--porcelain')[1]:\n    git('add', '-A')\n    git('-c', 'user.name=Fabro', '-c', 'user.email=noreply@fabro.sh', 'commit', '-q', '-m',\n        'Fix failed CI checks (' + str(pr.get('checks')) + ')')\nif git('merge-base', '--is-ancestor', sha, 'HEAD', check=False)[0] != 0:\n    refuse('the work is not based on the pull request branch')\nfiles = [l for l in git('diff', '--name-only', sha, 'HEAD')[1].splitlines() if l.strip()]\nif not files:\n    refuse('nothing changed, so there is nothing to push')\ngit('push', '-q', 'origin', 'HEAD:refs/heads/' + ref)\nhead = git('rev-parse', 'HEAD')[1]\nprint('PUSHED:', len(files), 'file(s) to', ref, '- pull request', number, 'is now at', head[:8])\nprint(NL.join(files))\ntoken = os.environ.get('GITHUB_TOKEN')\nbody = ('Fabro fix run ' + str(pr.get('round')) + ' pushed ' + head[:8] + ' for the failed checks (' + str(pr.get('checks')) + ').' + NL + NL\n    + 'Files changed:' + NL + NL.join('- ' + f for f in files[:50]) + NL + NL\n    + 'Tests that need a database, Docker or a cluster were not run before pushing; CI on this pull request runs them now.')\ntry:\n    req = urllib.request.Request('https://api.github.com/repos/' + OWNER + '/' + NAME + '/issues/' + str(number) + '/comments',\n        data=json.dumps(dict(body=body)).encode(),\n        headers=dict(Authorization='Bearer ' + str(token), Accept='application/vnd.github+json'))\n    urllib.request.urlopen(req, timeout=30).read()\nexcept Exception as exc:\n    print('warning: pushed, but could not comment on the pull request (' + type(exc).__name__ + ')')\n",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 3518,
+              "active_time_ms": 3518
             }
           },
           "verify": {
@@ -1116,19 +1116,116 @@
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "132b73349c5c42ffa4062bfa2bf4002838ed7f39",
         "node_visits": {
-          "publish": 1,
-          "pick_pr": 1,
-          "start": 1,
-          "verify": 1,
           "fix": 1,
-          "install": 1
+          "pick_pr": 1,
+          "publish": 1,
+          "install": 1,
+          "start": 1,
+          "verify": 1
         }
       },
-      "diff": {}
+      "diff": {
+        "summary": {
+          "files_changed": 22,
+          "additions": 1372,
+          "deletions": 1208
+        }
+      }
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-11-24T11:20:46.440259745Z",
+    "status": "succeeded",
+    "timing": {
+      "wall_time_ms": 450827,
+      "inference_time_ms": 56949,
+      "tool_time_ms": 368762,
+      "active_time_ms": 425711
+    },
+    "final_git_commit_sha": "132b73349c5c42ffa4062bfa2bf4002838ed7f39",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "pick_pr",
+        "stage_label": "pick_pr",
+        "timing": {
+          "wall_time_ms": 6077,
+          "inference_time_ms": 0,
+          "tool_time_ms": 6068,
+          "active_time_ms": 6068
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "install",
+        "stage_label": "install",
+        "timing": {
+          "wall_time_ms": 16422,
+          "inference_time_ms": 0,
+          "tool_time_ms": 16414,
+          "active_time_ms": 16414
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "fix",
+        "stage_label": "fix",
+        "timing": {
+          "wall_time_ms": 273160,
+          "inference_time_ms": 56949,
+          "tool_time_ms": 215584,
+          "active_time_ms": 272533
+        },
+        "billing_usd_micros": 233474,
+        "retries": 0
+      },
+      {
+        "stage_id": "verify",
+        "stage_label": "verify",
+        "timing": {
+          "wall_time_ms": 127184,
+          "inference_time_ms": 0,
+          "tool_time_ms": 127178,
+          "active_time_ms": 127178
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "publish",
+        "stage_label": "publish",
+        "timing": {
+          "wall_time_ms": 3523,
+          "inference_time_ms": 0,
+          "tool_time_ms": 3518,
+          "active_time_ms": 3518
+        },
+        "retries": 0
+      }
+    ],
+    "billing": {
+      "input_tokens": 38994,
+      "output_tokens": 1654,
+      "total_tokens": 364237,
+      "reasoning_tokens": 2053,
+      "cache_read_tokens": 321536,
+      "cache_write_tokens": 0,
+      "total_usd_micros": 233474
+    },
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -1159,7 +1256,12 @@
       "first_event_seq": 141,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Script completed: \nimport json, os, subprocess, sys, urllib.request\nOWNER, NAME = '0x0pointer', 'Construct'\nD = '/tmp/fabro'\nNL = chr(10)\ndef refuse(msg):\n    print('NOT PUSHED: ' + msg)\n    sys.exit(1)\ndef git(*args, check=True):\n    p = subprocess.run(('git',) + args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')\n    if check and p.returncode != 0:\n        refuse('git ' + args[0] + ' failed: ' + p.stdout[-300:])\n    return p.returncode, p.stdout.strip()\ntry:\n    with open(D + '/pr.json') as f:\n        pr = json.load(f)\nexcept Exception:\n    refuse('no pull request was picked in this run')\nnumber, ref, sha = pr['number'], pr['ref'], pr['sha']\ngit('fetch', '-q', 'origin', ref)\nif git('rev-parse', 'FETCH_HEAD')[1] != sha:\n    refuse('the branch ' + ref + ' changed while this run was working; the fix was made for an older commit')\nif git('status', '--porcelain')[1]:\n    git('add', '-A')\n    git('-c', 'user.name=Fabro', '-c', 'user.email=noreply@fabro.sh', 'commit', '-q', '-m',\n        'Fix failed CI checks (' + str(pr.get('checks')) + ')')\nif git('merge-base', '--is-ancestor', sha, 'HEAD', check=False)[0] != 0:\n    refuse('the work is not based on the pull request branch')\nfiles = [l for l in git('diff', '--name-only', sha, 'HEAD')[1].splitlines() if l.strip()]\nif not files:\n    refuse('nothing changed, so there is nothing to push')\ngit('push', '-q', 'origin', 'HEAD:refs/heads/' + ref)\nhead = git('rev-parse', 'HEAD')[1]\nprint('PUSHED:', len(files), 'file(s) to', ref, '- pull request', number, 'is now at', head[:8])\nprint(NL.join(files))\ntoken = os.environ.get('GITHUB_TOKEN')\nbody = ('Fabro fix run ' + str(pr.get('round')) + ' pushed ' + head[:8] + ' for the failed checks (' + str(pr.get('checks')) + ').' + NL + NL\n    + 'Files changed:' + NL + NL.join('- ' + f for f in files[:50]) + NL + NL\n    + 'Tests that need a database, Docker or a cluster were not run before pushing; CI on this pull request runs them now.')\ntry:\n    req = urllib.request.Request('https://api.github.com/repos/' + OWNER + '/' + NAME + '/issues/' + str(number) + '/comments',\n        data=json.dumps(dict(body=body)).encode(),\n        headers=dict(Authorization='Bearer ' + str(token), Accept='application/vnd.github+json'))\n    urllib.request.urlopen(req, timeout=30).read()\nexcept Exception as exc:\n    print('warning: pushed, but could not comment on the pull request (' + type(exc).__name__ + ')')\n",
+        "failure_reason": null,
+        "timestamp": "2026-11-24T11:20:41.640187943Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -1168,11 +1270,27 @@
         "language": "python",
         "timeout_ms": 300000
       },
-      "script_timing": null,
+      "script_timing": {
+        "output": "blob://sha256/35f43a660030e359e95ebe90221b1833d9c12d4aff748bb03b16bf7fbc537987",
+        "exit_code": 0,
+        "duration_ms": 3518,
+        "termination": "exited",
+        "output_bytes": 123,
+        "live_streaming": true
+      },
       "parallel_results": null,
       "output": null,
+      "output_bytes": 123,
+      "live_streaming": true,
+      "termination": "exited",
       "started_at": "2026-11-24T11:20:38.117035565Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 3523,
+        "inference_time_ms": 0,
+        "tool_time_ms": 3518,
+        "active_time_ms": 3518
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -1181,7 +1299,41 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "succeeded"
+    },
+    "exit@1": {
+      "first_event_seq": 151,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-11-24T11:20:46.425889591Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-11-24T11:20:46.425876034Z",
+      "handler": "exit",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
     },
     "install@1": {
       "first_event_seq": 32,
