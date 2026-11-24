@@ -64,8 +64,12 @@ def save_state(state):
 
 def run_issue(number, auto_approve):
     """Run the workflow attached to this terminal. Returns (result, run_id)."""
+    # The workflow's own goal cannot name the issue (a run started from the web UI
+    # picks its issue after the goal is fixed), so name it here.
+    goal = (f"Resolve GitHub issue #{number} of {REPO} with a reviewed spec, code, "
+            "and passing tests")
     cmd = [FABRO, "run", WORKFLOW, "-I", f"issue={number}", "--label", f"issue={number}",
-           "--no-upgrade-check"]
+           "--goal", goal, "--no-upgrade-check"]
     if auto_approve:
         cmd.append("--auto-approve")
     # Tee the output so the run id can be read while the terminal stays interactive.

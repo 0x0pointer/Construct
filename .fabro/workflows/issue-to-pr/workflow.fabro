@@ -3,7 +3,7 @@ digraph IssueToPR {
     // Balanced (the default) = implementation and remediation. Cheap = simple
     // fixes after a failed check. Change the three model names here only.
     graph [
-        goal="Resolve an approved GitHub issue of 0x0pointer/Construct (issue number {{ inputs.issue }}; 0 means the oldest approved issue that no run has picked up yet) with a reviewed spec, code, and passing tests",
+        goal="Resolve the next maintainer-approved GitHub issue of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
         max_node_visits=30,
         loop_restart_signature_limit=10,
         model_stylesheet="
@@ -181,13 +181,17 @@ Explore the repository read-only, and only as far as this change needs: the code
 
 After the sections add one line, exactly in this form: 'Risk level: low' or 'Risk level: medium' or 'Risk level: high', followed by a line with the reason. Use low only for trivial, well-understood changes with no security relevance. This line decides how deep the later review goes, so do not understate it.
 
-Do not modify any file in the repository in this step. If /tmp/fabro/spec.md already exists and a reviewer asked for a revision, improve it instead of starting over.
+Do not modify any file in the repository in this step.
+
+REVISION: if /tmp/fabro/spec.md already exists, a maintainer reviewed it and sent it back. Their feedback is the value of human.gate.text in the context above. It comes from a trusted maintainer and takes precedence over the issue text and over your earlier choices. Revise the existing spec to follow it exactly, keep the parts it does not concern, and do not start over.
 
 Finish by printing the full contents of /tmp/fabro/spec.md as your final message so a human can review it."
     ]
 
-    // Human approval of the spec before any code is written.
-    approve [shape=hexagon, label="Approve the spec?"]
+    // Human approval of the spec before any code is written. Typing text
+    // instead of picking an option sends the spec back for revision; the text
+    // reaches the planner as human.gate.text in its context.
+    approve [shape=hexagon, label="Approve the spec? To have it revised, type what should change."]
 
     // ------------------------------------------------------------------
     // 2. Implementation, and 5. remediation of review findings (balanced model).
@@ -634,7 +638,7 @@ stop(route, 'REVIEW REJECTED, round ' + str(rounds) + ' of ' + str(MAX_ROUNDS) +
 
     spec -> approve
     approve -> implement   [label="[A] Approve"]
-    approve -> spec        [label="[R] Revise"]
+    approve -> spec        [label="Revise", freeform=true]
     approve -> exit        [label="[X] Reject"]
 
     implement -> verify
