@@ -240,14 +240,108 @@
     }
   },
   "web_url": "https://fabro.tail2ccfc9.ts.net/runs/01M86JA25YVP1P3AST48MKVG2Y",
-  "start": null,
-  "status": {
-    "kind": "starting"
+  "start": {
+    "start_time": "2026-11-24T10:41:03.968732213Z",
+    "run_branch": "fabro/run/01M86JA25YVP1P3AST48MKVG2Y",
+    "base_sha": "60533e545d46709c75e2e2b79bf40160519f0fa7"
   },
-  "status_updated_at": "2026-11-24T10:41:00.717086258Z",
-  "last_event_at": "2026-11-24T10:41:03.288224324Z",
+  "status": {
+    "kind": "running"
+  },
+  "status_updated_at": "2026-11-24T10:41:03.970009977Z",
+  "last_event_at": "2026-11-24T10:41:05.920016161Z",
   "pending_control": null,
-  "checkpoints": [],
+  "checkpoints": [
+    {
+      "seq": 21,
+      "checkpoint": {
+        "timestamp": "2026-11-24T10:41:05.919916256Z",
+        "current_node": "start",
+        "completed_nodes": [
+          "start"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.thread_id": null,
+          "internal.work_dir": "/workspace/Construct",
+          "outcome": "succeeded",
+          "failure_class": "",
+          "graph.goal": "Probe: move the run branch onto an existing PR branch",
+          "internal.fidelity": "compact",
+          "internal.node_visit_count": 1,
+          "current_node": "start",
+          "failure_signature": "",
+          "internal.run_id": "01M86JA25YVP1P3AST48MKVG2Y",
+          "internal.retry_count.start": 0
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "a",
+        "node_visits": {
+          "start": 1
+        }
+      },
+      "diff": {}
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-11-24T10:41:06.875514167Z",
+        "current_node": "a",
+        "completed_nodes": [
+          "start",
+          "a"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "graph.goal": "Probe: move the run branch onto an existing PR branch",
+          "thread.start.current_node": "a",
+          "internal.thread_id": "start",
+          "internal.run_id": "01M86JA25YVP1P3AST48MKVG2Y",
+          "outcome": "succeeded",
+          "failure_class": "",
+          "internal.retry_count.start": 0,
+          "current_node": "a",
+          "internal.work_dir": "/workspace/Construct",
+          "internal.fidelity": "compact",
+          "failure_signature": "",
+          "internal.retry_count.a": 0,
+          "command.output": "blob://sha256/c810b6b3f0ab34b593c3b0fe3225805762e313aea3aa9335084a1d08b6193db6",
+          "internal.node_visit_count": 1
+        },
+        "node_outcomes": {
+          "a": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/c810b6b3f0ab34b593c3b0fe3225805762e313aea3aa9335084a1d08b6193db6"
+            },
+            "notes": "Script completed: set -e; git status -sb | head -3; git log --oneline -2; git fetch -q origin fabro/run/01M86EX302FZNDNV7QECEXDPPF; git reset -q --hard FETCH_HEAD; git log --oneline -2; git status -sb | head -3; git config --get-regexp 'credential|extraheader|insteadof' | sed -E 's/(gh[pousr]_|x-access-token:|basic |bearer )[A-Za-z0-9_=-]+/\\1***/Ig' | cut -c1-120 || true",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 947,
+              "active_time_ms": 947
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "b",
+        "node_visits": {
+          "a": 1,
+          "start": 1
+        }
+      },
+      "diff": {}
+    }
+  ],
   "conclusion": null,
   "sandbox": {
     "kind": "ready",
@@ -274,5 +368,67 @@
   "pull_request": null,
   "superseded_by": null,
   "pending_interviews": {},
-  "stages": {}
+  "stages": {
+    "start@1": {
+      "first_event_seq": 18,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-11-24T10:41:05.919808103Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-11-24T10:41:05.919715265Z",
+      "handler": "start",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
+    "a@1": {
+      "first_event_seq": 22,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "set -e; git status -sb | head -3; git log --oneline -2; git fetch -q origin fabro/run/01M86EX302FZNDNV7QECEXDPPF; git reset -q --hard FETCH_HEAD; git log --oneline -2; git status -sb | head -3; git config --get-regexp 'credential|extraheader|insteadof' | sed -E 's/(gh[pousr]_|x-access-token:|basic |bearer )[A-Za-z0-9_=-]+/\\1***/Ig' | cut -c1-120 || true",
+        "command": "exec 2>&1\nset -e; git status -sb | head -3; git log --oneline -2; git fetch -q origin fabro/run/01M86EX302FZNDNV7QECEXDPPF; git reset -q --hard FETCH_HEAD; git log --oneline -2; git status -sb | head -3; git config --get-regexp 'credential|extraheader|insteadof' | sed -E 's/(gh[pousr]_|x-access-token:|basic |bearer )[A-Za-z0-9_=-]+/\\1***/Ig' | cut -c1-120 || true",
+        "language": "shell"
+      },
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-11-24T10:41:05.919996628Z",
+      "handler": "command",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
+    }
+  }
 }
