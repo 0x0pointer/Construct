@@ -3,8 +3,10 @@ _version = 1
 # Issue -> spec -> human approval -> code -> checks -> independent review
 # -> draft PR, for Construct.
 #
-# Run (from the repo root):
+# Run one issue (from the repo root):
 #   fabro run .fabro/workflows/issue-to-pr/workflow.toml -I issue=<number>
+# Without -I issue, and when started by a Fabro automation (the Run button in
+# the web UI), the run picks the oldest approved issue not yet picked up.
 #
 # No secrets belong in this file. Keys and tokens live in Fabro's vault
 # (`fabro secret set ...`), never in the repository.
@@ -13,10 +15,15 @@ _version = 1
 graph = "workflow.fabro"
 
 [run.inputs]
-# Issue number to work on. Must be passed with -I issue=<number>.
+# Issue number to work on, passed with -I issue=<number>. "0" lets the run
+# pick the oldest open issue that carries approval_label and not
+# in_progress_label. Automations cannot pass inputs, so they always get "0".
 issue = "0"
 # Label a maintainer adds to release an issue to the pipeline.
 approval_label = "fabro-approved"
+# Label the run adds to the issue it accepts. A run that picks its own issue
+# skips issues carrying it; remove the label to have the issue built again.
+in_progress_label = "fabro-in-progress"
 # GitHub logins allowed to release an issue (comma separated, no spaces).
 maintainers = "RiieCco,blabla1337,JorgeCarvalhoPT"
 
@@ -60,6 +67,6 @@ enabled = true
 draft = true
 
 [run.integrations.github.permissions]
-issues = "read"
+issues = "write"
 contents = "write"
 pull_requests = "write"
