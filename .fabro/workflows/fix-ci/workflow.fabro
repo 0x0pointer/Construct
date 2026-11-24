@@ -80,59 +80,100 @@ def job_log(job_id):
         return resp.read().decode(errors='replace')
 ANSI = re.compile(re.escape(chr(27) + '[') + '[0-9;]*[A-Za-z]')
 STAMP = re.compile('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z ?')
-def excerpt(log):
-    lines = [STAMP.sub('', ANSI.sub('', l.lstrip(chr(65279))))[:500] for l in log.splitlines()]
-    def first(*needles):
-        for i, l in enumerate(lines):
-            if any(n in l for n in needles):
+def excerpt(log, slug):
+    # Returns the part of a job log worth reading. The complete log and the
+    # complete failure output are saved next to it, untruncated.
+    lines = [STAMP.sub('', ANSI.sub('', l.lstrip(chr(65279)))) for l in log.splitlines()]
+    os.makedirs(D + '/ci-logs', exist_ok=True)
+    full_path = D + '/ci-logs/' + slug + '.log'
+    with open(full_path, 'w') as f:
+        f.write(NL.join(lines) + NL)
+    def first(needles, start=0):
+        for i in range(start, len(lines)):
+            if any(n in lines[i] for n in needles):
                 return i
         return None
-    detail = first('= FAILURES =', '= ERRORS =')
-    summary = first('short test summary info')
-    error = first('##[error]')
+    detail = first(('= FAILURES =', '= ERRORS ='))
+    summary = first(('short test summary info',))
+    error = first(('##[error]',))
     parts = []
+    note = 'Complete job log: ' + full_path
     if summary is not None:
-        tail = lines[summary:summary + 60]
+        tail = lines[summary:summary + 200]
         stop = [i for i, l in enumerate(tail) if '##[error]' in l]
-        parts.append(NL.join(tail[:stop[0] + 1] if stop else tail))
+        tail = tail[:stop[0] + 1] if stop else tail
+        parts.append(NL.join(l[:400] for l in tail))
     if detail is not None:
-        end = summary if summary is not None and summary > detail else detail + 300
-        parts.append(NL.join(lines[detail:end][:300]))
+        end = first(('= warnings summary =', '= tests coverage =', 'short test summary info'), detail + 1)
+        block = lines[detail:end if end is not None else len(lines)]
+        fail_path = D + '/ci-logs/' + slug + '-failures.txt'
+        with open(fail_path, 'w') as f:
+            f.write(NL.join(block) + NL)
+        shown = NL.join(l[:3000] for l in block)
+        cut = len(shown) > 60000 or any(len(l) > 3000 for l in block)
+        parts.append(shown[:60000])
+        note = 'Complete failure output' + (' (the text above is cut)' if cut else '') + ': ' + fail_path + NL + note
     if not parts:
         if error is not None:
-            parts.append(NL.join(lines[max(0, error - 80):error + 1]))
+            parts.append(NL.join(l[:3000] for l in lines[max(0, error - 150):error + 1]))
         else:
-            parts.append(NL.join(lines[-80:]))
-    return (NL + NL).join(parts)[:14000]
-def sonar_report(number):
+            parts.append(NL.join(l[:3000] for l in lines[-150:]))
+    return (NL + NL).join(parts) + NL + NL + note
+def sonar_report(number, sha):
+    # Returns (text, needs_work) from SonarCloud's public API, or (None, False)
+    # when it has not analysed this pull request.
     base = 'https://sonarcloud.io/api/'
     key = urllib.parse.quote(SONAR)
+    scope = key + '&pullRequest=' + str(number)
     out = []
     try:
-        gate = fetch(base + 'qualitygates/project_status?projectKey=' + key + '&pullRequest=' + str(number), auth=False)
-        bad = [c for c in gate['projectStatus'].get('conditions', []) if c.get('status') != 'OK']
-        out.append('Quality gate: ' + str(gate['projectStatus'].get('status')))
-        for c in bad:
-            out.append('- failed condition ' + str(c.get('metricKey')) + ': actual ' + str(c.get('actualValue')) + ', threshold ' + str(c.get('errorThreshold')))
-    except Exception as exc:
-        out.append('Quality gate could not be read (' + type(exc).__name__ + ')')
-    try:
-        found = fetch(base + 'issues/search?componentKeys=' + key + '&pullRequest=' + str(number) + '&resolved=false&ps=100', auth=False)
-        out.append('Open issues on this pull request: ' + str(found.get('total')))
-        for i in found.get('issues', [])[:60]:
-            path = str(i.get('component', '')).split(':', 1)[-1]
-            out.append('- ' + path + ':' + str(i.get('line', '?')) + ' [' + str(i.get('severity')) + ', ' + str(i.get('rule')) + '] ' + str(i.get('message', ''))[:300])
-    except Exception as exc:
-        out.append('Issues could not be read (' + type(exc).__name__ + ')')
-    try:
-        spots = fetch(base + 'hotspots/search?projectKey=' + key + '&pullRequest=' + str(number) + '&status=TO_REVIEW&ps=50', auth=False)
-        for h in spots.get('hotspots', [])[:30]:
-            path = str(h.get('component', '')).split(':', 1)[-1]
-            out.append('- security hotspot ' + path + ':' + str(h.get('line', '?')) + ' ' + str(h.get('message', ''))[:300])
+        listed = fetch(base + 'project_pull_requests/list?project=' + key, auth=False).get('pullRequests', [])
+        mine = [p for p in listed if str(p.get('key')) == str(number)]
+        if not mine:
+            return None, False
+        analysed = str((mine[0].get('commit') or dict()).get('sha') or '')
+        if analysed and analysed != sha:
+            out.append('NOTE: SonarCloud last analysed commit ' + analysed[:8] + ', not the current ' + sha[:8]
+                + '. Findings below may already be fixed; check each against the current code.')
     except Exception:
         pass
-    return NL.join(out)
-def describe(run, number):
+    status = None
+    try:
+        gate = fetch(base + 'qualitygates/project_status?projectKey=' + scope, auth=False)['projectStatus']
+        status = gate.get('status')
+        out.append('Quality gate: ' + str(status))
+        for c in gate.get('conditions', []):
+            if c.get('status') != 'OK':
+                out.append('- failed condition ' + str(c.get('metricKey')) + ': actual ' + str(c.get('actualValue')) + ', threshold ' + str(c.get('errorThreshold')))
+    except Exception as exc:
+        out.append('Quality gate could not be read (' + type(exc).__name__ + ')')
+    total = 0
+    try:
+        issues = []
+        for page in range(1, 6):
+            found = fetch(base + 'issues/search?componentKeys=' + scope + '&resolved=false&ps=100&p=' + str(page), auth=False)
+            total = int(found.get('total') or 0)
+            issues.extend(found.get('issues', []))
+            if len(issues) >= total or not found.get('issues'):
+                break
+        out.append('Open issues on this pull request: ' + str(total) + (' (first ' + str(len(issues)) + ' listed)' if len(issues) < total else ''))
+        for i in issues:
+            path = str(i.get('component', '')).split(':', 1)[-1]
+            out.append('- ' + path + ':' + str(i.get('line', '?')) + ' [' + str(i.get('type')) + ', ' + str(i.get('severity')) + ', ' + str(i.get('rule')) + '] ' + str(i.get('message', ''))[:500])
+    except Exception as exc:
+        out.append('Issues could not be read (' + type(exc).__name__ + ')')
+    spots = []
+    try:
+        spots = fetch(base + 'hotspots/search?projectKey=' + scope + '&status=TO_REVIEW&ps=100', auth=False).get('hotspots', [])
+        for h in spots:
+            path = str(h.get('component', '')).split(':', 1)[-1]
+            out.append('- security hotspot ' + path + ':' + str(h.get('line', '?')) + ' ' + str(h.get('message', ''))[:500])
+    except Exception:
+        pass
+    return NL.join(out), bool(total or spots or status not in (None, 'OK'))
+def is_sonar(run):
+    return 'sonar' in ((run.get('app') or dict()).get('slug') or '').lower() or 'sonar' in run['name'].lower()
+def describe(run, number, sha):
     # Everything known about one failed check, as text for the fixing agent.
     name = run['name']
     app = ((run.get('app') or dict()).get('slug') or '').lower()
@@ -140,11 +181,12 @@ def describe(run, number):
     output = run.get('output') or dict()
     if output.get('title'):
         text.append('Title: ' + str(output['title'])[:300])
-    if 'sonar' in app or 'sonar' in name.lower():
-        text.append(sonar_report(number))
+    if is_sonar(run):
+        text.append(sonar_report(number, sha)[0] or 'SonarCloud has no analysis for this pull request. See ' + str(run.get('html_url')))
     elif app == 'github-actions':
         try:
-            text.append('Relevant part of the job log:' + NL + NL + excerpt(job_log(run['id'])))
+            slug = re.sub('[^A-Za-z0-9]+', '-', name).strip('-').lower() + '-' + str(run['id'])
+            text.append('Relevant part of the job log:' + NL + NL + excerpt(job_log(run['id']), slug))
         except Exception as exc:
             text.append('The job log could not be read (' + type(exc).__name__ + '). See ' + str(run.get('html_url')))
     else:
@@ -214,7 +256,17 @@ if chosen is None:
 number, ref, sha = chosen['number'], chosen['head']['ref'], chosen['head']['sha']
 names = ', '.join(r['name'] for r in failed)
 report = '# Failed CI checks on pull request ' + str(number) + ' at commit ' + sha + NL + NL
-report += (NL + NL).join(describe(r, number) for r in failed) + NL
+os.makedirs(D, exist_ok=True)
+report += (NL + NL).join(describe(r, number, sha) for r in failed) + NL
+if not [r for r in failed if is_sonar(r)]:
+    # Sonar findings are worth fixing in the same round even when its own
+    # check did not fail (or did not run because an earlier step failed).
+    try:
+        sonar_text, needs_work = sonar_report(number, sha)
+    except Exception:
+        sonar_text, needs_work = None, False
+    if sonar_text and needs_work:
+        report += NL + '## SonarCloud findings (fix these in the same change)' + NL + NL + sonar_text + NL
 # Work on top of the pull request branch from here on.
 git('fetch', '-q', 'origin', ref)
 if git('rev-parse', 'FETCH_HEAD') != sha:
@@ -225,7 +277,7 @@ for stale in ('verify_fails', 'verify-summary.md'):
     if os.path.exists(D + '/' + stale):
         os.remove(D + '/' + stale)
 with open(D + '/ci-failures.md', 'w') as f:
-    f.write(report[:40000])
+    f.write(report[:150000])
 with open(D + '/pr.md', 'w') as f:
     f.write('# ' + str(chosen.get('title')) + NL + NL + (chosen.get('body') or '').split('### Fabro Details')[0][:6000] + NL)
 with open(D + '/pr.json', 'w') as f:
@@ -257,7 +309,7 @@ print(report[:2500])
         prompt="A pull request on the Construct repository (Python package `prsec`) failed its CI checks on GitHub. The working tree is the pull request branch. Make the checks pass.
 
 Read, in this order:
-- /tmp/fabro/ci-failures.md - which checks failed and the relevant output (test failures, lint output, SonarCloud issues or failed quality gate conditions).
+- /tmp/fabro/ci-failures.md - which checks failed and the relevant output (test failures, lint output, SonarCloud issues or failed quality gate conditions). Read it completely. Where it says text was cut, or you need more context, the files it names under /tmp/fabro/ci-logs/ hold the complete failure output and the complete job log; search them rather than guessing.
 - /tmp/fabro/pr.md - what the pull request is meant to do.
 - The change under repair: git diff origin/main
 
@@ -280,7 +332,7 @@ Finish with a short summary: for each failed check, the cause and what you chang
 
 Read, in this order, whichever of these exist:
 - /tmp/fabro/verify-summary.md - the local check that failed after the earlier fix (full log in /tmp/fabro/verify.log).
-- /tmp/fabro/ci-failures.md - the CI checks that failed on GitHub, which is what must be fixed.
+- /tmp/fabro/ci-failures.md - the CI checks that failed on GitHub, which is what must be fixed. The files it names under /tmp/fabro/ci-logs/ hold the complete failure output and job log.
 - /tmp/fabro/pr.md - what the pull request is meant to do.
 Then inspect the pull request with: git diff origin/main
 

@@ -55,9 +55,12 @@ jobs:
             --cov \
             --cov-report=xml \
             --cov-report=term-missing \
-            -v
+            -vv
 
+      # Runs even when tests fail, so a pull request gets its test failures
+      # and its Sonar findings in one round instead of one after the other.
       - name: SonarCloud Scan
+        if: ${{ !cancelled() }}
         uses: SonarSource/sonarcloud-github-action@ba3875ecf642b2129de2b589510c81a8b53dbf4e # master
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

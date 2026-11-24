@@ -89,9 +89,13 @@ branch. Start it from its automation in the web UI, or with
    login in `pr_authors`, from a `fabro/run/` branch of this repository, all
    its checks have finished, and at least one failed. Anything else is
    skipped, so pull requests from people or forks are never touched.
-2. **Reads the failures.** For GitHub Actions jobs the relevant part of the
-   job log, for SonarCloud the failed quality gate conditions and open issues
-   (public API), for other checks their summary and annotations.
+2. **Reads the failures.** For GitHub Actions jobs the failure output of the
+   job, with the complete output and the complete job log saved in the sandbox
+   for the agent to search. For SonarCloud every open issue, security hotspot
+   and failed quality gate condition on the pull request (public API), also
+   when only another check failed, so both are fixed in one round. For other
+   checks their summary and annotations. CI runs the Sonar scan even when
+   tests fail, for the same reason.
 3. **Fixes** (balanced model), with the same protected paths as the main
    pipeline and a ban on weakening tests or silencing rules.
 4. **Verifies locally**: protected paths, syntax, install, skills lint, unit
