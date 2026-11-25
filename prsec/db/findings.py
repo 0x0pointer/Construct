@@ -375,7 +375,7 @@ def metrics() -> dict[str, Any]:
                                AND COALESCE(output->>'verdict', '') <> ''
                               THEN output->>'verdict'
                           WHEN jsonb_typeof(output) = 'object' AND stage = 'skeptic'
-                               AND output ? 'refuted'
+                               AND jsonb_typeof(output->'refuted') = 'boolean'
                               THEN CASE output->>'refuted' WHEN 'true' THEN 'refuted' WHEN 'false' THEN 'upheld' END
                           WHEN jsonb_typeof(output) = 'object' AND stage = 'env'
                                AND output ? 'envspec' AND output->'envspec' <> 'null'::jsonb

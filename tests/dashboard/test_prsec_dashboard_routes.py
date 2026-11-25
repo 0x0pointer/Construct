@@ -14,6 +14,10 @@ def _fid(fingerprint):
     return next(r["id"] for r in db.list_findings() if r["fingerprint"] == fingerprint)
 
 
+def _stage_decision(metrics, stage, decision):
+    return next(row for row in metrics["stage_decisions"] if row["stage"] == stage and row["decision"] == decision)
+
+
 def _assert_no_remote_assets(text):
     lowered = text.lower()
     for needle in ("https://", "http://", "unpkg.com", "htmx.org"):
@@ -141,6 +145,7 @@ def test_metrics_review_funnel_and_stage_decisions(client, seeded, pg_pool):
             """INSERT INTO stage_runs (scan_id, task_id, stage, harness, harness_version, model, status, usage, output, errors, duration_s)
                VALUES (%s, 't-rules', 'rules', 'codex', '0.50.0', 'agent-large', 'ok', %s, %s, %s, 7),
                       (%s, 't-triage', 'triage', 'codex', '0.50.0', 'agent-large', 'ok', %s, %s, %s, 15),
+                      (%s, 't-skeptic-bad', 'skeptic', 'claude-code', '2.1.0', 'agent-large', 'ok', %s, %s, %s, 21),
                       (%s, 't-dynamic', 'dynamic', 'claude-code', '2.1.0', 'agent-large', 'ok', %s, %s, %s, 33),
                       (%s, 't-env-bad', 'env', 'claude-code', '2.1.0', 'agent-large', 'ok', %s, %s, %s, 8)""",
             (
@@ -153,6 +158,10 @@ def test_metrics_review_funnel_and_stage_decisions(client, seeded, pg_pool):
                 Jsonb({"decision": "full", "rationale": "changed authz"}),
                 Jsonb([]),
                 s1,
+                Jsonb({"usd": 0.4, "tokens_in": 55, "tokens_out": 35, "turns": 1}),
+                Jsonb({"refuted": "false", "confidence": "low"}),
+                Jsonb([]),
+                s1,
                 Jsonb({"usd": 0.3, "tokens_in": 80, "tokens_out": 30, "turns": 2}),
                 Jsonb({"outcome": "reproduced", "reasoning": "replay_confirmed"}),
                 Jsonb([]),
@@ -163,16 +172,73 @@ def test_metrics_review_funnel_and_stage_decisions(client, seeded, pg_pool):
             ),
         )
 
+    metrics = db.metrics()
+    assert metrics["review_funnel"] == {
+        "triggered": 5,
+        "active": 2,
+        "skipped": 1,
+        "failed": 1,
+        "fully_reviewed": 1,
+        "findings_total": 5,
+        "reproduced": 1,
+        "likely": 3,
+        "inconclusive": 1,
+    }
+    assert _stage_decision(metrics, "rules", "scan") == {
+        "stage": "rules",
+        "decision": "scan",
+        "runs": 1,
+        "ok": 1,
+        "failed": 0,
+        "avg_duration_s": 7.0,
+        "avg_cost": 0.1,
+        "avg_tokens": 60.0,
+        "avg_turns": 1.0,
+        "ok_rate": 1.0,
+    }
+    assert _stage_decision(metrics, "triage", "full")["runs"] == 1
+    assert _stage_decision(metrics, "triage", "full")["ok_rate"] == 1.0
+    assert _stage_decision(metrics, "dynamic", "reproduced")["avg_tokens"] == 110.0
+    assert _stage_decision(metrics, "static_verify", "output_invalid") == {
+        "stage": "static_verify",
+        "decision": "output_invalid",
+        "runs": 1,
+        "ok": 0,
+        "failed": 1,
+        "avg_duration_s": 80.0,
+        "avg_cost": 0.8,
+        "avg_tokens": 0.0,
+        "avg_turns": 0.0,
+        "ok_rate": 0.0,
+    }
+    assert _stage_decision(metrics, "skeptic", "unknown") == {
+        "stage": "skeptic",
+        "decision": "unknown",
+        "runs": 1,
+        "ok": 1,
+        "failed": 0,
+        "avg_duration_s": 21.0,
+        "avg_cost": 0.4,
+        "avg_tokens": 90.0,
+        "avg_turns": 1.0,
+        "ok_rate": 1.0,
+    }
+    assert not any(row["stage"] == "skeptic" and row["decision"] in {"upheld", "refuted"} for row in metrics["stage_decisions"])
+
     r = client.get("/metrics")
     assert r.status_code == 200
     assert "PR review funnel (30 days)" in r.text
-    assert "Triggered scans" in r.text
-    assert "Active scans" in r.text
-    assert "Fully reviewed scans" in r.text
-    assert "Findings produced" in r.text
+    assert 'Triggered scans</td><td class="num">5</td>' in r.text
+    assert 'Active scans</td><td class="num">2</td>' in r.text
+    assert 'Skipped scans</td><td class="num">1</td>' in r.text
+    assert 'Failed scans</td><td class="num">1</td>' in r.text
+    assert 'Fully reviewed scans</td><td class="num">1</td>' in r.text
+    assert 'Findings produced</td><td class="num">5</td>' in r.text
+    assert "reproduced 1, likely 3, inconclusive 1" in r.text
     assert "Decision outcomes by stage (30 days)" in r.text
     for needle in ("scan", "full", "reproduced", "output_invalid", "unknown"):
         assert needle in r.text
+    assert "upheld" not in r.text
     for needle in ("Precision by label", "By agent", "Harness comparison"):
         assert needle in r.text
 
