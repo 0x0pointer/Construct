@@ -125,6 +125,10 @@ def test_existing_title_cases_still_match(run_titles):
     )
 
 
+def test_watcher_script_remains_executable():
+    assert SCRIPT.stat().st_mode & 0o111
+
+
 def test_sweep_still_tidies_nothing_to_do_runs(monkeypatch, run_titles):
     fake = FakeApis()
     monkeypatch.setattr(run_titles, "api", fake.fabro)
