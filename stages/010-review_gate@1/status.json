@@ -1,0 +1,6 @@
+{
+  "outcome": "failed",
+  "notes": null,
+  "failure_reason": "Script failed with exit code: 1\n\n## output\nROUTE_implement\nREVIEW REJECTED, round 1 of 3, 1 blocking finding(s):\n1. [correctness] prsec/dashboard/static/dashboard.js:149\n   Problem: When a running scan timeline poll fails once, the catch block schedules setupPoller(poller) on the same element. That element already has data-bound=\"true\", so setupPoller immediately returns and no later poll is scheduled. A transient 500/network error on /scans/{id}/events therefore leaves the current timeline visible but stops live updates permanently until manual reload, violating the required poll-failure retry behavior and breaking live scan monitoring.\n   Required fix: Change the failure path to schedule pollTimeline(poller) directly after the interval when the poller is still connected, or clear/reset the data-bound marker before calling setupPoller. Add a focused JS/browser test or equivalent unit test that simulates one failed poll and verifies a subsequent retry is scheduled with the same cursor.\n",
+  "timestamp": "2026-11-25T11:37:50.356604635Z"
+}
