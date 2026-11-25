@@ -1,0 +1,9 @@
+{
+  "name": "Construct Fabro test environment",
+  "build": {
+    "dockerfile": "../.fabro/docker/Dockerfile",
+    "context": ".."
+  },
+  "postCreateCommand": "pip install -e '.[dev]'",
+  "postStartCommand": "start-test-db"
+}
