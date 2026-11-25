@@ -97,6 +97,13 @@ memory = "1500MB"
 enabled = true
 draft = true
 
+[[run.hooks]]
+id = "codespace-comment"
+event = "run_complete"
+script = ".fabro/scripts/comment-codespace 0x0pointer Construct fabro/run/$FABRO_RUN_ID"
+blocking = false
+sandbox = true
+
 [run.integrations.github.permissions]
 issues = "write"
 contents = "write"

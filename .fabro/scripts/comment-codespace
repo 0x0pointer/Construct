@@ -1,0 +1,120 @@
+#!/usr/bin/env python3
+"""Post an idempotent Codespaces comment on the Fabro draft pull request."""
+import json
+import os
+import re
+import sys
+import time
+import urllib.parse
+import urllib.request
+
+
+MARKER = "<!-- fabro-codespace-comment -->"
+BADGE = "https://github.com/codespaces/badge.svg"
+PAGE_SIZE = 100
+LOOKUP_ATTEMPTS = 3
+LOOKUP_DELAY_SECONDS = 1
+SLUG = re.compile(r"^[A-Za-z0-9_.-]+$")
+REF = re.compile(r"^fabro/run/[A-Za-z0-9_.-]+$")
+
+
+def warn(message):
+    print(f"warning: {message}", file=sys.stderr)
+
+
+def codespace_url(owner, repo, ref):
+    return (
+        f"https://codespaces.new/{owner}/{repo}?quickstart=1&ref="
+        f"{urllib.parse.quote(ref, safe='')}"
+    )
+
+
+def comment_body(owner, repo, ref):
+    return (
+        f"{MARKER}\n"
+        f"[![Open in GitHub Codespaces]({BADGE})]({codespace_url(owner, repo, ref)})\n\n"
+        f"Launch `{owner}/{repo}` at `{ref}` in GitHub Codespaces."
+    )
+
+
+def request_json(url, token, method="GET", body=None):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method=method,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": "Bearer " + token,
+            "Content-Type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=30) as response:
+        return json.loads(response.read() or b"null")
+
+
+def valid_target(owner, repo, ref):
+    return all(SLUG.fullmatch(part or "") for part in (owner, repo)) and REF.fullmatch(ref or "")
+
+
+def find_pull_request(api_root, owner, repo, ref, token):
+    params = urllib.parse.urlencode({"state": "open", "head": f"{owner}:{ref}", "per_page": PAGE_SIZE})
+    pulls = request_json(f"{api_root}/pulls?{params}", token)
+    full_name = f"{owner}/{repo}".lower()
+    for pull in pulls:
+        head = pull.get("head") or {}
+        head_repo = (head.get("repo") or {}).get("full_name", "").lower()
+        if pull.get("state") == "open" and head_repo == full_name and head.get("ref") == ref:
+            return pull
+    return None
+
+
+def has_marker(api_root, number, token):
+    for page in range(1, PAGE_SIZE + 1):
+        params = urllib.parse.urlencode({"per_page": PAGE_SIZE, "page": page})
+        comments = request_json(f"{api_root}/issues/{number}/comments?{params}", token)
+        if any(MARKER in str(comment.get("body") or "") for comment in comments):
+            return True
+        if len(comments) < PAGE_SIZE:
+            return False
+    return False
+
+
+def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) != 3:
+        warn("usage: comment-codespace OWNER REPO FABRO_RUN_BRANCH")
+        return 0
+    owner, repo, ref = args
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if not token or not valid_target(owner, repo, ref):
+        warn("missing token or invalid owner/repo/ref; skipping Codespaces comment")
+        return 0
+    api_root = f"https://api.github.com/repos/{owner}/{repo}"
+    try:
+        pull = None
+        for attempt in range(LOOKUP_ATTEMPTS):
+            pull = find_pull_request(api_root, owner, repo, ref, token)
+            if pull is not None:
+                break
+            if attempt + 1 < LOOKUP_ATTEMPTS:
+                time.sleep(LOOKUP_DELAY_SECONDS)
+        if pull is None:
+            warn(f"no open same-repo pull request found for {ref}")
+            return 0
+        number = pull["number"]
+        if has_marker(api_root, number, token):
+            return 0
+        request_json(
+            f"{api_root}/issues/{number}/comments",
+            token,
+            method="POST",
+            body={"body": comment_body(owner, repo, ref)},
+        )
+    except Exception as exc:
+        warn(f"could not add Codespaces comment ({type(exc).__name__})")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

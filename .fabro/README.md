@@ -76,7 +76,10 @@ on a machine where Fabro is installed and logged in.
       what changed since the first, not at everything again. Nothing reaches
       the exit without passing both.
 4. On success Fabro pushes the branch `fabro/run/<run id>` and opens a draft PR
-   into `main`. A maintainer reviews and merges as usual.
+   into `main`. It then tries to add one PR comment with an **Open in GitHub
+   Codespaces** button for that branch; a GitHub outage or token problem only
+   logs a warning and does not block the PR. A maintainer reviews and merges as
+   usual.
 
 ## Starting a build from the web UI
 
