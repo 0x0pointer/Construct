@@ -1,11 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Metrics{% endblock %}
 {% block content %}
-<h1>Metrics</h1>
+<section class="page-head">
+  <p class="muted">Rollups for recent scans, finding quality, and agent performance.</p>
+  <h1>Metrics</h1>
+</section>
 <div class="grid2">
   <div>
-    <h2 style="margin-top:0">Scans by status</h2>
-    <table>
+    <h2>Scans by status</h2>
+    <table class="table-stack">
       <thead><tr><th>Status</th><th class="num">7 days</th><th class="num">30 days</th></tr></thead>
       <tbody>
       {% for status, n in m.scans_by_status['30d'].items() %}
@@ -16,7 +19,7 @@
     </table>
   </div>
   <div class="panel">
-    <h2 style="margin-top:0">Last 30 days</h2>
+    <h2>Last 30 days</h2>
     <dl class="kv">
       <dt>Skip rate</dt><dd>{{ m.skip_rate | pct }}</dd>
       <dt>Finished scans</dt><dd>{{ m.finished_scans }}</dd>
@@ -28,7 +31,7 @@
 </div>
 
 {% macro precision_table(rows, title) %}
-<table>
+<table class="table-stack">
   <thead><tr><th>{{ title }}</th><th class="num">Findings</th><th class="num">TP</th><th class="num">FP</th>
     <th class="num">Accepted</th><th class="num">Untriaged</th><th class="num">Precision</th></tr></thead>
   <tbody>
@@ -42,14 +45,14 @@
 {% endmacro %}
 
 <h2>Precision by label</h2>
-{{ precision_table(m.precision_by_label, 'Label') }}
+<div class="panel table-panel">{{ precision_table(m.precision_by_label, 'Label') }}</div>
 <h2>Precision by bug class</h2>
-{{ precision_table(m.precision_by_bug_class, 'Bug class') }}
+<div class="panel table-panel">{{ precision_table(m.precision_by_bug_class, 'Bug class') }}</div>
 <p class="muted">Precision = TP / (TP + FP) over triaged findings; accepted (real, risk-accepted) is excluded.</p>
 
 <h2>By agent (30 days)</h2>
-<p class="muted" style="margin-top:0">One row per agent (pipeline stage): how reliably it runs, what it costs and how much work it does.</p>
-<table>
+<p class="muted">One row per agent (pipeline stage): how reliably it runs, what it costs and how much work it does.</p>
+<table class="table-stack">
   <thead><tr><th>Agent</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Failed</th>
     <th class="num">Avg duration</th><th class="num">Avg cost</th><th class="num">Total cost</th>
     <th class="num">Avg tokens</th><th class="num">Avg turns</th></tr></thead>
@@ -70,7 +73,7 @@
   <td class="num">{{ r.total_cost | usd }}</td><td class="num">{{ r.avg_tokens | int }}</td>
 {% endmacro %}
 <h2>Harness comparison (30 days)</h2>
-<table>
+<table class="table-stack">
   <thead><tr><th>Harness</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Avg duration</th>
     <th class="num">Avg cost</th><th class="num">Total cost</th><th class="num">Avg tokens</th></tr></thead>
   <tbody>
@@ -79,7 +82,7 @@
   </tbody>
 </table>
 <h2>By stage, harness and model</h2>
-<table>
+<table class="table-stack">
   <thead><tr><th>Stage</th><th>Harness</th><th>Model</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Avg duration</th>
     <th class="num">Avg cost</th><th class="num">Total cost</th><th class="num">Avg tokens</th></tr></thead>
   <tbody>

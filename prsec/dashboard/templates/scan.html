@@ -1,10 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Scan {{ scan.id }}{% endblock %}
 {% block content %}
-<h1>Scan #{{ scan.id }} · {{ scan.repo }}#{{ scan.pr }} <span class="badge st-{{ scan.status }}">{{ scan.status }}</span></h1>
+<section class="card finding-summary">
+  <p class="muted">Scan #{{ scan.id }}</p>
+  <h1>{{ scan.repo }}#{{ scan.pr }} <span class="badge st-{{ scan.status }}">{{ scan.status }}</span></h1>
+</section>
 <div class="grid2">
   <div class="panel">
-    <h2 style="margin-top:0">Triage</h2>
+    <h2>Triage</h2>
     {% if scan.triage %}
       <dl class="kv">
         <dt>Decision</dt><dd><strong>{{ scan.triage.decision }}</strong></dd>
@@ -14,7 +17,7 @@
         {% if scan.triage.business_flows_touched %}<dt>Business flows</dt><dd>{{ scan.triage.business_flows_touched | join(', ') }}</dd>{% endif %}
       </dl>
     {% else %}<p class="muted">No triage recorded.</p>{% endif %}
-    {% if scan.error %}<h2>Error</h2><pre class="err">{{ scan.error }}</pre>{% endif %}
+    {% if scan.error %}<h2>Error</h2><pre class="err preserve">{{ scan.error }}</pre>{% endif %}
   </div>
   <div class="panel">
     <dl class="kv">
@@ -35,22 +38,22 @@
 
 {% set health_badge = {'ok': 'st-ok', 'failed': 'st-failed', 'partial': 'st-running'} %}
 <h2>Agents</h2>
-<p class="muted" style="margin-top:0">The agent pipeline for this scan, in order. Each row is one agent (fan-out stages collapse all per-hypothesis runs).</p>
-<table>
+<p class="muted">The agent pipeline for this scan, in order. Each row is one agent (fan-out stages collapse all per-hypothesis runs).</p>
+<table class="table-stack">
   <thead><tr><th>Agent</th><th>Stage</th><th class="num">Runs</th><th>Status</th><th>Decision</th>
     <th class="num">Tokens</th><th class="num">Turns</th><th class="num">Cost</th><th class="num">Duration</th></tr></thead>
   <tbody>
   {% for a in agents %}
     <tr>
-      <td><strong>{{ a.role }}</strong></td>
-      <td><code>{{ a.stage }}</code></td>
-      <td class="num">{{ a.runs }}</td>
-      <td><span class="badge {{ health_badge.get(a.health, 'st-running') }}">{{ a.health }}{% if a.health == 'partial' %} {{ a.ok }}/{{ a.runs }}{% endif %}</span></td>
-      <td>{% for d in a.decisions %}<div>{{ d }}</div>{% else %}<span class="muted">-</span>{% endfor %}</td>
-      <td class="num">{{ a.tokens }}</td>
-      <td class="num">{{ a.turns or '-' }}</td>
-      <td class="num">{{ a.cost | usd }}</td>
-      <td class="num">{{ a.duration_s | dur }}</td>
+        <td data-label="Agent"><strong>{{ a.role }}</strong></td>
+        <td data-label="Stage"><code>{{ a.stage }}</code></td>
+        <td data-label="Runs" class="num">{{ a.runs }}</td>
+        <td data-label="Status"><span class="badge {{ health_badge.get(a.health, 'st-running') }}">{{ a.health }}{% if a.health == 'partial' %} {{ a.ok }}/{{ a.runs }}{% endif %}</span></td>
+        <td data-label="Decision">{% for d in a.decisions %}<div>{{ d }}</div>{% else %}<span class="muted">-</span>{% endfor %}</td>
+        <td data-label="Tokens" class="num">{{ a.tokens }}</td>
+        <td data-label="Turns" class="num">{{ a.turns or '-' }}</td>
+        <td data-label="Cost" class="num">{{ a.cost | usd }}</td>
+        <td data-label="Duration" class="num">{{ a.duration_s | dur }}</td>
     </tr>
   {% else %}
     <tr><td colspan="9" class="muted">No agent runs.</td></tr>
@@ -61,24 +64,24 @@
 {% include "_timeline.html" %}
 
 <h2>Stage runs</h2>
-<table>
+<table class="table-stack">
   <thead><tr><th>Agent</th><th>Task</th><th>Harness</th><th>Model</th><th>Status</th><th>Decision</th>
     <th class="num">Attempts</th><th class="num">Tokens in/out</th><th class="num">Turns</th><th class="num">Cost</th><th class="num">Duration</th><th>Errors</th></tr></thead>
   <tbody>
   {% for r in scan.stage_runs %}
     <tr>
-      <td>{{ r.role }}<br><span class="muted" style="font-size:11px">{{ r.stage }}{% if r.harness_version %} · {{ r.harness_version }}{% endif %}</span></td>
-      <td><code>{{ r.task_id }}</code>{% if r.transcript_uri %}<br><a class="muted" href="/stage-runs/{{ r.id }}/transcript">transcript</a>{% endif %}</td>
-      <td>{{ r.harness }}</td>
-      <td>{{ r.model }}</td>
-      <td><span class="badge st-{{ r.status }}">{{ r.status }}</span></td>
-      <td>{{ r.summary or '-' }}</td>
-      <td class="num">{{ r.attempts }}</td>
-      <td class="num">{{ r.usage.tokens_in or 0 }} / {{ r.usage.tokens_out or 0 }}</td>
-      <td class="num">{{ r.turns or '-' }}</td>
-      <td class="num">{{ r.usage.usd | usd }}</td>
-      <td class="num">{{ r.duration_s | dur }}</td>
-      <td>{% for e in r.errors %}<div class="err">{{ e }}</div>{% endfor %}</td>
+      <td data-label="Agent">{{ r.role }}<br><span class="muted stage-meta">{{ r.stage }}{% if r.harness_version %} · {{ r.harness_version }}{% endif %}</span></td>
+      <td data-label="Task"><code>{{ r.task_id }}</code>{% if r.transcript_uri %}<br><a class="muted" href="/stage-runs/{{ r.id }}/transcript">transcript</a>{% endif %}</td>
+      <td data-label="Harness">{{ r.harness }}</td>
+      <td data-label="Model">{{ r.model }}</td>
+      <td data-label="Status"><span class="badge st-{{ r.status }}">{{ r.status }}</span></td>
+      <td data-label="Decision">{{ r.summary or '-' }}</td>
+      <td data-label="Attempts" class="num">{{ r.attempts }}</td>
+      <td data-label="Tokens in/out" class="num">{{ r.usage.tokens_in or 0 }} / {{ r.usage.tokens_out or 0 }}</td>
+      <td data-label="Turns" class="num">{{ r.turns or '-' }}</td>
+      <td data-label="Cost" class="num">{{ r.usage.usd | usd }}</td>
+      <td data-label="Duration" class="num">{{ r.duration_s | dur }}</td>
+      <td data-label="Errors">{% for e in r.errors %}<div class="err">{{ e }}</div>{% endfor %}</td>
     </tr>
   {% else %}
     <tr><td colspan="12" class="muted">No stage runs.</td></tr>
@@ -87,19 +90,19 @@
 </table>
 
 <h2>Findings</h2>
-<table>
+<table class="table-stack">
   <thead><tr><th>#</th><th>Severity</th><th>Label</th><th>Class</th><th>Title</th><th>Sink</th><th>Status</th><th>Triage</th></tr></thead>
   <tbody>
   {% for f in scan.findings %}
     <tr>
-      <td><a href="/findings/{{ f.id }}">{{ f.id }}</a></td>
-      <td><span class="badge sev-{{ f.severity }}">{{ f.severity }}</span></td>
-      <td><span class="badge lb-{{ f.label }}">{{ f.label }}</span></td>
-      <td><code>{{ f.bug_class }}</code></td>
-      <td><a href="/findings/{{ f.id }}">{{ f.title }}</a></td>
-      <td><code>{{ f.sink_file }}:{{ f.sink_line }}</code></td>
-      <td><span class="badge st-{{ f.status }}">{{ f.status }}</span></td>
-      <td><span class="badge tr-{{ f.triage_state }}">{{ f.triage_state }}</span></td>
+      <td data-label="#"><a href="/findings/{{ f.id }}">{{ f.id }}</a></td>
+      <td data-label="Severity"><span class="badge sev-{{ f.severity }}">{{ f.severity }}</span></td>
+      <td data-label="Label"><span class="badge lb-{{ f.label }}">{{ f.label }}</span></td>
+      <td data-label="Class"><code>{{ f.bug_class }}</code></td>
+      <td data-label="Title"><a href="/findings/{{ f.id }}">{{ f.title }}</a></td>
+      <td data-label="Sink"><code>{{ f.sink_file }}:{{ f.sink_line }}</code></td>
+      <td data-label="Status"><span class="badge st-{{ f.status }}">{{ f.status }}</span></td>
+      <td data-label="Triage"><span class="badge tr-{{ f.triage_state }}">{{ f.triage_state }}</span></td>
     </tr>
   {% else %}
     <tr><td colspan="8" class="muted">No findings.</td></tr>

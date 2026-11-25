@@ -1,8 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Scans{% endblock %}
 {% block content %}
-<h1>Scans</h1>
-<form class="filters" method="get">
+<section class="page-head">
+  <p class="muted">Track recent scans, their outcomes, and the findings mix for each run.</p>
+  <h1>Scans</h1>
+</section>
+<form class="filters card" method="get">
   <label>Repo <input name="repo" value="{{ filters.repo or '' }}" placeholder="owner/name"></label>
   <label>PR <input name="pr" value="{{ filters.pr or '' }}" size="6"></label>
   <label>Status
@@ -11,7 +14,7 @@
     </select></label>
   <button type="submit">Filter</button>
 </form>
-<table>
+<table class="table-stack">
   <thead><tr>
     <th>#</th><th>Repo</th><th>PR</th><th>Head</th><th>Status</th><th>Triage</th>
     <th class="num">Findings</th><th class="num">Cost</th><th class="num">Duration</th><th>Created</th>
@@ -19,16 +22,16 @@
   <tbody>
   {% for s in scans %}
     <tr>
-      <td><a href="/scans/{{ s.id }}">{{ s.id }}</a></td>
-      <td>{{ s.repo }}</td>
-      <td>{{ s.pr }}</td>
-      <td><code>{{ s.head_sha[:10] }}</code></td>
-      <td><span class="badge st-{{ s.status }}">{{ s.status }}</span></td>
-      <td>{{ s.triage_decision or '-' }}</td>
-      <td class="num">{{ s.findings_total }}{% if s.findings_total %} <span class="muted">({{ s.findings_reproduced }}/{{ s.findings_likely }}/{{ s.findings_inconclusive }})</span>{% endif %}</td>
-      <td class="num">{{ s.cost_usd | usd }}</td>
-      <td class="num">{{ s.duration_s | dur }}</td>
-      <td class="muted">{{ s.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td data-label="#"><a href="/scans/{{ s.id }}">{{ s.id }}</a></td>
+      <td data-label="Repo">{{ s.repo }}</td>
+      <td data-label="PR">{{ s.pr }}</td>
+      <td data-label="Head"><code>{{ s.head_sha[:10] }}</code></td>
+      <td data-label="Status"><span class="badge st-{{ s.status }}">{{ s.status }}</span></td>
+      <td data-label="Triage">{{ s.triage_decision or '-' }}</td>
+      <td data-label="Findings" class="num">{{ s.findings_total }}{% if s.findings_total %} <span class="muted">({{ s.findings_reproduced }}/{{ s.findings_likely }}/{{ s.findings_inconclusive }})</span>{% endif %}</td>
+      <td data-label="Cost" class="num">{{ s.cost_usd | usd }}</td>
+      <td data-label="Duration" class="num">{{ s.duration_s | dur }}</td>
+      <td data-label="Created" class="muted">{{ s.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
     </tr>
   {% else %}
     <tr><td colspan="10" class="muted">No scans.</td></tr>

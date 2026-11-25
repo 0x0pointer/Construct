@@ -12,6 +12,7 @@ from urllib.parse import urlencode, urlsplit
 import yaml
 from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from prsec.adapters.sinks import sarif_store
@@ -57,6 +58,7 @@ def _fmt_json(v: Any) -> str:
 TEMPLATES.env.filters.update(usd=_fmt_usd, dur=_fmt_dur, pct=_fmt_pct, tojson_pretty=_fmt_json)
 
 app = FastAPI(title="PRSec dashboard", docs_url=None, redoc_url=None)
+app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
 # ---------------------------------------------------- per-agent observability
 

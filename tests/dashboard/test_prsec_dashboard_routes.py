@@ -20,10 +20,46 @@ def test_scans_list(client, seeded):
     assert "acme/web" in r.text
     assert "$1.25" in r.text
     assert "2m00s" in r.text or "1m59s" in r.text
-    assert "htmx.org@2.0.4" in r.text
+    assert 'href="/static/dashboard.css"' in r.text
+    assert 'src="/static/dashboard.js"' in r.text
+    assert "htmx.org" not in r.text
     r = client.get("/", params={"status": "skipped"})
     assert "acme/web" in r.text
     assert "acme/shop" not in r.text
+
+
+def test_dashboard_assets_are_local_and_served(client, seeded):
+    pages = ["/", "/findings", f"/findings/{_fid(seeded['findings'][0].fingerprint)}", f"/scans/{seeded['scans'][0]}", "/metrics"]
+    for path in pages:
+        r = client.get(path)
+        assert r.status_code == 200
+        assert 'href="/static/dashboard.css"' in r.text
+        assert 'src="/static/dashboard.js"' in r.text
+        assert "http://" not in r.text
+        assert "https://" not in r.text
+        assert "htmx.org" not in r.text
+        assert "unpkg" not in r.text
+
+    css = client.get("/static/dashboard.css")
+    assert css.status_code == 200
+    assert css.headers["content-type"].startswith("text/css")
+    assert "http://" not in css.text
+    assert "https://" not in css.text
+
+    js = client.get("/static/dashboard.js")
+    assert js.status_code == 200
+    assert js.headers["content-type"].startswith(("text/javascript", "application/javascript"))
+
+
+def test_dashboard_static_js_has_no_external_dependency_bootstrap(client):
+    js = client.get("/static/dashboard.js")
+    assert js.status_code == 200
+    text = js.text
+    assert "import " not in text
+    assert "eval(" not in text
+    assert "new Function" not in text
+    assert "http://" not in text
+    assert "https://" not in text
 
 
 def test_scan_detail(client, seeded):
@@ -63,15 +99,24 @@ def test_metrics_per_agent_rollup(client, seeded):
 def test_findings_filters(client, seeded):
     r = client.get("/findings")
     assert r.status_code == 200
+    assert 'id="findings-filters"' in r.text
+    assert "data-async-form" in r.text
+    assert 'data-target="findings-table"' in r.text
     assert r.text.count('href="/findings/') >= 6
+    assert "No findings match." not in r.text
+    assert 'id="findings-table"' in r.text
+    assert 'id="findings-pager"' in r.text
     r = client.get("/findings", params={"label": "reproduced"})
     assert "idor in get" in r.text
     assert "sqli in find" not in r.text
+    r = client.get("/findings", params={"repo": "missing/repo"})
+    assert "No findings match." in r.text
     r = client.get("/findings", params={"bug_class": "sqli", "repo": "acme/shop"},
                    headers={"HX-Request": "true", "HX-Target": "findings-table"})
     assert "<html" not in r.text
     assert "sqli in find" in r.text
     assert "idor in get" not in r.text
+    assert 'id="findings-pager"' in r.text
 
 
 def test_finding_detail_and_triage(client, seeded):
@@ -79,6 +124,13 @@ def test_finding_detail_and_triage(client, seeded):
     fid = _fid(f.fingerprint)
     r = client.get(f"/findings/{fid}")
     assert r.status_code == 200
+    assert "finding-summary" in r.text
+    assert ">Description<" in r.text
+    assert ">Label reasoning<" in r.text
+    assert ">Code flow" in r.text
+    assert ">Guards<" in r.text
+    assert ">Occurrences<" in r.text
+    assert 'id="triage-panel"' in r.text
     assert "app/api.py:10" in r.text
     assert "app/orders.py:42-43" in r.text
     assert "oid = request.args[&#39;id&#39;]" in r.text
@@ -92,6 +144,8 @@ def test_finding_detail_and_triage(client, seeded):
     assert "saved" in r.text
     assert "appsec@example.com" in r.text
     assert "sanitised upstream" in r.text
+    assert "data-async-form" in r.text
+    assert 'data-target="triage-panel"' in r.text
     got = db.get_finding(fid)
     assert got["triage_state"] == "fp"
     assert "appsec@example.com -> fp" in got["triage_note"]
