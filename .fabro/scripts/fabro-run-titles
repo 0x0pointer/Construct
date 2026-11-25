@@ -30,12 +30,14 @@ import re
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
 SERVER = os.environ.get("FABRO_SERVER", "http://127.0.0.1:32276").rstrip("/") + "/api/v1"
 TOKEN_FILE = os.path.expanduser("~/.fabro/storage/server.dev-token")
 STATE = os.path.expanduser("~/.fabro/run-titles.json")
+GITHUB = os.environ.get("GITHUB_API", "https://api.github.com").rstrip("/")
 # Workflow graph name -> the node whose output names what the run works on.
 FIRST_STEP = {"IssueToPR": "check_issue", "FixCI": "pick_pr"}
 MAX_TITLE = 100
@@ -44,6 +46,8 @@ NOTHING_TO_DO = (": no approved issue is waiting", ": no pull request with faile
 TERMINAL = ("succeeded", "failed", "cancelled", "canceled", "dead")
 SCRATCH_REPO = os.path.expanduser("~/.fabro/run-titles.git")
 MAX_AGE = timedelta(days=2)
+CODESPACE_MARKER = "<!-- fabro-codespace -->"
+DONE_CODESPACE = {"commented", "existing", "skipped old", "skipped malformed repo", "skipped malformed branch"}
 
 
 def api(path, body=None, method=None):
@@ -52,6 +56,22 @@ def api(path, body=None, method=None):
     data = json.dumps(body).encode() if body is not None else None
     headers = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
     req = urllib.request.Request(SERVER + path, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        content = resp.read()
+    return json.loads(content) if content else None
+
+
+def github_api(path, body=None, method=None):
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise RuntimeError("GITHUB_TOKEN is not set")
+    data = json.dumps(body).encode() if body is not None else None
+    headers = {
+        "Authorization": "Bearer " + token,
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+    }
+    req = urllib.request.Request(GITHUB + path, data=data, headers=headers, method=method)
     with urllib.request.urlopen(req, timeout=30) as resp:
         content = resp.read()
     return json.loads(content) if content else None
@@ -105,6 +125,108 @@ def title_for(graph, output, repo):
     return None
 
 
+def state_title(entry):
+    if isinstance(entry, dict):
+        return str(entry.get("title") or "")
+    return str(entry or "")
+
+
+def state_codespace(entry):
+    if isinstance(entry, dict):
+        return str(entry.get("codespace") or "")
+    return ""
+
+
+def set_codespace_state(state, run_id, status):
+    state[run_id] = {"title": state_title(state.get(run_id)), "codespace": status}
+
+
+def picked_issue_title(entry):
+    return bool(re.match(r"^[^:]+ #\d+: ", state_title(entry)))
+
+
+def repo_parts(run):
+    slug = str((run.get("repository") or {}).get("name") or "")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", slug):
+        return None
+    return slug.split("/", 1)
+
+
+def quote_path(value):
+    return urllib.parse.quote(value, safe="")
+
+
+def codespace_url(repo_id, branch):
+    repo_id = str(repo_id)
+    if not repo_id.isdigit():
+        raise ValueError("repository id is not numeric")
+    return "https://github.com/codespaces/new?" + urllib.parse.urlencode({"repo": repo_id, "ref": branch})
+
+
+def codespace_comment_body(repo_id, branch):
+    url = codespace_url(repo_id, branch)
+    return (
+        CODESPACE_MARKER
+        + "\n"
+        + f"[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)]({url})\n\n"
+        + "Open this PR branch in GitHub Codespaces to test the application changes before review."
+    )
+
+
+def find_open_pr(owner, repo, branch):
+    head = quote_path(f"{owner}:{branch}")
+    path = f"/repos/{quote_path(owner)}/{quote_path(repo)}/pulls?state=open&head={head}&per_page=10"
+    prs = items(github_api(path))
+    return prs[0] if prs else None
+
+
+def existing_codespace_comment(owner, repo, number):
+    base = f"/repos/{quote_path(owner)}/{quote_path(repo)}/issues/{number}/comments?per_page=100"
+    page = 1
+    while True:
+        path = base if page == 1 else base + f"&page={page}"
+        comments = items(github_api(path))
+        if any(CODESPACE_MARKER in str(c.get("body") or "") for c in comments):
+            return True
+        if len(comments) < 100:
+            return False
+        page += 1
+
+
+def add_codespace_comment(run):
+    """Add the Codespaces PR comment for a successful IssueToPR run, if ready.
+
+    Returns a done status string, or None when a later sweep should retry.
+    """
+    run_id = str(run.get("id") or "")
+    parts = repo_parts(run)
+    if not parts:
+        print(f"{run_id}: cannot add codespace comment for malformed repository name", file=sys.stderr, flush=True)
+        return "skipped malformed repo"
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", run_id):
+        print(f"{run_id}: cannot add codespace comment for malformed run id", file=sys.stderr, flush=True)
+        return "skipped malformed branch"
+    owner, repo = parts
+    branch = f"fabro/run/{run_id}"
+    pr = find_open_pr(owner, repo, branch)
+    if not pr:
+        print(f"{run_id}: pull request for {branch} is not visible yet", file=sys.stderr, flush=True)
+        return None
+    number = pr.get("number")
+    if not number:
+        print(f"{run_id}: pull request for {branch} has no number", file=sys.stderr, flush=True)
+        return None
+    if existing_codespace_comment(owner, repo, number):
+        print(f"{run_id}: codespace comment already exists on PR #{number}", flush=True)
+        return "existing"
+    repo_info = github_api(f"/repos/{quote_path(owner)}/{quote_path(repo)}")
+    body = codespace_comment_body((repo_info or {}).get("id"), branch)
+    path = f"/repos/{quote_path(owner)}/{quote_path(repo)}/issues/{number}/comments"
+    github_api(path, body={"body": body}, method="POST")
+    print(f"{run_id}: added codespace comment to PR #{number}", flush=True)
+    return "commented"
+
+
 def tidy(run):
     """Archive a finished run that had nothing to do and delete its empty branch."""
     run_id = run["id"]
@@ -145,7 +267,7 @@ def sweep(state):
         run_id = run.get("id")
         graph = (run.get("workflow") or {}).get("graph_name")
         status = ((run.get("lifecycle") or {}).get("status") or {}).get("kind")
-        if run_id and str(state.get(run_id, "")).endswith(NOTHING_TO_DO) and status in TERMINAL:
+        if run_id and state_title(state.get(run_id)).endswith(NOTHING_TO_DO) and status in TERMINAL:
             try:
                 state[run_id] = tidy(run)
                 print(f"{run_id}: {state[run_id]}", flush=True)
@@ -153,28 +275,50 @@ def sweep(state):
                 print(f"{run_id}: could not tidy up: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
                 state[run_id] = "tidy failed"
             continue
-        if not run_id or run_id in state or graph not in FIRST_STEP:
+        if not run_id or graph not in FIRST_STEP:
             continue
         created = str((run.get("timestamps") or {}).get("created_at") or "")
+        old = False
         try:
-            if datetime.fromisoformat(created.replace("Z", "+00:00")) < cutoff:
-                state[run_id] = "old"
-                continue
+            old = datetime.fromisoformat(created.replace("Z", "+00:00")) < cutoff
         except ValueError:
             pass
-        output = first_step_output(run_id, FIRST_STEP[graph])
-        if output is None:
-            if status in TERMINAL:
-                state[run_id] = "no first step"
-            continue
-        repo = str((run.get("repository") or {}).get("name") or "").rsplit("/", 1)[-1] or "run"
-        title = title_for(graph, output, clean(repo))
-        if title:
-            title = title[:MAX_TITLE].strip()
-            api(f"/runs/{run_id}", body={"title": title}, method="PATCH")
-            print(f"{run_id}: {title}", flush=True)
-            changed += 1
-        state[run_id] = title or "unrecognised output"
+        if not state_title(state.get(run_id)):
+            if old:
+                state[run_id] = "old"
+                continue
+            output = first_step_output(run_id, FIRST_STEP[graph])
+            if output is None:
+                if status in TERMINAL:
+                    state[run_id] = "no first step"
+                continue
+            repo = str((run.get("repository") or {}).get("name") or "").rsplit("/", 1)[-1] or "run"
+            title = title_for(graph, output, clean(repo))
+            if title:
+                title = title[:MAX_TITLE].strip()
+                api(f"/runs/{run_id}", body={"title": title}, method="PATCH")
+                print(f"{run_id}: {title}", flush=True)
+                changed += 1
+            state[run_id] = title or "unrecognised output"
+        if (
+            graph == "IssueToPR"
+            and status == "succeeded"
+            and picked_issue_title(state.get(run_id))
+            and state_codespace(state.get(run_id)) not in DONE_CODESPACE
+        ):
+            if old:
+                set_codespace_state(state, run_id, "skipped old")
+                print(f"{run_id}: skipped codespace comment for old run", file=sys.stderr, flush=True)
+                changed += 1
+                continue
+            try:
+                comment_status = add_codespace_comment(run)
+            except Exception as exc:
+                print(f"{run_id}: could not add codespace comment: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+                comment_status = None
+            if comment_status:
+                set_codespace_state(state, run_id, comment_status)
+                changed += 1
     # Forget runs the server no longer lists among its recent ones.
     for run_id in sorted(state)[:-500]:
         del state[run_id]
