@@ -1,0 +1,935 @@
+diff --git a/prsec/dashboard/templates/_findings_table.html b/prsec/dashboard/templates/_findings_table.html
+index f1195a0..5f96535 100644
+--- a/prsec/dashboard/templates/_findings_table.html
++++ b/prsec/dashboard/templates/_findings_table.html
+@@ -1,27 +1,37 @@
+-<table>
+-  <thead><tr><th>#</th><th>Severity</th><th>Label</th><th>Repo</th><th class="num">PR</th><th>Class</th><th>Title</th>
+-    <th>Sink</th><th>Introduced</th><th>Status</th><th>Triage</th><th>Updated</th></tr></thead>
+-  <tbody>
+-  {% for f in findings %}
+-    <tr>
+-      <td><a href="/findings/{{ f.id }}">{{ f.id }}</a></td>
+-      <td><span class="badge sev-{{ f.severity }}">{{ f.severity }}</span></td>
+-      <td><span class="badge lb-{{ f.label }}">{{ f.label }}</span></td>
+-      <td>{{ f.repo }}</td>
+-      <td class="num">{{ f.last_pr }}</td>
+-      <td><code>{{ f.bug_class }}</code></td>
+-      <td><a href="/findings/{{ f.id }}">{{ f.title }}</a></td>
+-      <td><code>{{ f.sink_file }}:{{ f.sink_line }}</code></td>
+-      <td>{{ 'yes' if f.introduced else ('no' if f.introduced is sameas false else '?') }}</td>
+-      <td><span class="badge st-{{ f.status }}">{{ f.status }}</span></td>
+-      <td><span class="badge tr-{{ f.triage_state }}">{{ f.triage_state }}</span></td>
+-      <td class="muted">{{ f.updated_at.strftime('%Y-%m-%d') }}</td>
+-    </tr>
+-  {% else %}
+-    <tr><td colspan="12" class="muted">No findings match.</td></tr>
+-  {% endfor %}
+-  </tbody>
+-</table>
++<section class="panel">
++  <div class="page-header">
++    <div class="page-header-copy">
++      <h2>Results</h2>
++      <p class="muted">Current filters and pagination stay in the URL so the page remains shareable and refresh-friendly.</p>
++    </div>
++  </div>
++  <div class="table-wrap">
++    <table>
++      <thead><tr><th>#</th><th>Severity</th><th>Label</th><th>Repo</th><th class="num">PR</th><th>Class</th><th>Title</th>
++        <th>Sink</th><th>Introduced</th><th>Status</th><th>Triage</th><th>Updated</th></tr></thead>
++      <tbody>
++      {% for f in findings %}
++        <tr>
++          <td><a href="/findings/{{ f.id }}">{{ f.id }}</a></td>
++          <td><span class="badge sev-{{ f.severity }}">{{ f.severity }}</span></td>
++          <td><span class="badge lb-{{ f.label }}">{{ f.label }}</span></td>
++          <td>{{ f.repo }}</td>
++          <td class="num">{{ f.last_pr }}</td>
++          <td><code>{{ f.bug_class }}</code></td>
++          <td><a href="/findings/{{ f.id }}">{{ f.title }}</a></td>
++          <td><code>{{ f.sink_file }}:{{ f.sink_line }}</code></td>
++          <td>{{ 'yes' if f.introduced else ('no' if f.introduced is sameas false else '?') }}</td>
++          <td><span class="badge st-{{ f.status }}">{{ f.status }}</span></td>
++          <td><span class="badge tr-{{ f.triage_state }}">{{ f.triage_state }}</span></td>
++          <td class="muted">{{ f.updated_at.strftime('%Y-%m-%d') }}</td>
++        </tr>
++      {% else %}
++        <tr><td colspan="12" class="empty-state">No findings match.</td></tr>
++      {% endfor %}
++      </tbody>
++    </table>
++  </div>
++</section>
+ <div class="pager">
+   {% if page > 1 %}<a href="/findings?{{ filters | urlencode }}&page={{ page - 1 }}">&larr; prev</a>{% endif %}
+   {% if has_next %}<a href="/findings?{{ filters | urlencode }}&page={{ page + 1 }}">next &rarr;</a>{% endif %}
+diff --git a/prsec/dashboard/templates/_timeline_poller.html b/prsec/dashboard/templates/_timeline_poller.html
+index ac291ea..0906549 100644
+--- a/prsec/dashboard/templates/_timeline_poller.html
++++ b/prsec/dashboard/templates/_timeline_poller.html
+@@ -1,5 +1,9 @@
+ <div id="timeline-poller" class="muted tl-poller"
+   {%- if tl.live %} hx-get="{{ tl.poll_url }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+-  {% if tl.live %}<span class="badge st-running">live</span> following new events every 2 s
++  {% if tl.live %}
++    <div class="timeline-note">
++      <div><span class="badge st-running">live</span> scan is still updating.</div>
++      <div>Reload the page to fetch new events if JavaScript polling is unavailable.</div>
++    </div>
+   {% else %}Scan {{ scan.status }}: timeline complete.{% if scan.status not in ('queued', 'running') %} <a href="/scans/{{ scan.id }}">Reload</a> for findings and stage runs.{% endif %}{% endif %}
+ </div>
+diff --git a/prsec/dashboard/templates/_triage.html b/prsec/dashboard/templates/_triage.html
+index 8a0038c..46514da 100644
+--- a/prsec/dashboard/templates/_triage.html
++++ b/prsec/dashboard/templates/_triage.html
+@@ -3,7 +3,7 @@
+ {% if f.triage_note %}<p class="muted" style="white-space: pre-wrap">{{ f.triage_note }}</p>{% endif %}
+ <form method="post" action="/findings/{{ f.id }}/triage"
+       hx-post="/findings/{{ f.id }}/triage" hx-target="#triage-panel" hx-swap="innerHTML">
+-  <p>
++  <p class="meta-list">
+   {% for s in triage_states if s != 'new' %}
+     <label><input type="radio" name="state" value="{{ s }}" {% if f.triage_state == s %}checked{% endif %} required> {{ s }}</label>
+   {% endfor %}
+diff --git a/prsec/dashboard/templates/base.html b/prsec/dashboard/templates/base.html
+index 6c07fc4..3100dde 100644
+--- a/prsec/dashboard/templates/base.html
++++ b/prsec/dashboard/templates/base.html
+@@ -4,42 +4,141 @@
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1">
+ <title>{% block title %}PRSec{% endblock %} · PRSec</title>
+-<script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"
+-        integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+-        crossorigin="anonymous"></script>
+ <style>
+ :root {
+-  --bg: #f7f7f8; --panel: #fff; --fg: #1d1d1f; --muted: #6b6b73; --line: #e3e3e8;
+-  --accent: #2f5bd3; --code: #f2f2f5;
++  color-scheme: light dark;
++  --bg: #f4f7fb; --panel: #ffffff; --panel-soft: rgba(255, 255, 255, 0.78); --fg: #172033;
++  --muted: #5d6780; --line: #d7deea; --line-strong: #bfcbdd; --accent: #2e6cf6; --accent-strong: #1749b3;
++  --accent-soft: rgba(46, 108, 246, 0.12); --code: #eef2f8; --shadow: 0 16px 40px rgba(23, 32, 51, 0.08);
+   --crit: #a1122b; --high: #d1361d; --med: #c98a00; --low: #3b7dd8; --info: #6b6b73;
+   --ok: #1e8a4a; --bad: #c0392b; --warn: #b7791f;
+ }
+ @media (prefers-color-scheme: dark) {
+-  :root { --bg: #141416; --panel: #1c1c1f; --fg: #e8e8ea; --muted: #9a9aa3; --line: #2e2e33;
+-          --accent: #7b9cff; --code: #232327; }
++  :root {
++    --bg: #0f1726; --panel: #172033; --panel-soft: rgba(23, 32, 51, 0.9); --fg: #edf3ff; --muted: #aab7d1;
++    --line: #2d3b54; --line-strong: #41547a; --accent: #82a6ff; --accent-strong: #a9c0ff;
++    --accent-soft: rgba(130, 166, 255, 0.16); --code: #0d1421; --shadow: none;
++    --crit: #ff8ca1; --high: #ff9d80; --med: #f0cb6b; --low: #8ab6ff; --info: #b3bfd7;
++    --ok: #78dba1; --bad: #ff8d8d; --warn: #f2c56c;
++  }
+ }
+ * { box-sizing: border-box; }
+-body { margin: 0; background: var(--bg); color: var(--fg);
+-       font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+-header { background: var(--panel); border-bottom: 1px solid var(--line); padding: 0 24px;
+-         display: flex; gap: 24px; align-items: center; height: 48px; }
+-header .brand { font-weight: 700; letter-spacing: .02em; }
+-header nav a { color: var(--muted); text-decoration: none; margin-right: 16px; }
+-header nav a:hover { color: var(--fg); }
+-header .user { margin-left: auto; color: var(--muted); font-size: 12px; }
+-main { max-width: 1280px; margin: 0 auto; padding: 24px; }
+-h1 { font-size: 20px; margin: 0 0 16px; }
+-h2 { font-size: 15px; margin: 24px 0 8px; }
+-a { color: var(--accent); }
+-.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+-table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+-th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+-th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--bg); }
++html { background: var(--bg); }
++body {
++  margin: 0;
++  background:
++    radial-gradient(circle at top, rgba(46, 108, 246, 0.10), transparent 32%),
++    linear-gradient(180deg, rgba(255, 255, 255, 0.22), transparent 28%),
++    var(--bg);
++  color: var(--fg);
++  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
++}
++a { color: var(--accent); text-decoration: none; }
++a:hover { color: var(--accent-strong); text-decoration: underline; }
++h1, h2, h3 { margin: 0; line-height: 1.2; }
++h1 { font-size: clamp(1.8rem, 2vw, 2.5rem); }
++h2 { font-size: 1rem; margin-bottom: 10px; }
++h3 { font-size: 0.95rem; margin: 18px 0 8px; }
++p, ul, ol { margin: 0; }
++code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
++code { overflow-wrap: anywhere; }
++pre {
++  background: var(--code);
++  padding: 12px 14px;
++  border-radius: 10px;
++  overflow: auto;
++  margin: 6px 0 0;
++  border: 1px solid var(--line);
++  white-space: pre-wrap;
++}
++.site-header {
++  position: sticky;
++  top: 0;
++  z-index: 10;
++  display: flex;
++  flex-wrap: wrap;
++  gap: 12px 20px;
++  align-items: center;
++  padding: 14px 24px;
++  background: var(--panel-soft);
++  backdrop-filter: blur(14px);
++  border-bottom: 1px solid rgba(127, 143, 170, 0.22);
++}
++.brand { font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
++.site-nav { display: flex; flex-wrap: wrap; gap: 8px; }
++.site-nav a {
++  color: var(--muted);
++  padding: 7px 10px;
++  border-radius: 999px;
++}
++.site-nav a:hover { background: var(--accent-soft); color: var(--fg); text-decoration: none; }
++.user {
++  margin-left: auto;
++  color: var(--muted);
++  font-size: 12px;
++  padding: 7px 10px;
++  border: 1px solid var(--line);
++  border-radius: 999px;
++}
++.page-shell {
++  max-width: 1320px;
++  margin: 0 auto;
++  padding: 32px 24px 48px;
++}
++.page-header {
++  display: flex;
++  flex-wrap: wrap;
++  justify-content: space-between;
++  gap: 14px 24px;
++  margin-bottom: 20px;
++}
++.page-header-copy { display: grid; gap: 8px; max-width: 72ch; }
++.eyebrow {
++  color: var(--accent-strong);
++  font-size: 12px;
++  font-weight: 700;
++  letter-spacing: 0.08em;
++  text-transform: uppercase;
++}
++.lead, .muted { color: var(--muted); }
++.panel, .hero-card {
++  background: var(--panel);
++  border: 1px solid var(--line);
++  border-radius: 18px;
++  padding: 18px;
++  box-shadow: var(--shadow);
++}
++.hero-card { margin-bottom: 18px; }
++.card-grid {
++  display: grid;
++  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
++  gap: 18px;
++}
++.stack { display: grid; gap: 18px; }
++.table-wrap {
++  overflow: auto;
++  border: 1px solid var(--line);
++  border-radius: 18px;
++  background: var(--panel);
++  box-shadow: var(--shadow);
++}
++table {
++  width: 100%;
++  min-width: 640px;
++  border-collapse: collapse;
++  background: transparent;
++}
++th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
++th {
++  font-size: 12px;
++  color: var(--muted);
++  font-weight: 700;
++  background: color-mix(in srgb, var(--panel) 78%, var(--bg));
++  text-transform: uppercase;
++  letter-spacing: 0.05em;
++}
+ tr:last-child td { border-bottom: 0; }
+ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+-code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+-pre { background: var(--code); padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
+-.muted { color: var(--muted); }
+ .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600;
+          border: 1px solid currentColor; white-space: nowrap; }
+ .sev-critical { color: var(--crit); } .sev-high { color: var(--high); } .sev-medium { color: var(--med); }
+@@ -49,11 +148,52 @@ pre { background: var(--code); padding: 10px 12px; border-radius: 6px; overflow-
+ .st-running, .st-queued, .tr-accepted { color: var(--warn); }
+ .st-skipped, .st-superseded, .st-stale, .tr-new { color: var(--muted); }
+ .lb-reproduced { color: var(--crit); } .lb-likely { color: var(--high); } .lb-inconclusive { color: var(--muted); }
+-form.filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; align-items: end; }
+-form.filters label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 2px; }
+-select, input, textarea, button { font: inherit; color: var(--fg); background: var(--panel);
+-  border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+-button { cursor: pointer; background: var(--accent); color: #fff; border-color: var(--accent); }
++form.filters {
++  display: grid;
++  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
++  gap: 12px;
++  align-items: end;
++}
++form.filters label, .field {
++  display: grid;
++  gap: 6px;
++  font-size: 12px;
++  color: var(--muted);
++  font-weight: 600;
++}
++select, input, textarea, button {
++  width: 100%;
++  font: inherit;
++  color: var(--fg);
++  background: var(--panel);
++  border: 1px solid var(--line-strong);
++  border-radius: 10px;
++  padding: 8px 10px;
++}
++button {
++  cursor: pointer;
++  width: auto;
++  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
++  color: #fff;
++  border-color: transparent;
++  font-weight: 700;
++}
++button:hover { filter: brightness(1.05); }
++.button-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
++.button-secondary {
++  background: transparent;
++  color: var(--accent);
++  border-color: var(--line-strong);
++}
++a.button-secondary {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  min-height: 40px;
++  padding: 8px 12px;
++  border: 1px solid var(--line-strong);
++  border-radius: 10px;
++}
+ dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+ dl.kv dt { color: var(--muted); }
+ dl.kv dd { margin: 0; }
+@@ -62,10 +202,30 @@ dl.kv dd { margin: 0; }
+ .flow li.sink { border-color: var(--high); }
+ .flow li.source { border-color: var(--accent); }
+ .grid2 { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+-@media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+-.pager { margin-top: 12px; display: flex; gap: 12px; }
++.pager { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 12px; }
+ .saved { color: var(--ok); font-size: 12px; }
+ .err { color: var(--bad); }
++.empty-state {
++  padding: 24px;
++  text-align: center;
++  color: var(--muted);
++}
++.meta-list, .badge-row {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 8px;
++  align-items: center;
++}
++.section-copy { display: grid; gap: 12px; }
++.finding-hero { display: grid; gap: 14px; }
++.finding-hero .title-row { display: grid; gap: 8px; }
++.finding-summary { display: grid; gap: 12px; }
++.finding-summary-grid {
++  display: grid;
++  gap: 16px;
++  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
++}
++.timeline-note { display: grid; gap: 4px; }
+ .tl ol { list-style: none; margin: 0; padding: 0; }
+ .tl-ev, .tl-group { border-left: 3px solid var(--line); padding: 3px 0 3px 10px; margin-bottom: 4px; }
+ .tl-ev { display: grid; grid-template-columns: 64px 140px 180px 1fr; gap: 0 10px; align-items: baseline; }
+@@ -86,15 +246,27 @@ dl.kv dd { margin: 0; }
+ .lv-debug { color: var(--muted); }
+ .tl-ev.lv-warning { border-left-color: var(--warn); } .lv-warning .tl-kind, .tl-agent-ev.lv-warning { color: var(--warn); }
+ .tl-ev.lv-error { border-left-color: var(--bad); } .lv-error .tl-kind, .tl-agent-ev.lv-error { color: var(--bad); }
+-@media (max-width: 900px) { .tl-ev { grid-template-columns: 64px 1fr; } .tl-ev .tl-msg, .tl-ev .tl-data { grid-column: 1 / -1; } }
++@media (max-width: 980px) {
++  .card-grid, .grid2 { grid-template-columns: 1fr; }
++}
++@media (max-width: 900px) {
++  .tl-ev { grid-template-columns: 64px 1fr; }
++  .tl-ev .tl-msg, .tl-ev .tl-data { grid-column: 1 / -1; }
++}
++@media (max-width: 720px) {
++  .page-shell { padding: 24px 14px 36px; }
++  .site-header { padding: 12px 14px; }
++  .user { margin-left: 0; }
++  table { min-width: 560px; }
++}
+ </style>
+ </head>
+ <body>
+-<header>
++<header class="site-header">
+   <span class="brand">PRSec</span>
+-  <nav><a href="/">Scans</a><a href="/findings">Findings</a><a href="/metrics">Metrics</a></nav>
++  <nav class="site-nav"><a href="/">Scans</a><a href="/findings">Findings</a><a href="/metrics">Metrics</a></nav>
+   {% if user %}<span class="user">{{ user }}</span>{% endif %}
+ </header>
+-<main>{% block content %}{% endblock %}</main>
++<main class="page-shell">{% block content %}{% endblock %}</main>
+ </body>
+ </html>
+diff --git a/prsec/dashboard/templates/finding.html b/prsec/dashboard/templates/finding.html
+index e328a8d..a0b93ff 100644
+--- a/prsec/dashboard/templates/finding.html
++++ b/prsec/dashboard/templates/finding.html
+@@ -1,24 +1,53 @@
+ {% extends "base.html" %}
+ {% block title %}Finding {{ f.id }}{% endblock %}
+ {% block content %}
+-<h1>{{ f.title }}</h1>
+-<p>
+-  <span class="badge sev-{{ f.severity }}">{{ f.severity }}</span>
+-  <span class="badge lb-{{ f.label }}">{{ f.label }}</span>
+-  <span class="badge st-{{ f.status }}">{{ f.status }}</span>
+-  <code>{{ f.bug_class }}</code> · {{ f.vuln_class | replace('_', ' ') }} · {{ f.repo }}#{{ f.last_pr }}
+-</p>
+-<div class="grid2">
+-  <div>
+-    <div class="panel">
+-      <h2 style="margin-top:0">Description</h2>
++<section class="hero-card finding-hero">
++  <div class="title-row">
++    <div class="eyebrow">Finding #{{ f.id }}</div>
++    <h1>{{ f.title }}</h1>
++    <p class="lead">{{ f.repo }}#{{ f.last_pr }} · {{ f.vuln_class | replace('_', ' ') }} · <code>{{ f.bug_class }}</code></p>
++  </div>
++  <div class="badge-row">
++    <span class="badge sev-{{ f.severity }}">{{ f.severity }}</span>
++    <span class="badge lb-{{ f.label }}">{{ f.label }}</span>
++    <span class="badge st-{{ f.status }}">{{ f.status }}</span>
++    <span class="badge tr-{{ f.triage_state }}">{{ f.triage_state }}</span>
++  </div>
++  <div class="finding-summary finding-summary-grid">
++    <div>
++      <div class="muted">Fingerprint</div>
++      <code>{{ f.fingerprint }}</code>
++    </div>
++    <div>
++      <div class="muted">Hypothesis</div>
++      <div>{{ data.hypothesis_id or '-' }}</div>
++    </div>
++    <div>
++      <div class="muted">Introduced</div>
++      <div>{{ 'yes' if f.introduced else ('no' if f.introduced is sameas false else 'unknown') }}</div>
++    </div>
++    <div>
++      <div class="muted">Scans</div>
++      <div><a href="/scans/{{ f.first_scan_id }}">first #{{ f.first_scan_id }}</a> · <a href="/scans/{{ f.last_scan_id }}">last #{{ f.last_scan_id }}</a></div>
++    </div>
++  </div>
++</section>
++<div class="card-grid">
++  <div class="stack">
++    <section class="panel section-copy">
++      <h2>Description</h2>
+       <p style="white-space: pre-wrap">{{ data.description }}</p>
+-      <h2>Label reasoning</h2>
++      <h3>Label reasoning</h3>
+       <p style="white-space: pre-wrap">{{ data.label_reason }}</p>
+-      {% if data.remediation %}<h2>Remediation</h2><p style="white-space: pre-wrap">{{ data.remediation }}</p>{% endif %}
+-    </div>
+-    <div class="panel">
+-      <h2 style="margin-top:0">Code flow{% if data.entry_point %} <span class="muted">from <code>{{ data.entry_point }}</code></span>{% endif %}</h2>
++    </section>
++    {% if data.remediation %}
++    <section class="panel section-copy">
++      <h2>Remediation</h2>
++      <p style="white-space: pre-wrap">{{ data.remediation }}</p>
++    </section>
++    {% endif %}
++    <section class="panel section-copy">
++      <h2>Code flow{% if data.entry_point %} <span class="muted">from <code>{{ data.entry_point }}</code></span>{% endif %}</h2>
+       <ol class="flow">
+       {% for kind, loc in flow %}
+         <li class="{{ kind if kind in ('source', 'sink') else '' }}">
+@@ -27,15 +56,15 @@
+         </li>
+       {% endfor %}
+       </ol>
+-    </div>
+-    <div class="panel">
+-      <h2 style="margin-top:0">Guards</h2>
++    </section>
++    <section class="panel section-copy">
++      <h2>Guards</h2>
+       {% if data.guards %}<ul>{% for g in data.guards %}<li>{{ g }}</li>{% endfor %}</ul>
+       {% else %}<p class="muted">No guards recorded.</p>{% endif %}
+-    </div>
++    </section>
+     {% if dyn %}
+-    <div class="panel" id="dynamic">
+-      <h2 style="margin-top:0">Dynamic validation</h2>
++    <section class="panel section-copy" id="dynamic">
++      <h2>Dynamic validation</h2>
+       <dl class="kv">
+         <dt>Outcome</dt><dd><span class="badge dyn-{{ dyn.outcome }}">{{ dyn.outcome }}</span></dd>
+         {% if dyn.reason %}<dt>Reason</dt><dd style="white-space: pre-wrap">{{ dyn.reason }}</dd>{% endif %}
+@@ -46,20 +75,22 @@
+       </dl>
+       {% if dyn.replays %}
+       <h3>Replay runs</h3>
+-      <table>
+-        <thead><tr><th>Run</th><th>Target</th><th>Env</th><th>Fired</th><th class="num">Duration</th></tr></thead>
+-        <tbody>
+-        {% for r in dyn.replays %}
+-          <tr>
+-            <td><code>{{ r.run_id }}</code></td>
+-            <td>{{ r.target }}</td>
+-            <td>{% if r.env_ok %}ok{% else %}<span title="{{ r.env_error or '' }}">failed</span>{% endif %}</td>
+-            <td>{{ 'yes' if r.fired else 'no' }}</td>
+-            <td class="num">{{ r.duration_s | dur }}</td>
+-          </tr>
+-        {% endfor %}
+-        </tbody>
+-      </table>
++      <div class="table-wrap">
++        <table>
++          <thead><tr><th>Run</th><th>Target</th><th>Env</th><th>Fired</th><th class="num">Duration</th></tr></thead>
++          <tbody>
++          {% for r in dyn.replays %}
++            <tr>
++              <td><code>{{ r.run_id }}</code></td>
++              <td>{{ r.target }}</td>
++              <td>{% if r.env_ok %}ok{% else %}<span title="{{ r.env_error or '' }}">failed</span>{% endif %}</td>
++              <td>{{ 'yes' if r.fired else 'no' }}</td>
++              <td class="num">{{ r.duration_s | dur }}</td>
++            </tr>
++          {% endfor %}
++          </tbody>
++        </table>
++      </div>
+       {% for r in dyn.replays %}
+       <details>
+         <summary><code>{{ r.run_id }}</code> details</summary>
+@@ -75,41 +106,46 @@
+       {% endfor %}
+       {% endif %}
+       {% if dyn.poc_yaml %}<h3>PoC</h3><pre>{{ dyn.poc_yaml }}</pre>{% endif %}
+-    </div>
++    </section>
+     {% endif %}
+   </div>
+-  <div>
+-    <div class="panel" id="triage-panel">{% include "_triage.html" %}</div>
+-    <div class="panel">
++  <div class="stack">
++    <section class="panel section-copy">
++      <h2>Metadata</h2>
+       <dl class="kv">
+-        <dt>Fingerprint</dt><dd><code>{{ f.fingerprint }}</code></dd>
+-        <dt>Hypothesis</dt><dd>{{ data.hypothesis_id or '-' }}</dd>
+-        <dt>Introduced</dt><dd>{{ 'yes' if f.introduced else ('no' if f.introduced is sameas false else 'unknown') }}</dd>
+-        <dt>First scan</dt><dd><a href="/scans/{{ f.first_scan_id }}">#{{ f.first_scan_id }}</a></dd>
+-        <dt>Last scan</dt><dd><a href="/scans/{{ f.last_scan_id }}">#{{ f.last_scan_id }}</a></dd>
++        <dt>Repo</dt><dd>{{ f.repo }}</dd>
++        <dt>PR</dt><dd>{{ f.last_pr }}</dd>
++        <dt>Severity</dt><dd><span class="badge sev-{{ f.severity }}">{{ f.severity }}</span></dd>
++        <dt>Label</dt><dd><span class="badge lb-{{ f.label }}">{{ f.label }}</span></dd>
++        <dt>Status</dt><dd><span class="badge st-{{ f.status }}">{{ f.status }}</span></dd>
+         {% if data.evidence_uri %}<dt>Evidence</dt><dd><a href="/findings/{{ f.id }}/evidence">stage transcript</a></dd>{% endif %}
+       </dl>
+-    </div>
+-    <div class="panel">
+-      <h2 style="margin-top:0">Provenance</h2>
++    </section>
++    <section class="panel section-copy" id="triage-panel">{% include "_triage.html" %}</section>
++    <section class="panel section-copy">
++      <h2>Provenance</h2>
+       <pre>{{ data.provenance | tojson_pretty }}</pre>
+-    </div>
++    </section>
+   </div>
+ </div>
+-<h2>Occurrences</h2>
+-<table>
+-  <thead><tr><th>Scan</th><th class="num">PR</th><th>Head</th><th>Label</th><th>Scan status</th><th>When</th></tr></thead>
+-  <tbody>
+-  {% for o in f.occurrences %}
+-    <tr>
+-      <td><a href="/scans/{{ o.scan_id }}">#{{ o.scan_id }}</a></td>
+-      <td class="num">{{ o.pr }}</td>
+-      <td><code>{{ o.head_sha[:10] }}</code></td>
+-      <td><span class="badge lb-{{ o.label }}">{{ o.label }}</span></td>
+-      <td><span class="badge st-{{ o.scan_status }}">{{ o.scan_status }}</span></td>
+-      <td class="muted">{{ o.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+-    </tr>
+-  {% endfor %}
+-  </tbody>
+-</table>
++<section class="panel section-copy">
++  <h2>Occurrences</h2>
++  <div class="table-wrap">
++    <table>
++      <thead><tr><th>Scan</th><th class="num">PR</th><th>Head</th><th>Label</th><th>Scan status</th><th>When</th></tr></thead>
++      <tbody>
++      {% for o in f.occurrences %}
++        <tr>
++          <td><a href="/scans/{{ o.scan_id }}">#{{ o.scan_id }}</a></td>
++          <td class="num">{{ o.pr }}</td>
++          <td><code>{{ o.head_sha[:10] }}</code></td>
++          <td><span class="badge lb-{{ o.label }}">{{ o.label }}</span></td>
++          <td><span class="badge st-{{ o.scan_status }}">{{ o.scan_status }}</span></td>
++          <td class="muted">{{ o.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
++        </tr>
++      {% endfor %}
++      </tbody>
++    </table>
++  </div>
++</section>
+ {% endblock %}
+diff --git a/prsec/dashboard/templates/findings.html b/prsec/dashboard/templates/findings.html
+index e2ebfc8..25e1eef 100644
+--- a/prsec/dashboard/templates/findings.html
++++ b/prsec/dashboard/templates/findings.html
+@@ -1,16 +1,27 @@
+ {% extends "base.html" %}
+ {% block title %}Findings{% endblock %}
+ {% block content %}
+-<h1>Findings</h1>
+-<form class="filters" method="get" hx-get="/findings" hx-target="#findings-table" hx-push-url="true"
+-      hx-trigger="change, submit">
+-  {% for key in ['repo', 'label', 'bug_class', 'severity', 'triage_state', 'status'] %}
+-  <label>{{ key | replace('_', ' ') }}
+-    <select name="{{ key }}"><option value="">any</option>
+-      {% for v in options[key] %}<option {% if filters[key] == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
+-    </select></label>
+-  {% endfor %}
+-  <noscript><button type="submit">Filter</button></noscript>
+-</form>
++<section class="hero-card">
++  <div class="page-header">
++    <div class="page-header-copy">
++      <div class="eyebrow">Findings</div>
++      <h1>Prioritise and review findings</h1>
++      <p class="lead">Filter the existing findings backlog, keep the current pagination flow, and submit filters without relying on JavaScript.</p>
++    </div>
++  </div>
++  <form class="filters" method="get" hx-get="/findings" hx-target="#findings-table" hx-push-url="true"
++        hx-trigger="change, submit">
++    {% for key in ['repo', 'label', 'bug_class', 'severity', 'triage_state', 'status'] %}
++    <label>{{ key | replace('_', ' ') }}
++      <select name="{{ key }}"><option value="">any</option>
++        {% for v in options[key] %}<option value="{{ v }}" {% if filters[key] == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
++      </select></label>
++    {% endfor %}
++    <div class="button-row">
++      <button type="submit">Apply filters</button>
++      <a class="button-secondary" href="/findings">Clear</a>
++    </div>
++  </form>
++</section>
+ <div id="findings-table">{% include "_findings_table.html" %}</div>
+ {% endblock %}
+diff --git a/prsec/dashboard/templates/metrics.html b/prsec/dashboard/templates/metrics.html
+index 2b5712e..935fa1c 100644
+--- a/prsec/dashboard/templates/metrics.html
++++ b/prsec/dashboard/templates/metrics.html
+@@ -1,10 +1,17 @@
+ {% extends "base.html" %}
+ {% block title %}Metrics{% endblock %}
+ {% block content %}
+-<h1>Metrics</h1>
++<section class="page-header">
++  <div class="page-header-copy">
++    <div class="eyebrow">Metrics</div>
++    <h1>Operational metrics</h1>
++    <p class="lead">Simple diagnostics with the shared dashboard layout, readable cards, and scroll-safe tables.</p>
++  </div>
++</section>
+ <div class="grid2">
+   <div>
+     <h2 style="margin-top:0">Scans by status</h2>
++    <div class="table-wrap">
+     <table>
+       <thead><tr><th>Status</th><th class="num">7 days</th><th class="num">30 days</th></tr></thead>
+       <tbody>
+@@ -14,6 +21,7 @@
+       {% else %}<tr><td colspan="3" class="muted">No scans in the last 30 days.</td></tr>{% endfor %}
+       </tbody>
+     </table>
++    </div>
+   </div>
+   <div class="panel">
+     <h2 style="margin-top:0">Last 30 days</h2>
+@@ -42,14 +50,14 @@
+ {% endmacro %}
+ 
+ <h2>Precision by label</h2>
+-{{ precision_table(m.precision_by_label, 'Label') }}
++<div class="table-wrap">{{ precision_table(m.precision_by_label, 'Label') }}</div>
+ <h2>Precision by bug class</h2>
+-{{ precision_table(m.precision_by_bug_class, 'Bug class') }}
++<div class="table-wrap">{{ precision_table(m.precision_by_bug_class, 'Bug class') }}</div>
+ <p class="muted">Precision = TP / (TP + FP) over triaged findings; accepted (real, risk-accepted) is excluded.</p>
+ 
+ <h2>By agent (30 days)</h2>
+ <p class="muted" style="margin-top:0">One row per agent (pipeline stage): how reliably it runs, what it costs and how much work it does.</p>
+-<table>
++<div class="table-wrap"><table>
+   <thead><tr><th>Agent</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Failed</th>
+     <th class="num">Avg duration</th><th class="num">Avg cost</th><th class="num">Total cost</th>
+     <th class="num">Avg tokens</th><th class="num">Avg turns</th></tr></thead>
+@@ -62,7 +70,7 @@
+       <td class="num">{{ r.avg_turns | round(1) }}</td></tr>
+   {% else %}<tr><td colspan="9" class="muted">No stage runs.</td></tr>{% endfor %}
+   </tbody>
+-</table>
++</table></div>
+ 
+ {% macro harness_row(r) %}
+   <td class="num">{{ r.runs }}</td><td class="num">{{ r.ok_rate | pct }}</td>
+@@ -70,21 +78,21 @@
+   <td class="num">{{ r.total_cost | usd }}</td><td class="num">{{ r.avg_tokens | int }}</td>
+ {% endmacro %}
+ <h2>Harness comparison (30 days)</h2>
+-<table>
++<div class="table-wrap"><table>
+   <thead><tr><th>Harness</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Avg duration</th>
+     <th class="num">Avg cost</th><th class="num">Total cost</th><th class="num">Avg tokens</th></tr></thead>
+   <tbody>
+   {% for r in m.per_harness %}<tr><td>{{ r.harness }}</td>{{ harness_row(r) }}</tr>
+   {% else %}<tr><td colspan="7" class="muted">No stage runs.</td></tr>{% endfor %}
+   </tbody>
+-</table>
++</table></div>
+ <h2>By stage, harness and model</h2>
+-<table>
++<div class="table-wrap"><table>
+   <thead><tr><th>Stage</th><th>Harness</th><th>Model</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Avg duration</th>
+     <th class="num">Avg cost</th><th class="num">Total cost</th><th class="num">Avg tokens</th></tr></thead>
+   <tbody>
+   {% for r in m.per_stage_harness %}<tr><td>{{ r.stage }}</td><td>{{ r.harness }}</td><td>{{ r.model }}</td>{{ harness_row(r) }}</tr>
+   {% else %}<tr><td colspan="9" class="muted">No stage runs.</td></tr>{% endfor %}
+   </tbody>
+-</table>
++</table></div>
+ {% endblock %}
+diff --git a/prsec/dashboard/templates/scan.html b/prsec/dashboard/templates/scan.html
+index 7ef081e..79e16e7 100644
+--- a/prsec/dashboard/templates/scan.html
++++ b/prsec/dashboard/templates/scan.html
+@@ -1,7 +1,13 @@
+ {% extends "base.html" %}
+ {% block title %}Scan {{ scan.id }}{% endblock %}
+ {% block content %}
+-<h1>Scan #{{ scan.id }} · {{ scan.repo }}#{{ scan.pr }} <span class="badge st-{{ scan.status }}">{{ scan.status }}</span></h1>
++<section class="page-header">
++  <div class="page-header-copy">
++    <div class="eyebrow">Scan #{{ scan.id }}</div>
++    <h1>{{ scan.repo }}#{{ scan.pr }} <span class="badge st-{{ scan.status }}">{{ scan.status }}</span></h1>
++    <p class="lead">Read-only debugging view for the scan, its agent pipeline, timeline, and findings.</p>
++  </div>
++</section>
+ <div class="grid2">
+   <div class="panel">
+     <h2 style="margin-top:0">Triage</h2>
+@@ -36,7 +42,7 @@
+ {% set health_badge = {'ok': 'st-ok', 'failed': 'st-failed', 'partial': 'st-running'} %}
+ <h2>Agents</h2>
+ <p class="muted" style="margin-top:0">The agent pipeline for this scan, in order. Each row is one agent (fan-out stages collapse all per-hypothesis runs).</p>
+-<table>
++<div class="table-wrap"><table>
+   <thead><tr><th>Agent</th><th>Stage</th><th class="num">Runs</th><th>Status</th><th>Decision</th>
+     <th class="num">Tokens</th><th class="num">Turns</th><th class="num">Cost</th><th class="num">Duration</th></tr></thead>
+   <tbody>
+@@ -56,12 +62,12 @@
+     <tr><td colspan="9" class="muted">No agent runs.</td></tr>
+   {% endfor %}
+   </tbody>
+-</table>
++</table></div>
+ 
+ {% include "_timeline.html" %}
+ 
+ <h2>Stage runs</h2>
+-<table>
++<div class="table-wrap"><table>
+   <thead><tr><th>Agent</th><th>Task</th><th>Harness</th><th>Model</th><th>Status</th><th>Decision</th>
+     <th class="num">Attempts</th><th class="num">Tokens in/out</th><th class="num">Turns</th><th class="num">Cost</th><th class="num">Duration</th><th>Errors</th></tr></thead>
+   <tbody>
+@@ -84,10 +90,10 @@
+     <tr><td colspan="12" class="muted">No stage runs.</td></tr>
+   {% endfor %}
+   </tbody>
+-</table>
++</table></div>
+ 
+ <h2>Findings</h2>
+-<table>
++<div class="table-wrap"><table>
+   <thead><tr><th>#</th><th>Severity</th><th>Label</th><th>Class</th><th>Title</th><th>Sink</th><th>Status</th><th>Triage</th></tr></thead>
+   <tbody>
+   {% for f in scan.findings %}
+@@ -105,5 +111,5 @@
+     <tr><td colspan="8" class="muted">No findings.</td></tr>
+   {% endfor %}
+   </tbody>
+-</table>
++</table></div>
+ {% endblock %}
+diff --git a/prsec/dashboard/templates/scans.html b/prsec/dashboard/templates/scans.html
+index be2ae68..6def6ff 100644
+--- a/prsec/dashboard/templates/scans.html
++++ b/prsec/dashboard/templates/scans.html
+@@ -1,40 +1,50 @@
+ {% extends "base.html" %}
+ {% block title %}Scans{% endblock %}
+ {% block content %}
+-<h1>Scans</h1>
+-<form class="filters" method="get">
+-  <label>Repo <input name="repo" value="{{ filters.repo or '' }}" placeholder="owner/name"></label>
+-  <label>PR <input name="pr" value="{{ filters.pr or '' }}" size="6"></label>
+-  <label>Status
+-    <select name="status"><option value="">any</option>
+-    {% for s in statuses %}<option {% if filters.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+-    </select></label>
+-  <button type="submit">Filter</button>
+-</form>
+-<table>
+-  <thead><tr>
+-    <th>#</th><th>Repo</th><th>PR</th><th>Head</th><th>Status</th><th>Triage</th>
+-    <th class="num">Findings</th><th class="num">Cost</th><th class="num">Duration</th><th>Created</th>
+-  </tr></thead>
+-  <tbody>
+-  {% for s in scans %}
+-    <tr>
+-      <td><a href="/scans/{{ s.id }}">{{ s.id }}</a></td>
+-      <td>{{ s.repo }}</td>
+-      <td>{{ s.pr }}</td>
+-      <td><code>{{ s.head_sha[:10] }}</code></td>
+-      <td><span class="badge st-{{ s.status }}">{{ s.status }}</span></td>
+-      <td>{{ s.triage_decision or '-' }}</td>
+-      <td class="num">{{ s.findings_total }}{% if s.findings_total %} <span class="muted">({{ s.findings_reproduced }}/{{ s.findings_likely }}/{{ s.findings_inconclusive }})</span>{% endif %}</td>
+-      <td class="num">{{ s.cost_usd | usd }}</td>
+-      <td class="num">{{ s.duration_s | dur }}</td>
+-      <td class="muted">{{ s.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+-    </tr>
+-  {% else %}
+-    <tr><td colspan="10" class="muted">No scans.</td></tr>
+-  {% endfor %}
+-  </tbody>
+-</table>
++<section class="page-header">
++  <div class="page-header-copy">
++    <div class="eyebrow">Scans</div>
++    <h1>Scan activity</h1>
++    <p class="lead">Debug-friendly history of scan runs with the same server-rendered filter and pagination flow.</p>
++  </div>
++</section>
++<section class="panel">
++  <form class="filters" method="get">
++    <label>Repo <input name="repo" value="{{ filters.repo or '' }}" placeholder="owner/name"></label>
++    <label>PR <input name="pr" value="{{ filters.pr or '' }}" size="6"></label>
++    <label>Status
++      <select name="status"><option value="">any</option>
++      {% for s in statuses %}<option {% if filters.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
++      </select></label>
++    <div class="button-row"><button type="submit">Filter</button></div>
++  </form>
++</section>
++<div class="table-wrap">
++  <table>
++    <thead><tr>
++      <th>#</th><th>Repo</th><th>PR</th><th>Head</th><th>Status</th><th>Triage</th>
++      <th class="num">Findings</th><th class="num">Cost</th><th class="num">Duration</th><th>Created</th>
++    </tr></thead>
++    <tbody>
++    {% for s in scans %}
++      <tr>
++        <td><a href="/scans/{{ s.id }}">{{ s.id }}</a></td>
++        <td>{{ s.repo }}</td>
++        <td>{{ s.pr }}</td>
++        <td><code>{{ s.head_sha[:10] }}</code></td>
++        <td><span class="badge st-{{ s.status }}">{{ s.status }}</span></td>
++        <td>{{ s.triage_decision or '-' }}</td>
++        <td class="num">{{ s.findings_total }}{% if s.findings_total %} <span class="muted">({{ s.findings_reproduced }}/{{ s.findings_likely }}/{{ s.findings_inconclusive }})</span>{% endif %}</td>
++        <td class="num">{{ s.cost_usd | usd }}</td>
++        <td class="num">{{ s.duration_s | dur }}</td>
++        <td class="muted">{{ s.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
++      </tr>
++    {% else %}
++      <tr><td colspan="10" class="empty-state">No scans.</td></tr>
++    {% endfor %}
++    </tbody>
++  </table>
++</div>
+ <p class="muted">Findings column: total (reproduced/likely/inconclusive).</p>
+ <div class="pager">
+   {% if page > 1 %}<a href="?{{ filters | urlencode }}&page={{ page - 1 }}">&larr; newer</a>{% endif %}
+diff --git a/tests/dashboard/test_prsec_dashboard_routes.py b/tests/dashboard/test_prsec_dashboard_routes.py
+index 0629c04..37d14d7 100644
+--- a/tests/dashboard/test_prsec_dashboard_routes.py
++++ b/tests/dashboard/test_prsec_dashboard_routes.py
+@@ -20,7 +20,8 @@ def test_scans_list(client, seeded):
+     assert "acme/web" in r.text
+     assert "$1.25" in r.text
+     assert "2m00s" in r.text or "1m59s" in r.text
+-    assert "htmx.org@2.0.4" in r.text
++    assert 'class="site-header"' in r.text
++    assert 'class="table-wrap"' in r.text
+     r = client.get("/", params={"status": "skipped"})
+     assert "acme/web" in r.text
+     assert "acme/shop" not in r.text
+@@ -74,11 +75,43 @@ def test_findings_filters(client, seeded):
+     assert "idor in get" not in r.text
+ 
+ 
++def test_dashboard_pages_do_not_load_external_assets(client, seeded):
++    fid = _fid(seeded["findings"][0].fingerprint)
++    for path in ("/", "/findings", "/metrics", f"/findings/{fid}"):
++        r = client.get(path)
++        assert r.status_code == 200
++        text = r.text.lower()
++        assert '<script src="http' not in text
++        assert '<link rel="stylesheet" href="http' not in text
++        assert "unpkg.com" not in text
++        assert "cdn." not in text
++        assert 'class="site-header"' in r.text
++        assert 'class="page-shell"' in r.text
++
++
++def test_findings_page_is_usable_without_javascript(client, seeded):
++    r = client.get("/findings", params={"label": "reproduced", "repo": "acme/shop"})
++    assert r.status_code == 200
++    assert '<form class="filters" method="get"' in r.text
++    assert 'name="repo"' in r.text
++    assert 'name="label"' in r.text
++    assert '<button type="submit"' in r.text
++    assert "<noscript>" not in r.text
++    assert 'value="reproduced" selected' in r.text
++    assert 'value="acme/shop" selected' in r.text
++    assert "idor in get" in r.text
++    assert "sqli in find" not in r.text
++
++
+ def test_finding_detail_and_triage(client, seeded):
+     f = seeded["findings"][0]
+     fid = _fid(f.fingerprint)
+     r = client.get(f"/findings/{fid}")
+     assert r.status_code == 200
++    assert 'finding-hero' in r.text
++    assert 'class="card-grid"' in r.text
++    assert "Metadata" in r.text
++    assert "Provenance" in r.text
+     assert "app/api.py:10" in r.text
+     assert "app/orders.py:42-43" in r.text
+     assert "oid = request.args[&#39;id&#39;]" in r.text
