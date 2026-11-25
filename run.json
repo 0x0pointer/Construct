@@ -838,11 +838,10 @@
     "base_sha": "6c1ebdc1d141df8220e76abee0ba5e3eb0145e82"
   },
   "status": {
-    "kind": "blocked",
-    "blocked_reason": "human_input_required"
+    "kind": "running"
   },
-  "status_updated_at": "2026-11-25T09:42:38.953798238Z",
-  "last_event_at": "2026-11-25T09:42:38.953798238Z",
+  "status_updated_at": "2026-11-25T09:42:38.983473898Z",
+  "last_event_at": "2026-11-25T09:42:57.639989237Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -1159,9 +1158,9 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 141,
       "checkpoint": {
-        "timestamp": "2026-11-25T09:42:38.987923415Z",
+        "timestamp": "2026-11-25T09:42:43.528794901Z",
         "current_node": "approve",
         "completed_nodes": [
           "start",
@@ -1172,20 +1171,174 @@
         ],
         "node_retries": {},
         "context_values": {
+          "internal.work_dir": "/workspace/Construct",
+          "human.gate.approve.answer": "A",
+          "human.gate.selected": "A",
+          "graph.loop_restart_signature_limit": "10",
+          "preferred_label": "[A] Approve",
+          "internal.retry_count.install": 0,
+          "response.spec": "DECISION NEEDED: The issue could mean (a) a visual refresh only, (b) removing the existing CDN HTMX dependency, or (c) a full dashboard workflow redesign. Choose (a)+(b): keep routes/data behaviour, restyle the server-rendered dashboard, and remove external UI dependencies.\n\n1. Intent - the dashboard should look and feel modern while staying dependency-free and broadly browser-compatible. Implement a server-rendered restyle using only inline/local HTML/CSS in dashboard templates, with the findings list/detail pages receiving the clearest usability improvements. Remove the externally loaded HTMX script and avoid dead HTMX-only behaviours unless replaced by plain non-dependent HTML behaviour.\n\n2. Acceptance criteria\n1. `GET /findings`, `GET /findings/{id}`, `GET /`, `GET /scans/{id}`, and `GET /metrics` render HTML with no external stylesheet/script/image/font URLs and no `<script src=...>` or CDN references.\n2. The findings index remains filterable with normal HTML form submission without JavaScript; selected filters survive in the rendered controls; pagination links preserve active filters.\n3. The finding detail page presents summary metadata, triage, description/reasoning, code flow, dynamic validation, provenance, and occurrences in visually distinct responsive sections/cards.\n4. Existing dashboard routes, status codes, form field names, filter query names, triage POST behaviour, artifact download links, and SARIF/evidence response types do not change.\n5. Empty datasets still render useful empty-state text instead of broken tables.\n6. Untrusted finding/scan/event text remains HTML-escaped in rendered output.\n\n3. Boundaries\nAlways: use existing FastAPI/Jinja rendering in `prsec.dashboard.main._render`; keep existing templates and CSS-in-template convention in `base.html`; use existing `db` helpers and filters (`usd`, `dur`, `pct`, `tojson_pretty`).\nNever: add frontend/package dependencies, external CDNs, new database queries for styling only, auth changes, CI/deployment changes, or API/orchestrator/sandbox changes.\n\n4. Code map\n- `prsec/dashboard/templates/base.html`: remove external HTMX script; replace current minimal CSS with modern responsive layout, cards, badges, tables, focus states, empty states, and navigation styling.\n- `prsec/dashboard/templates/findings.html`: remove `hx-*` attributes; make filter form usable without JS and add/reset submit affordances if needed.\n- `prsec/dashboard/templates/_findings_table.html`: adjust markup/classes only for improved findings table readability and responsive wrapping; keep columns/data/links.\n- `prsec/dashboard/templates/finding.html`: reorganize markup/classes into clearer responsive summary/content/side sections; keep displayed fields and links.\n- `prsec/dashboard/templates/_triage.html`: remove `hx-*` attributes; keep `state` and `note` fields and POST action unchanged.\n- `prsec/dashboard/templates/_timeline_poller.html` and `_timeline_poll.html`: remove HTMX-only rendered attributes/text or make the no-JS behaviour honest; keep `/scans/{scan_id}/events` route renderable.\n- Add tests in `tests/dashboard/test_dashboard_ui.py`. Existing broad pytest suite must keep passing.\n\n5. Edge cases\n\n| Input/state | Expected behaviour |\n|---|---|\n| No findings/scans/metrics rows | Page renders existing empty-state copy in styled container/table, status 200. |\n| Malformed/unexpected filter values | Values are escaped, preserved only as selected/input values where applicable, and no HTML/script executes. |\n| Oversized titles, paths, snippets, event data | Text wraps or scrolls inside content areas without breaking page layout. |\n| Duplicate-looking filter values from data | Form remains valid; implementation must not add duplicate hard-coded options beyond existing DB-provided distinct values. |\n| Concurrent triage submissions | Existing last-write database behaviour is unchanged; UI restyle must not add client-side state that can skip server validation. |\n| Missing finding/scan/artifact | Existing 404/502 behaviours remain unchanged. |\n| JavaScript disabled/unavailable | Findings filtering, pagination, triage submission, and navigation still work via normal requests. |\n\n6. Security considerations\nThe dashboard renders untrusted repository, agent, event, finding, and triage text. Keep Jinja autoescaping; do not mark these values safe or interpolate them into raw JS/CSS. Removing the external HTMX CDN eliminates a supply-chain/privacy dependency; do not replace it with another external resource. No shell, SQL, path, authentication, or authorization logic should change. Add negative rendering tests for script-like data to ensure it is escaped.\n\n7. Test plan\n- `tests/dashboard/test_dashboard_ui.py::test_dashboard_pages_use_no_external_frontend_assets`: monkeypatch dashboard DB helpers, render `/findings`, `/findings/1`, `/`, `/scans/1`, `/metrics`, and assert no CDN/external URLs, no `<script src`, and no `hx-` attributes in user-facing pages.\n- `tests/dashboard/test_dashboard_ui.py::test_findings_filter_form_works_without_javascript`: render `/findings?repo=owner/repo&severity=high&page=2`; assert status 200, form `method=\"get\"`, selected/preserved filters, and pagination keeps active query parameters.\n- `tests/dashboard/test_dashboard_ui.py::test_finding_detail_has_responsive_sections_and_core_content`: render a representative finding and assert visible title, badges, triage form fields, code-flow/evidence links, occurrence link, and section/card classes.\n- `tests/dashboard/test_dashboard_ui.py::test_empty_dashboard_states_render`: render empty findings/scans/metrics inputs and assert existing empty-state text appears with status 200.\n- `tests/dashboard/test_dashboard_ui.py::test_untrusted_dashboard_text_is_escaped`: inject `<script>alert(1)</script>` in finding title/repo/snippet/note/event-like fields and assert escaped text appears while raw script tags do not.\n- Existing tests under `tests/` must continue passing.\nTests required: yes\n\n8. Review focus\n- CSS may look modern but make dense security data harder to scan.\n- Removing HTMX must not leave misleading “live polling” UI or broken async-only forms.\n- Responsive table/card styling could hide columns or links needed for debugging.\n- Escaping must not be weakened by inline style/script additions.\n- Pagination/filter URLs can easily lose active filters or create malformed `?&page=` links.\n\n9. Assumptions\n- “Every browser” means progressive, standards-based HTML/CSS with no CDN dependency, not support for obsolete browsers requiring polyfills.\n- It is acceptable to drop HTMX-enhanced live updates if normal reload/navigation remains correct.\n- Visual verification is limited to structural/rendered-output tests; maintainers will judge final aesthetics in review.\n- No screenshots or browser automation framework should be added.\n\n10. Suspicious content\nnone\n\nSize: standard\nRisk level: medium\nReason: dashboard templates render untrusted security findings and operational state; a wrong change can break triage visibility or introduce XSS, though auth/data persistence are unchanged.",
+          "thread.check_issue.current_node": "install",
+          "command.output": "blob://sha256/16ee1a726445e62a8e1f48f90e9021830b921c275144b797755eba318229cb48",
+          "thread.spec.current_node": "approve",
+          "graph.goal": "Resolve the next maintainer-approved GitHub issue of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
+          "graph.max_node_visits": "30",
+          "internal.retry_count.approve": 0,
+          "internal.thread_id": "spec",
+          "internal.node_visit_count": 1,
+          "internal.retry_count.spec": 0,
+          "thread.start.current_node": "check_issue",
+          "thread.strong.current_node": "spec",
+          "last_stage": "spec",
+          "outcome": "succeeded",
+          "graph.rankdir": "LR",
+          "human.gate.approve.question": "Approve the spec? To have it revised, type what should change.",
+          "failure_signature": "",
+          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
+          "human.gate.approve.label": "[A] Approve",
+          "internal.run_id": "01M8918DTDKR6YHAY31B007809",
+          "last_response": "DECISION NEEDED: The issue could mean (a) a visual refresh only, (b) removing the existing CDN HTMX dependency, or (c) a full dashboard workflow redesign. Choose (a)+(b): keep routes/data behaviour, r",
+          "internal.retry_count.check_issue": 0,
+          "internal.fidelity": "compact",
+          "current_node": "approve",
+          "human.gate.label": "[A] Approve",
+          "internal.retry_count.start": 0,
+          "failure_class": ""
+        },
+        "node_outcomes": {
+          "install": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/16ee1a726445e62a8e1f48f90e9021830b921c275144b797755eba318229cb48"
+            },
+            "notes": "Script completed: (command -v start-test-db >/dev/null && start-test-db) || echo no test database in this sandbox image; pip install -q -e '.[dev]' && python -c 'import prsec' && echo prsec importable",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 20122,
+              "active_time_ms": 20122
+            }
+          },
+          "approve": {
+            "status": "succeeded",
+            "preferred_label": "[A] Approve",
+            "suggested_next_ids": [
+              "implement"
+            ],
+            "context_updates": {
+              "human.gate.label": "[A] Approve",
+              "human.gate.selected": "A",
+              "human.gate.approve.answer": "A",
+              "human.gate.approve.label": "[A] Approve",
+              "human.gate.approve.question": "Approve the spec? To have it revised, type what should change."
+            },
+            "usage": null
+          },
+          "spec": {
+            "status": "succeeded",
+            "context_updates": {
+              "response.spec": "DECISION NEEDED: The issue could mean (a) a visual refresh only, (b) removing the existing CDN HTMX dependency, or (c) a full dashboard workflow redesign. Choose (a)+(b): keep routes/data behaviour, restyle the server-rendered dashboard, and remove external UI dependencies.\n\n1. Intent - the dashboard should look and feel modern while staying dependency-free and broadly browser-compatible. Implement a server-rendered restyle using only inline/local HTML/CSS in dashboard templates, with the findings list/detail pages receiving the clearest usability improvements. Remove the externally loaded HTMX script and avoid dead HTMX-only behaviours unless replaced by plain non-dependent HTML behaviour.\n\n2. Acceptance criteria\n1. `GET /findings`, `GET /findings/{id}`, `GET /`, `GET /scans/{id}`, and `GET /metrics` render HTML with no external stylesheet/script/image/font URLs and no `<script src=...>` or CDN references.\n2. The findings index remains filterable with normal HTML form submission without JavaScript; selected filters survive in the rendered controls; pagination links preserve active filters.\n3. The finding detail page presents summary metadata, triage, description/reasoning, code flow, dynamic validation, provenance, and occurrences in visually distinct responsive sections/cards.\n4. Existing dashboard routes, status codes, form field names, filter query names, triage POST behaviour, artifact download links, and SARIF/evidence response types do not change.\n5. Empty datasets still render useful empty-state text instead of broken tables.\n6. Untrusted finding/scan/event text remains HTML-escaped in rendered output.\n\n3. Boundaries\nAlways: use existing FastAPI/Jinja rendering in `prsec.dashboard.main._render`; keep existing templates and CSS-in-template convention in `base.html`; use existing `db` helpers and filters (`usd`, `dur`, `pct`, `tojson_pretty`).\nNever: add frontend/package dependencies, external CDNs, new database queries for styling only, auth changes, CI/deployment changes, or API/orchestrator/sandbox changes.\n\n4. Code map\n- `prsec/dashboard/templates/base.html`: remove external HTMX script; replace current minimal CSS with modern responsive layout, cards, badges, tables, focus states, empty states, and navigation styling.\n- `prsec/dashboard/templates/findings.html`: remove `hx-*` attributes; make filter form usable without JS and add/reset submit affordances if needed.\n- `prsec/dashboard/templates/_findings_table.html`: adjust markup/classes only for improved findings table readability and responsive wrapping; keep columns/data/links.\n- `prsec/dashboard/templates/finding.html`: reorganize markup/classes into clearer responsive summary/content/side sections; keep displayed fields and links.\n- `prsec/dashboard/templates/_triage.html`: remove `hx-*` attributes; keep `state` and `note` fields and POST action unchanged.\n- `prsec/dashboard/templates/_timeline_poller.html` and `_timeline_poll.html`: remove HTMX-only rendered attributes/text or make the no-JS behaviour honest; keep `/scans/{scan_id}/events` route renderable.\n- Add tests in `tests/dashboard/test_dashboard_ui.py`. Existing broad pytest suite must keep passing.\n\n5. Edge cases\n\n| Input/state | Expected behaviour |\n|---|---|\n| No findings/scans/metrics rows | Page renders existing empty-state copy in styled container/table, status 200. |\n| Malformed/unexpected filter values | Values are escaped, preserved only as selected/input values where applicable, and no HTML/script executes. |\n| Oversized titles, paths, snippets, event data | Text wraps or scrolls inside content areas without breaking page layout. |\n| Duplicate-looking filter values from data | Form remains valid; implementation must not add duplicate hard-coded options beyond existing DB-provided distinct values. |\n| Concurrent triage submissions | Existing last-write database behaviour is unchanged; UI restyle must not add client-side state that can skip server validation. |\n| Missing finding/scan/artifact | Existing 404/502 behaviours remain unchanged. |\n| JavaScript disabled/unavailable | Findings filtering, pagination, triage submission, and navigation still work via normal requests. |\n\n6. Security considerations\nThe dashboard renders untrusted repository, agent, event, finding, and triage text. Keep Jinja autoescaping; do not mark these values safe or interpolate them into raw JS/CSS. Removing the external HTMX CDN eliminates a supply-chain/privacy dependency; do not replace it with another external resource. No shell, SQL, path, authentication, or authorization logic should change. Add negative rendering tests for script-like data to ensure it is escaped.\n\n7. Test plan\n- `tests/dashboard/test_dashboard_ui.py::test_dashboard_pages_use_no_external_frontend_assets`: monkeypatch dashboard DB helpers, render `/findings`, `/findings/1`, `/`, `/scans/1`, `/metrics`, and assert no CDN/external URLs, no `<script src`, and no `hx-` attributes in user-facing pages.\n- `tests/dashboard/test_dashboard_ui.py::test_findings_filter_form_works_without_javascript`: render `/findings?repo=owner/repo&severity=high&page=2`; assert status 200, form `method=\"get\"`, selected/preserved filters, and pagination keeps active query parameters.\n- `tests/dashboard/test_dashboard_ui.py::test_finding_detail_has_responsive_sections_and_core_content`: render a representative finding and assert visible title, badges, triage form fields, code-flow/evidence links, occurrence link, and section/card classes.\n- `tests/dashboard/test_dashboard_ui.py::test_empty_dashboard_states_render`: render empty findings/scans/metrics inputs and assert existing empty-state text appears with status 200.\n- `tests/dashboard/test_dashboard_ui.py::test_untrusted_dashboard_text_is_escaped`: inject `<script>alert(1)</script>` in finding title/repo/snippet/note/event-like fields and assert escaped text appears while raw script tags do not.\n- Existing tests under `tests/` must continue passing.\nTests required: yes\n\n8. Review focus\n- CSS may look modern but make dense security data harder to scan.\n- Removing HTMX must not leave misleading “live polling” UI or broken async-only forms.\n- Responsive table/card styling could hide columns or links needed for debugging.\n- Escaping must not be weakened by inline style/script additions.\n- Pagination/filter URLs can easily lose active filters or create malformed `?&page=` links.\n\n9. Assumptions\n- “Every browser” means progressive, standards-based HTML/CSS with no CDN dependency, not support for obsolete browsers requiring polyfills.\n- It is acceptable to drop HTMX-enhanced live updates if normal reload/navigation remains correct.\n- Visual verification is limited to structural/rendered-output tests; maintainers will judge final aesthetics in review.\n- No screenshots or browser automation framework should be added.\n\n10. Suspicious content\nnone\n\nSize: standard\nRisk level: medium\nReason: dashboard templates render untrusted security findings and operational state; a wrong change can break triage visibility or introduce XSS, though auth/data persistence are unchanged.",
+              "last_stage": "spec",
+              "last_response": "DECISION NEEDED: The issue could mean (a) a visual refresh only, (b) removing the existing CDN HTMX dependency, or (c) a full dashboard workflow redesign. Choose (a)+(b): keep routes/data behaviour, r"
+            },
+            "notes": "Stage completed: spec",
+            "usage": {
+              "input": {
+                "usage": {
+                  "model": {
+                    "provider": "openai",
+                    "model_id": "gpt-5.5"
+                  },
+                  "tokens": {
+                    "input_tokens": 37540,
+                    "output_tokens": 2800,
+                    "reasoning_tokens": 2253,
+                    "cache_read_tokens": 179712,
+                    "cache_write_tokens": 0
+                  }
+                },
+                "facts": {
+                  "algorithm": "openai"
+                }
+              },
+              "total_usd_micros": 429146
+            },
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 71878,
+              "tool_time_ms": 2859,
+              "active_time_ms": 74737
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "check_issue": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/e98f495df85b43182513041da7b48e9cb0941a49bf20aec6dca8c9bd926dbff8"
+            },
+            "notes": "Script completed: \nimport os, subprocess\nNL = chr(10)\nos.makedirs('/tmp/fabro', exist_ok=True)\nbody = ['As of now the UI of construct is not very intuitive we want to have it restyled.',\n 'It needs to get a modern look and feel, no external dependencies of styling and JS libs that are included.',\n 'It needs to be optimized to work in every browser. The finding page is most important very critical, the other pages ',\n 'are mostly for debugging and to see if construct is following the right steps and that the output is predictable in a sense.']\nopen('/tmp/fabro/issue.md', 'w').write('# construct dashboard needs to be re-styled' + NL + NL + NL.join(body) + NL)\nopen('/tmp/fabro/issue_number', 'w').write('0')\nsubprocess.run('git update-ref refs/remotes/origin/main HEAD', shell=True)\nprint('test issue written (text of Construct issue 8)')\n",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 551,
+              "active_time_ms": 551
+            }
+          }
+        },
+        "next_node_id": "implement",
+        "git_commit_sha": "0da6d5890947a71342a3a3bcc36dd9352e814595",
+        "node_visits": {
+          "install": 1,
+          "spec": 1,
+          "check_issue": 1,
+          "approve": 1,
+          "start": 1
+        }
+      },
+      "diff": {
+        "summary": {
+          "files_changed": 0,
+          "additions": 0,
+          "deletions": 0
+        }
+      }
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-11-25T09:42:57.668381467Z",
+        "current_node": "implement",
+        "completed_nodes": [
+          "start",
+          "check_issue",
+          "install",
+          "spec",
+          "approve",
+          "implement"
+        ],
+        "node_retries": {},
+        "context_values": {
           "outcome": "succeeded",
           "thread.spec.current_node": "approve",
           "graph.max_node_visits": "30",
           "failure_signature": "",
-          "internal.fidelity": "compact",
+          "response.implement": "Blocked: /tmp/fabro/spec.md is missing, so I could not follow the reviewed spec as required. I wrote the blocker to /tmp/fabro/blocked.md and left the repository unchanged.\n\nTests run: none, because implementation could not begin without the spec.\n\nSTATUS: BLOCKED",
+          "internal.fidelity": "truncate",
           "graph.loop_restart_signature_limit": "10",
           "internal.node_visit_count": 1,
           "internal.retry_count.approve": 0,
           "thread.check_issue.current_node": "install",
           "internal.work_dir": "/workspace/Construct",
-          "last_response": "DECISION NEEDED: The issue could mean (a) a visual refresh only, (b) removing the existing CDN HTMX dependency, or (c) a full dashboard workflow redesign. Choose (a)+(b): keep routes/data behaviour, r",
-          "current_node": "approve",
+          "last_response": "Blocked: /tmp/fabro/spec.md is missing, so I could not follow the reviewed spec as required. I wrote the blocker to /tmp/fabro/blocked.md and left the repository unchanged.\n\nTests run: none, because i",
+          "thread.approve.current_node": "implement",
+          "current_node": "implement",
           "internal.retry_count.install": 0,
-          "internal.thread_id": "spec",
+          "internal.thread_id": "approve",
           "human.gate.label": "[A] Approve",
           "human.gate.approve.answer": "A",
           "graph.goal": "Resolve the next maintainer-approved GitHub issue of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
@@ -1195,10 +1348,11 @@
           "graph.rankdir": "LR",
           "internal.retry_count.spec": 0,
           "failure_class": "",
-          "last_stage": "spec",
+          "last_stage": "implement",
           "internal.retry_count.start": 0,
           "human.gate.approve.label": "[A] Approve",
           "thread.strong.current_node": "spec",
+          "internal.retry_count.implement": 0,
           "internal.run_id": "01M8918DTDKR6YHAY31B007809",
           "human.gate.approve.question": "Approve the spec? To have it revised, type what should change.",
           "human.gate.selected": "A",
@@ -1289,15 +1443,55 @@
               "tool_time_ms": 551,
               "active_time_ms": 551
             }
+          },
+          "implement": {
+            "status": "succeeded",
+            "context_updates": {
+              "response.implement": "Blocked: /tmp/fabro/spec.md is missing, so I could not follow the reviewed spec as required. I wrote the blocker to /tmp/fabro/blocked.md and left the repository unchanged.\n\nTests run: none, because implementation could not begin without the spec.\n\nSTATUS: BLOCKED",
+              "last_stage": "implement",
+              "last_response": "Blocked: /tmp/fabro/spec.md is missing, so I could not follow the reviewed spec as required. I wrote the blocker to /tmp/fabro/blocked.md and left the repository unchanged.\n\nTests run: none, because i"
+            },
+            "notes": "Stage completed: implement",
+            "usage": {
+              "input": {
+                "usage": {
+                  "model": {
+                    "provider": "openai",
+                    "model_id": "gpt-5.4"
+                  },
+                  "tokens": {
+                    "input_tokens": 7044,
+                    "output_tokens": 530,
+                    "reasoning_tokens": 204,
+                    "cache_read_tokens": 12288,
+                    "cache_write_tokens": 0
+                  }
+                },
+                "facts": {
+                  "algorithm": "openai"
+                }
+              },
+              "total_usd_micros": 31692
+            },
+            "files_touched": [
+              "/tmp/fabro/blocked.md"
+            ],
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 13079,
+              "tool_time_ms": 468,
+              "active_time_ms": 13547
+            }
           }
         },
-        "next_node_id": "implement",
+        "next_node_id": "verify",
         "node_visits": {
           "start": 1,
           "check_issue": 1,
           "spec": 1,
           "approve": 1,
-          "install": 1
+          "install": 1,
+          "implement": 1
         }
       },
       "diff": {}
@@ -1328,35 +1522,18 @@
   },
   "pull_request": null,
   "superseded_by": null,
-  "pending_interviews": {
-    "01M891BXK9J4T2030TEJRPVRTW": {
-      "question": {
-        "id": "01M891BXK9J4T2030TEJRPVRTW",
-        "text": "Approve the spec? To have it revised, type what should change.",
-        "stage": "approve",
-        "question_type": "multiple_choice",
-        "options": [
-          {
-            "key": "A",
-            "label": "[A] Approve"
-          },
-          {
-            "key": "X",
-            "label": "[X] Reject"
-          }
-        ],
-        "allow_freeform": true,
-        "context_display": "DECISION NEEDED: The issue could mean (a) a visual refresh only, (b) removing the existing CDN HTMX dependency, or (c) a full dashboard workflow redesign. Choose (a)+(b): keep routes/data behaviour, restyle the server-rendered dashboard, and remove external UI dependencies.\n\n1. Intent - the dashboard should look and feel modern while staying dependency-free and broadly browser-compatible. Implement a server-rendered restyle using only inline/local HTML/CSS in dashboard templates, with the findings list/detail pages receiving the clearest usability improvements. Remove the externally loaded HTMX script and avoid dead HTMX-only behaviours unless replaced by plain non-dependent HTML behaviour.\n\n2. Acceptance criteria\n1. `GET /findings`, `GET /findings/{id}`, `GET /`, `GET /scans/{id}`, and `GET /metrics` render HTML with no external stylesheet/script/image/font URLs and no `<script src=...>` or CDN references.\n2. The findings index remains filterable with normal HTML form submission without JavaScript; selected filters survive in the rendered controls; pagination links preserve active filters.\n3. The finding detail page presents summary metadata, triage, description/reasoning, code flow, dynamic validation, provenance, and occurrences in visually distinct responsive sections/cards.\n4. Existing dashboard routes, status codes, form field names, filter query names, triage POST behaviour, artifact download links, and SARIF/evidence response types do not change.\n5. Empty datasets still render useful empty-state text instead of broken tables.\n6. Untrusted finding/scan/event text remains HTML-escaped in rendered output.\n\n3. Boundaries\nAlways: use existing FastAPI/Jinja rendering in `prsec.dashboard.main._render`; keep existing templates and CSS-in-template convention in `base.html`; use existing `db` helpers and filters (`usd`, `dur`, `pct`, `tojson_pretty`).\nNever: add frontend/package dependencies, external CDNs, new database queries for styling only, auth changes, CI/deployment changes, or API/orchestrator/sandbox changes.\n\n4. Code map\n- `prsec/dashboard/templates/base.html`: remove external HTMX script; replace current minimal CSS with modern responsive layout, cards, badges, tables, focus states, empty states, and navigation styling.\n- `prsec/dashboard/templates/findings.html`: remove `hx-*` attributes; make filter form usable without JS and add/reset submit affordances if needed.\n- `prsec/dashboard/templates/_findings_table.html`: adjust markup/classes only for improved findings table readability and responsive wrapping; keep columns/data/links.\n- `prsec/dashboard/templates/finding.html`: reorganize markup/classes into clearer responsive summary/content/side sections; keep displayed fields and links.\n- `prsec/dashboard/templates/_triage.html`: remove `hx-*` attributes; keep `state` and `note` fields and POST action unchanged.\n- `prsec/dashboard/templates/_timeline_poller.html` and `_timeline_poll.html`: remove HTMX-only rendered attributes/text or make the no-JS behaviour honest; keep `/scans/{scan_id}/events` route renderable.\n- Add tests in `tests/dashboard/test_dashboard_ui.py`. Existing broad pytest suite must keep passing.\n\n5. Edge cases\n\n| Input/state | Expected behaviour |\n|---|---|\n| No findings/scans/metrics rows | Page renders existing empty-state copy in styled container/table, status 200. |\n| Malformed/unexpected filter values | Values are escaped, preserved only as selected/input values where applicable, and no HTML/script executes. |\n| Oversized titles, paths, snippets, event data | Text wraps or scrolls inside content areas without breaking page layout. |\n| Duplicate-looking filter values from data | Form remains valid; implementation must not add duplicate hard-coded options beyond existing DB-provided distinct values. |\n| Concurrent triage submissions | Existing last-write database behaviour is unchanged; UI restyle must not add client-side state that can skip server validation. |\n| Missing finding/scan/artifact | Existing 404/502 behaviours remain unchanged. |\n| JavaScript disabled/unavailable | Findings filtering, pagination, triage submission, and navigation still work via normal requests. |\n\n6. Security considerations\nThe dashboard renders untrusted repository, agent, event, finding, and triage text. Keep Jinja autoescaping; do not mark these values safe or interpolate them into raw JS/CSS. Removing the external HTMX CDN eliminates a supply-chain/privacy dependency; do not replace it with another external resource. No shell, SQL, path, authentication, or authorization logic should change. Add negative rendering tests for script-like data to ensure it is escaped.\n\n7. Test plan\n- `tests/dashboard/test_dashboard_ui.py::test_dashboard_pages_use_no_external_frontend_assets`: monkeypatch dashboard DB helpers, render `/findings`, `/findings/1`, `/`, `/scans/1`, `/metrics`, and assert no CDN/external URLs, no `<script src`, and no `hx-` attributes in user-facing pages.\n- `tests/dashboard/test_dashboard_ui.py::test_findings_filter_form_works_without_javascript`: render `/findings?repo=owner/repo&severity=high&page=2`; assert status 200, form `method=\"get\"`, selected/preserved filters, and pagination keeps active query parameters.\n- `tests/dashboard/test_dashboard_ui.py::test_finding_detail_has_responsive_sections_and_core_content`: render a representative finding and assert visible title, badges, triage form fields, code-flow/evidence links, occurrence link, and section/card classes.\n- `tests/dashboard/test_dashboard_ui.py::test_empty_dashboard_states_render`: render empty findings/scans/metrics inputs and assert existing empty-state text appears with status 200.\n- `tests/dashboard/test_dashboard_ui.py::test_untrusted_dashboard_text_is_escaped`: inject `<script>alert(1)</script>` in finding title/repo/snippet/note/event-like fields and assert escaped text appears while raw script tags do not.\n- Existing tests under `tests/` must continue passing.\nTests required: yes\n\n8. Review focus\n- CSS may look modern but make dense security data harder to scan.\n- Removing HTMX must not leave misleading “live polling” UI or broken async-only forms.\n- Responsive table/card styling could hide columns or links needed for debugging.\n- Escaping must not be weakened by inline style/script additions.\n- Pagination/filter URLs can easily lose active filters or create malformed `?&page=` links.\n\n9. Assumptions\n- “Every browser” means progressive, standards-based HTML/CSS with no CDN dependency, not support for obsolete browsers requiring polyfills.\n- It is acceptable to drop HTMX-enhanced live updates if normal reload/navigation remains correct.\n- Visual verification is limited to structural/rendered-output tests; maintainers will judge final aesthetics in review.\n- No screenshots or browser automation framework should be added.\n\n10. Suspicious content\nnone\n\nSize: standard\nRisk level: medium\nReason: dashboard templates render untrusted security findings and operational state; a wrong change can break triage visibility or introduce XSS, though auth/data persistence are unchanged."
-      },
-      "started_at": "2026-11-25T09:42:38.953739087Z"
-    }
-  },
+  "pending_interviews": {},
   "stages": {
     "approve@1": {
       "first_event_seq": 132,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-11-25T09:42:38.983681414Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": null,
@@ -1365,6 +1542,12 @@
       "output": null,
       "started_at": "2026-11-25T09:42:38.950208698Z",
       "handler": "human",
+      "timing": {
+        "wall_time_ms": 33,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -1373,7 +1556,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "succeeded"
     },
     "install@1": {
       "first_event_seq": 32,
@@ -1423,6 +1606,226 @@
         "cache_write_tokens": 0
       },
       "state": "succeeded"
+    },
+    "implement@1": {
+      "first_event_seq": 144,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": {
+        "mode": "agent",
+        "provider": "openai",
+        "model": "gpt-5.4",
+        "reasoning_effort": "medium"
+      },
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-11-25T09:42:43.559468140Z",
+      "handler": "agent",
+      "usage": {
+        "input_tokens": 7044,
+        "output_tokens": 530,
+        "total_tokens": 20066,
+        "reasoning_tokens": 204,
+        "cache_read_tokens": 12288,
+        "cache_write_tokens": 0,
+        "total_usd_micros": 31692
+      },
+      "model": {
+        "provider": "openai",
+        "model_id": "gpt-5.4"
+      },
+      "todos": {
+        "kind": "openai_plan",
+        "list_id": "openai_plan:149ac0c1-d1db-4335-9f94-14845d38c2b8",
+        "items": [
+          {
+            "id": "b7eeb9a43e50b151",
+            "status": "completed",
+            "order": 0,
+            "subject": "Locate spec, issue reference, and applicable repo instructions"
+          },
+          {
+            "id": "f86b37b4d26ff074",
+            "status": "pending",
+            "order": 1,
+            "subject": "Implement approved spec changes in minimal increments with targeted tests"
+          },
+          {
+            "id": "ed072740a3aee826",
+            "status": "pending",
+            "order": 2,
+            "subject": "Run required test suite and summarize results"
+          }
+        ]
+      },
+      "permission_level": "full",
+      "agent_tools": [
+        {
+          "name": "apply_patch",
+          "description": "Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "write",
+          "invoked": false
+        },
+        {
+          "name": "close_agent",
+          "description": "Close a running subagent that is no longer needed.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "glob",
+          "description": "Find files by file names using a glob pattern. Use path to choose the search root. Prefer this over shell find or ls when locating repository files.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "read",
+          "invoked": true
+        },
+        {
+          "name": "grep",
+          "description": "Search file contents with a regex pattern. Use path to choose the search root, glob_filter to limit matching files, case_insensitive for case folding, and max_results to cap output.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "read",
+          "invoked": false
+        },
+        {
+          "name": "read_file",
+          "description": "Read files before editing them. Returns line-numbered text and supports offset/limit for large files. Use this instead of shell cat, head, tail, or sed when inspecting repository files.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "read",
+          "invoked": true
+        },
+        {
+          "name": "request_user_input",
+          "description": "Ask the human one or more questions and wait for their answers before continuing this stage.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "send_input",
+          "description": "Send a follow-up message to a running subagent when new information or corrected instructions are needed.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "shell",
+          "description": "Execute shell commands for terminal operations, package managers, tests and builds. Use dedicated tools for file reads, file edits, filename searches, and content searches. Provide timeout_ms for long-running commands.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "shell",
+          "invoked": true
+        },
+        {
+          "name": "spawn_agent",
+          "description": "Spawn a subagent for independent work or context isolation. Use it for tasks that can proceed separately, and avoid duplicating the same work in the parent session.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "update_plan",
+          "description": "Update the multi-step plan for the current task. Submit the entire plan; existing steps are reconciled by exact step text.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": true
+        },
+        {
+          "name": "wait",
+          "description": "Wait for a subagent to complete, then use the result to synthesize the outcome for the user.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "web_fetch",
+          "description": "Fetch content from a URL that starts with http:// or https://. Pass a prompt to extract specific information or summarize the page; omit prompt to return the page content.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "web_search",
+          "description": "Search the web using Brave Search when current external information is needed. Returns result titles, URLs, and descriptions; use web_fetch for a specific URL.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "write_file",
+          "description": "Create new files, or overwrite an existing file only when replacement is explicitly intended. Prefer edit_file for targeted changes to existing files because write_file overwrites the full file content.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "write",
+          "invoked": true
+        }
+      ],
+      "context_window": {
+        "provider": "openai",
+        "model": "gpt-5.4",
+        "context_window_tokens": 272000,
+        "input_tokens": 4135,
+        "usage_percent": 1.5202205882352942,
+        "count_method": "response_usage_scaled_breakdown",
+        "staleness": "live",
+        "generated_at": "2026-11-25T09:42:55.793215236Z",
+        "event_seq": 170,
+        "breakdown": [
+          {
+            "category": "system_prompt",
+            "tokens": 714,
+            "usage_percent": 0.2625
+          },
+          {
+            "category": "tools",
+            "tokens": 1024,
+            "usage_percent": 0.3764705882352941
+          },
+          {
+            "category": "conversation",
+            "tokens": 2392,
+            "usage_percent": 0.8794117647058823
+          },
+          {
+            "category": "other",
+            "tokens": 5,
+            "usage_percent": 0.001838235294117647
+          }
+        ],
+        "warnings": []
+      },
+      "state": "running"
     },
     "start@1": {
       "first_event_seq": 18,
