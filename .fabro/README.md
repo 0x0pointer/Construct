@@ -18,7 +18,7 @@ on a machine where Fabro is installed and logged in.
 | `workflows/fix-ci/` | Second workflow: repairs a Fabro pull request whose CI checks failed. |
 | `scripts/sync-pipeline` | Copies the shared pipeline files to the other repositories, or checks that they match. |
 | `scripts/construct-build` | Convenience command that builds every approved issue. |
-| `scripts/fabro-run-titles` | Watcher that titles runs after the issue or pull request they picked, tidies empty runs, and posts Codespaces links on successful application PRs. |
+| `scripts/fabro-run-titles` | Watcher that titles runs after the issue or pull request they picked, tidies empty runs, and posts Codespaces links on successful IssueToPR draft PRs. |
 
 ## How an issue gets built
 
@@ -76,8 +76,8 @@ on a machine where Fabro is installed and logged in.
       what changed since the first, not at everything again. Nothing reaches
       the exit without passing both.
 4. On success Fabro pushes the branch `fabro/run/<run id>` and opens a draft PR
-   into `main`. For PRs with application changes, `fabro-run-titles` adds one
-   **Open in GitHub Codespaces** comment that opens that exact branch with this
+   into `main`. `fabro-run-titles` adds one **Open in GitHub Codespaces**
+   comment that opens that exact branch with this
    repository's devcontainer. A maintainer reviews and merges as usual.
 
 ## Starting a build from the web UI

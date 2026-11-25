@@ -47,9 +47,7 @@ TERMINAL = ("succeeded", "failed", "cancelled", "canceled", "dead")
 SCRATCH_REPO = os.path.expanduser("~/.fabro/run-titles.git")
 MAX_AGE = timedelta(days=2)
 CODESPACE_MARKER = "<!-- fabro-codespace -->"
-DONE_CODESPACE = {"commented", "existing", "not application", "skipped old", "skipped malformed repo", "skipped malformed branch"}
-NON_APPLICATION_PREFIXES = (".devcontainer/", ".fabro/", ".github/", "docs/", "tests/")
-NON_APPLICATION_FILES = {".env.example", ".gitignore", "LICENSE", "README.md", "sonar-project.properties"}
+DONE_CODESPACE = {"commented", "existing", "skipped old", "skipped malformed repo", "skipped malformed branch"}
 
 
 def api(path, body=None, method=None):
@@ -175,28 +173,6 @@ def codespace_comment_body(repo_id, branch):
     )
 
 
-def application_path(filename):
-    path = str(filename or "").lstrip("/")
-    if not path or path in NON_APPLICATION_FILES:
-        return False
-    if path.startswith(NON_APPLICATION_PREFIXES):
-        return False
-    return True
-
-
-def pull_request_has_application_changes(owner, repo, number):
-    base = f"/repos/{quote_path(owner)}/{quote_path(repo)}/pulls/{number}/files?per_page=100"
-    page = 1
-    while True:
-        path = base if page == 1 else base + f"&page={page}"
-        files = items(github_api(path))
-        if any(application_path(f.get("filename")) for f in files):
-            return True
-        if len(files) < 100:
-            return False
-        page += 1
-
-
 def find_open_pr(owner, repo, branch):
     head = quote_path(f"{owner}:{branch}")
     path = f"/repos/{quote_path(owner)}/{quote_path(repo)}/pulls?state=open&head={head}&per_page=10"
@@ -240,9 +216,6 @@ def add_codespace_comment(run):
     if not number:
         print(f"{run_id}: pull request for {branch} has no number", file=sys.stderr, flush=True)
         return None
-    if not pull_request_has_application_changes(owner, repo, number):
-        print(f"{run_id}: no application changes in PR #{number}; no codespace comment needed", flush=True)
-        return "not application"
     if existing_codespace_comment(owner, repo, number):
         print(f"{run_id}: codespace comment already exists on PR #{number}", flush=True)
         return "existing"

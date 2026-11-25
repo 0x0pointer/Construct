@@ -249,7 +249,7 @@ def test_old_string_state_is_backward_compatible(monkeypatch, run_titles):
     assert state[RUN_ID] == {"title": "Construct #19: Useful app feature", "codespace": "commented"}
 
 
-def test_sweep_skips_codespace_for_non_application_changes(monkeypatch, run_titles):
+def test_sweep_comments_for_non_application_changes_too(monkeypatch, run_titles):
     fake = FakeApis(
         files=[
             {"filename": "README.md"},
@@ -263,5 +263,6 @@ def test_sweep_skips_codespace_for_non_application_changes(monkeypatch, run_titl
 
     run_titles.sweep(state)
 
-    assert fake.posts == []
-    assert state[RUN_ID] == {"title": "Construct #19: Useful app feature", "codespace": "not application"}
+    assert len(fake.posts) == 1
+    assert "repo=42" in fake.posts[0]
+    assert state[RUN_ID] == {"title": "Construct #19: Useful app feature", "codespace": "commented"}
