@@ -1,7 +1,12 @@
 {% from "_timeline_macros.html" import item_list %}
-<h2 id="timeline">Timeline</h2>
-<div class="panel tl">
+<section class="card tl">
+  <div class="section-heading">
+    <div>
+      <h2 id="timeline">Timeline</h2>
+      <p class="muted">Live events are appended below while the scan is active.</p>
+    </div>
+  </div>
   {{ item_list(tl['items'], tl.live, {'class': 'tl-events', 'id': 'timeline-events'}) }}
   {% if not tl['items'] %}<p class="muted" id="timeline-empty">No events recorded{% if tl.live %} yet{% endif %}.</p>{% endif %}
   {% include "_timeline_poller.html" %}
-</div>
+</section>

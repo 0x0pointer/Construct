@@ -1,16 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Findings{% endblock %}
 {% block content %}
-<h1>Findings</h1>
-<form class="filters" method="get" hx-get="/findings" hx-target="#findings-table" hx-push-url="true"
-      hx-trigger="change, submit">
+<section class="page page-findings">
+  <div class="page-header">
+    <div>
+      <p class="eyebrow">Dashboard</p>
+      <h1>Findings</h1>
+      <p class="lead">Review findings, narrow results quickly, and keep triage state visible without losing the full-page fallback.</p>
+    </div>
+  </div>
+  <section class="card">
+    <form class="filters" method="get" action="/findings" data-dashboard-filters data-partial-target="findings-table">
   {% for key in ['repo', 'label', 'bug_class', 'severity', 'triage_state', 'status'] %}
   <label>{{ key | replace('_', ' ') }}
     <select name="{{ key }}"><option value="">any</option>
       {% for v in options[key] %}<option {% if filters[key] == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
     </select></label>
   {% endfor %}
-  <noscript><button type="submit">Filter</button></noscript>
-</form>
-<div id="findings-table">{% include "_findings_table.html" %}</div>
+      <button type="submit">Apply filters</button>
+    </form>
+  </section>
+  <div id="findings-table" class="results-region">{% include "_findings_table.html" %}</div>
+</section>
 {% endblock %}

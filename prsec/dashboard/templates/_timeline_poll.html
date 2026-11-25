@@ -1,6 +1,6 @@
 {% from "_timeline_macros.html" import item_list, agent_list %}
 {% include "_timeline_poller.html" %}
-{% if tl['items'] %}<p id="timeline-empty" hx-swap-oob="delete"></p>
-{{ item_list(tl['items'], tl.live, {'hx-swap-oob': 'beforeend:#timeline-events'}) }}{% endif %}
-{% for dom_id, evs in tl.appended.items() %}{{ agent_list(evs, {'hx-swap-oob': 'beforeend:#' ~ dom_id}) }}
+{% if tl['items'] %}<div data-remove-target="#timeline-empty"></div>
+<template data-append-target="#timeline-events">{{ item_list(tl['items'], tl.live, {}) }}</template>{% endif %}
+{% for dom_id, evs in tl.appended.items() %}<template data-append-target="#{{ dom_id }}">{{ agent_list(evs, {}) }}</template>
 {% endfor %}

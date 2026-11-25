@@ -12,6 +12,7 @@ from urllib.parse import urlencode, urlsplit
 import yaml
 from fastapi import FastAPI, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from prsec.adapters.sinks import sarif_store
@@ -21,6 +22,7 @@ from prsec.obs import events as obs_events
 from prsec.obs.logging import setup_logging
 
 TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+STATIC_DIR = Path(__file__).parent / "static"
 PAGE_SIZE = 50
 FINDING_NOT_FOUND = "finding not found"
 SCAN_NOT_FOUND = "scan not found"
@@ -57,6 +59,7 @@ def _fmt_json(v: Any) -> str:
 TEMPLATES.env.filters.update(usd=_fmt_usd, dur=_fmt_dur, pct=_fmt_pct, tojson_pretty=_fmt_json)
 
 app = FastAPI(title="PRSec dashboard", docs_url=None, redoc_url=None)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # ---------------------------------------------------- per-agent observability
 
@@ -163,6 +166,17 @@ def _local_path(path: str, fallback: str = "/findings") -> str:
 
 def _clean(params: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in params.items() if v not in (None, "")}
+
+
+def _partial_target(request: Request) -> str | None:
+    return request.headers.get("x-partial-target") or request.headers.get("hx-target")
+
+
+def _is_partial_request(request: Request, *, target: str | None = None) -> bool:
+    partial = request.headers.get("x-partial-request") or request.headers.get("hx-request")
+    if not partial:
+        return False
+    return target is None or _partial_target(request) == target
 
 
 @app.get("/healthz", response_class=PlainTextResponse)
@@ -319,7 +333,7 @@ def findings(
     page = max(page, 1)
     rows = db.list_findings(filters, limit=PAGE_SIZE + 1, offset=(page - 1) * PAGE_SIZE)
     ctx = {"findings": rows[:PAGE_SIZE], "filters": filters, "page": page, "has_next": len(rows) > PAGE_SIZE}
-    if request.headers.get("hx-request") and request.headers.get("hx-target") == "findings-table":
+    if _is_partial_request(request, target="findings-table"):
         return _render(request, "_findings_table.html", **ctx)
     return _render(
         request,
@@ -372,7 +386,7 @@ def triage(request: Request, finding_id: int, state: Annotated[str, Form()], not
     row = db.set_triage(finding_id, state, note, actor=_user(request))
     if row is None:
         raise HTTPException(404, FINDING_NOT_FOUND)
-    if not request.headers.get("hx-request"):
+    if not _is_partial_request(request):
         # Built from the database row's integer id, and still checked to stay on this site.
         return RedirectResponse(_local_path(f"/findings/{int(row['id'])}"), status_code=303)
     return _render(request, "_triage.html", f={"id": finding_id, **row}, triage_states=db.TRIAGE_STATES, saved=True)

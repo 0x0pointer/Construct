@@ -56,7 +56,7 @@ def tclient(store):
 
 
 def _poll_url(html):
-    return re.search(r'hx-get="([^"]+)"', html).group(1).replace("&amp;", "&")
+    return re.search(r'data-poll-url="([^"]+)"', html).group(1).replace("&amp;", "&")
 
 
 def test_timeline_groups_agent_events_under_their_stage():
@@ -107,14 +107,14 @@ def test_scan_page_polls_while_running(tclient, store):
     assert urlsplit(url).path == "/scans/5/events"
     assert q["after_id"] == ["2"]
     assert q["g"] == ["5-hypothesise"]
-    assert 'hx-trigger="every 2s"' in tclient.get("/scans/5").text
+    assert 'data-poll-interval="2000"' in tclient.get("/scans/5").text
 
 
 def test_finished_scan_does_not_poll(tclient, store):
     store.status = "done"
     store.events = [ev(1, kind="scan_finished")]
     text = tclient.get("/scans/5").text
-    assert "hx-get" not in text
+    assert "data-poll-url" not in text
     assert "timeline complete" in text
 
 
@@ -145,8 +145,8 @@ def test_poll_returns_only_new_events_out_of_band(tclient, store):
     assert r.status_code == 200
     assert "<html" not in r.text
     assert "old" not in r.text
-    assert f'hx-swap-oob="beforeend:#{dashboard._group_dom_id("5-hypothesise")}"' in r.text
-    assert 'hx-swap-oob="beforeend:#timeline-events"' in r.text
+    assert f'data-append-target="#{dashboard._group_dom_id("5-hypothesise")}"' in r.text
+    assert 'data-append-target="#timeline-events"' in r.text
     assert f'id="{dashboard._group_dom_id("5-sv-H1")}"' in r.text
     assert 'href="/findings/12/dynamic-evidence"' in r.text
     q = parse_qs(urlsplit(_poll_url(r.text)).query)
@@ -156,7 +156,7 @@ def test_poll_returns_only_new_events_out_of_band(tclient, store):
 
 def test_poll_without_new_events_keeps_cursor(tclient, store):
     r = tclient.get("/scans/5/events", params={"after_id": 7})
-    assert "hx-swap-oob" not in r.text
+    assert "data-append-target" not in r.text
     assert parse_qs(urlsplit(_poll_url(r.text)).query)["after_id"] == ["7"]
 
 
@@ -165,7 +165,7 @@ def test_poll_stops_when_scan_finished(tclient, store):
     store.events = [ev(8, kind="scan_finished", level="error", message="boom")]
     r = tclient.get("/scans/5/events", params={"after_id": 7})
     assert "boom" in r.text
-    assert "hx-get" not in r.text
+    assert "data-poll-url" not in r.text
     assert 'href="/scans/5"' in r.text
 
 

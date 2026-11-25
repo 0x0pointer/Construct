@@ -20,7 +20,8 @@ def test_scans_list(client, seeded):
     assert "acme/web" in r.text
     assert "$1.25" in r.text
     assert "2m00s" in r.text or "1m59s" in r.text
-    assert "htmx.org@2.0.4" in r.text
+    assert "/static/dashboard.css" in r.text
+    assert "/static/dashboard.js" in r.text
     r = client.get("/", params={"status": "skipped"})
     assert "acme/web" in r.text
     assert "acme/shop" not in r.text

@@ -54,7 +54,15 @@ prsec-skills-lint = "prsec.skills_lint:main"
 include = ["prsec*"]
 
 [tool.setuptools.package-data]
-"prsec" = ["prompts/*.md", "db/*.sql", "dashboard/templates/*.html", "policy/*.yaml", "dynamic/*.yaml"]
+"prsec" = [
+  "prompts/*.md",
+  "db/*.sql",
+  "dashboard/templates/*.html",
+  "dashboard/static/*.css",
+  "dashboard/static/*.js",
+  "policy/*.yaml",
+  "dynamic/*.yaml",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
