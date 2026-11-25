@@ -1,0 +1,6 @@
+{
+  "outcome": "failed",
+  "notes": null,
+  "failure_reason": "Script failed with exit code: 1\n\n## output\nROUTE_human (the implementer is blocked)\nCannot start implementation because the required reviewed spec file /tmp/fabro/spec.md is missing. The task instructions require following the spec (and not re-planning from the issue), so proceeding from /tmp/fabro/issue.md alone would violate the run requirements. Repository was left unchanged.\n",
+  "timestamp": "2026-11-25T09:43:02.773505559Z"
+}
