@@ -906,11 +906,10 @@
     "base_sha": "6c1ebdc1d141df8220e76abee0ba5e3eb0145e82"
   },
   "status": {
-    "kind": "blocked",
-    "blocked_reason": "human_input_required"
+    "kind": "running"
   },
-  "status_updated_at": "2026-11-25T12:10:49.642889642Z",
-  "last_event_at": "2026-11-25T12:10:49.642889642Z",
+  "status_updated_at": "2026-11-25T12:11:10.893557518Z",
+  "last_event_at": "2026-11-25T12:24:09.068281251Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -1377,9 +1376,9 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 172,
       "checkpoint": {
-        "timestamp": "2026-11-25T12:11:10.896724776Z",
+        "timestamp": "2026-11-25T12:11:19.113512635Z",
         "current_node": "approve",
         "completed_nodes": [
           "start",
@@ -1391,43 +1390,90 @@
         ],
         "node_retries": {},
         "context_values": {
-          "internal.node_visit_count": 1,
-          "failure_class": "",
-          "human.gate.label": "[A] Approve",
-          "internal.retry_count.spec": 0,
-          "thread.save_spec.current_node": "approve",
-          "failure_signature": "",
-          "internal.retry_count.install": 0,
-          "internal.run_id": "01M899N06AZ19W1AD76DERMN9F",
-          "thread.spec.current_node": "save_spec",
-          "thread.start.current_node": "check_issue",
-          "internal.work_dir": "/workspace/Construct",
-          "internal.retry_count.check_issue": 0,
-          "graph.max_node_visits": "30",
-          "response.spec": "DECISION NEEDED: “restyled” could mean full redesign, CSS-only facelift, or responsive first-party refresh. Chosen: responsive first-party refresh that keeps routes and live behaviours; CSS-only would lose live updates, full redesign is out of scope.\n\n1. Intent\nModernize the existing FastAPI/Jinja dashboard without changing stored data, route URLs, or workflows. Move styling and progressive-enhancement code to first-party static assets, remove the external HTMX CDN, and preserve findings filtering, triage save, and scan timeline polling. Prioritize `/findings` and `/findings/{id}` for responsive layout, clearer hierarchy, readable badges/cards/tables, and safe wrapping of long code and agent text.\n\n2. Acceptance criteria\n1. GET `/findings` renders a modern responsive page with header/nav, filters, findings table, pager, and empty state usable at desktop and phone widths; only tables/code blocks may scroll horizontally.\n2. GET `/findings/{id}` shows title, severity/label/status, triage controls, description, code flow, dynamic validation, provenance, and occurrences in a responsive layout that collapses to one column and wraps long text.\n3. GET `/`, `/scans/{id}`, and `/metrics` retain current visible data, links, empty states, paging, and timeline status while using the same visual system.\n4. Rendered dashboard pages load no external CSS/JS: no CDN scripts/styles; only first-party `/static/dashboard.css` and `/static/dashboard.js`.\n5. With JS enabled: findings filter changes update `#findings-table` and URL; triage submit updates `#triage-panel`; live scan timelines append events every 2s without reload.\n6. With JS disabled/failed: filter forms submit normally, triage POST redirects back to the finding, and scan pages remain readable with reload/status text.\n7. Existing non-UI behaviours remain: `/healthz`, SARIF download, transcript/evidence `text/plain` plus `nosniff`, missing scan/finding 404s, and unknown triage state 422.\n\n3. Boundaries\nAlways use `prsec.dashboard.main.app`, `TEMPLATES`, `_render`, existing `prsec.db.findings` helpers, Jinja autoescaping, existing form actions, and package-data conventions in `pyproject.toml`.\nNever add runtime dependencies, CDN assets, build steps, DB schema/query changes, auth changes, CI/deploy edits, or changes outside `prsec/dashboard`, `pyproject.toml`, and dashboard tests.\n\n4. Code map\n- `pyproject.toml` `[tool.setuptools.package-data]`: include dashboard static CSS/JS.\n- `prsec/dashboard/main.py` `app`: mount `/static` with `StaticFiles`; support first-party partial-request headers for `/findings` and triage while preserving HTMX header compatibility.\n- Add `prsec/dashboard/static/dashboard.css`: responsive theme, cards, badges, forms, tables, timeline, finding detail layout.\n- Add `prsec/dashboard/static/dashboard.js`: vanilla progressive enhancement for filters, triage, timeline polling; no imports/eval.\n- `prsec/dashboard/templates/base.html`: remove HTMX CDN, load local assets, modernize semantic shell.\n- `findings.html`, `_findings_table.html`, `finding.html`, `_triage.html`: replace HTMX attrs with data attrs/fallback actions; add responsive wrappers/classes; prioritize finding detail.\n- `scans.html`, `scan.html`, `_timeline*.html`, `metrics.html`: apply shared wrappers/classes and timeline data attrs; keep content/links.\n- Existing tests: none. Add `tests/dashboard/test_dashboard_ui.py`.\n\n5. Edge cases\n| Case | Expected behaviour |\n| --- | --- |\n| Empty scans/findings/stage runs/metrics | Empty messages render in styled containers; JS does not throw. |\n| Malformed/unknown filter values | Values are escaped, URL-encoded, passed to existing filters, and show no matches if DB returns none. |\n| Oversized titles, paths, snippets, notes, event data | Text wraps or scrolls inside card/table/pre; no page-wide overflow or unescaped HTML. |\n| Duplicate timeline poll response/retry | Event IDs already present in the DOM are not appended again. |\n| Concurrent triage edits | Panel reflects the server response for the submitted POST; no optimistic client state overrides it. |\n| Static asset/JS failure | Links/forms still work by full-page requests; timeline can be manually reloaded. |\n\n6. Security considerations\nDashboard data includes untrusted repository, PR, agent, finding, note, snippet, and event text from DB/object storage. Keep Jinja autoescape; do not add `|safe`, eval, shell/SQL/path handling, remote scripts, or DOM insertion from raw user input. First-party JS may insert only same-origin server-rendered fragments. `StaticFiles` must be confined to `prsec/dashboard/static`. Auth remains delegated to the SSO proxy; do not weaken it. Triage remains an existing POST side effect, so keep server-side state validation.\n\n7. Test plan\nAdd `tests/dashboard/test_dashboard_ui.py` using `TestClient` and monkeypatched `prsec.dashboard.main.db`/`obs_events`:\n- `test_dashboard_assets_are_first_party_and_packaged`: `/findings` references only local CSS/JS, static URLs return 200, no `http://`, `https://`, `unpkg`, or `htmx` asset references.\n- `test_findings_page_responsive_filters_table_empty_and_partial`: populated and empty `/findings` render filters/table wrapper/pager/empty state; first-party partial headers return only table fragment and selected filters persist.\n- `test_finding_detail_prioritizes_content_and_escapes_untrusted_text`: required sections/classes and fallback triage form render; malicious title/snippet/note such as `<script>` is escaped.\n- `test_scans_scan_metrics_keep_existing_visible_behaviour`: `/`, `/scans/{id}`, `/metrics` render current headings, data, links, empty states, and timeline poll metadata.\n- `test_triage_progressive_enhancement_and_validation`: normal POST redirects, partial POST returns updated panel with saved marker, unknown state is 422, missing finding is 404.\n- `test_artifact_security_headers_unchanged`: transcript/evidence endpoints still return `text/plain` with `nosniff`.\n- `test_timeline_poll_fragment_is_safe_and_deduplicatable`: poll response contains replace/append targets and event IDs, escapes event data, and supports client duplicate skipping.\nExisting full suite must keep passing, especially `tests/sinks/*` and `tests/orchestrator/*`.\nTests required: yes\n\n8. Review focus\n- Real browser visual quality, contrast, keyboard focus, and mobile usability.\n- Whether HTMX replacement fully preserves grouped live timeline appends.\n- Wheel/sdist packaging of static files, not just editable install.\n- Any unsafe fragment insertion or accidental unescaped HTML.\n- Whether finding detail surfaces operator-critical information first.\n\n9. Assumptions\n- “Every browser” means current evergreen desktop/mobile browsers plus graceful fallback when JS fails; no legacy polyfill dependency.\n- “No external dependencies” allows first-party CSS/JS served by the app, but forbids CDN/npm/bundled third-party libraries.\n- Existing information architecture and routes are acceptable; the issue asks for restyling, not new workflow features.\n\n10. Suspicious content\nnone\n\nSize: standard\nRisk level: medium\nReason: The change touches authenticated dashboard rendering of untrusted PR/agent data and replaces live client-side behaviour, so mistakes could cause XSS or operational regressions even though scanning is unchanged.",
-          "internal.thread_id": "save_spec",
-          "internal.retry_count.start": 0,
-          "graph.goal": "Resolve the next maintainer-approved GitHub issue of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
-          "internal.fidelity": "compact",
-          "human.gate.approve.answer": "A",
-          "last_stage": "spec",
-          "graph.loop_restart_signature_limit": "10",
-          "internal.retry_count.save_spec": 0,
-          "current_node": "approve",
-          "thread.check_issue.current_node": "install",
-          "last_response": "DECISION NEEDED: “restyled” could mean full redesign, CSS-only facelift, or responsive first-party refresh. Chosen: responsive first-party refresh that keeps routes and live behaviours; CSS-only w",
-          "human.gate.selected": "A",
-          "human.gate.approve.question": "Approve the spec? To have it revised, type what should change.",
-          "internal.retry_count.approve": 0,
-          "outcome": "succeeded",
-          "graph.rankdir": "LR",
           "command.output": "blob://sha256/2c1ccf12e0ba6cd1a9bdf1191fd675e8d4de3a70ab54522241574549f46d58bb",
+          "human.gate.approve.answer": "A",
+          "internal.retry_count.spec": 0,
+          "thread.spec.current_node": "save_spec",
+          "last_response": "DECISION NEEDED: “restyled” could mean full redesign, CSS-only facelift, or responsive first-party refresh. Chosen: responsive first-party refresh that keeps routes and live behaviours; CSS-only w",
+          "thread.strong.current_node": "spec",
           "human.gate.approve.label": "[A] Approve",
+          "response.spec": "DECISION NEEDED: “restyled” could mean full redesign, CSS-only facelift, or responsive first-party refresh. Chosen: responsive first-party refresh that keeps routes and live behaviours; CSS-only would lose live updates, full redesign is out of scope.\n\n1. Intent\nModernize the existing FastAPI/Jinja dashboard without changing stored data, route URLs, or workflows. Move styling and progressive-enhancement code to first-party static assets, remove the external HTMX CDN, and preserve findings filtering, triage save, and scan timeline polling. Prioritize `/findings` and `/findings/{id}` for responsive layout, clearer hierarchy, readable badges/cards/tables, and safe wrapping of long code and agent text.\n\n2. Acceptance criteria\n1. GET `/findings` renders a modern responsive page with header/nav, filters, findings table, pager, and empty state usable at desktop and phone widths; only tables/code blocks may scroll horizontally.\n2. GET `/findings/{id}` shows title, severity/label/status, triage controls, description, code flow, dynamic validation, provenance, and occurrences in a responsive layout that collapses to one column and wraps long text.\n3. GET `/`, `/scans/{id}`, and `/metrics` retain current visible data, links, empty states, paging, and timeline status while using the same visual system.\n4. Rendered dashboard pages load no external CSS/JS: no CDN scripts/styles; only first-party `/static/dashboard.css` and `/static/dashboard.js`.\n5. With JS enabled: findings filter changes update `#findings-table` and URL; triage submit updates `#triage-panel`; live scan timelines append events every 2s without reload.\n6. With JS disabled/failed: filter forms submit normally, triage POST redirects back to the finding, and scan pages remain readable with reload/status text.\n7. Existing non-UI behaviours remain: `/healthz`, SARIF download, transcript/evidence `text/plain` plus `nosniff`, missing scan/finding 404s, and unknown triage state 422.\n\n3. Boundaries\nAlways use `prsec.dashboard.main.app`, `TEMPLATES`, `_render`, existing `prsec.db.findings` helpers, Jinja autoescaping, existing form actions, and package-data conventions in `pyproject.toml`.\nNever add runtime dependencies, CDN assets, build steps, DB schema/query changes, auth changes, CI/deploy edits, or changes outside `prsec/dashboard`, `pyproject.toml`, and dashboard tests.\n\n4. Code map\n- `pyproject.toml` `[tool.setuptools.package-data]`: include dashboard static CSS/JS.\n- `prsec/dashboard/main.py` `app`: mount `/static` with `StaticFiles`; support first-party partial-request headers for `/findings` and triage while preserving HTMX header compatibility.\n- Add `prsec/dashboard/static/dashboard.css`: responsive theme, cards, badges, forms, tables, timeline, finding detail layout.\n- Add `prsec/dashboard/static/dashboard.js`: vanilla progressive enhancement for filters, triage, timeline polling; no imports/eval.\n- `prsec/dashboard/templates/base.html`: remove HTMX CDN, load local assets, modernize semantic shell.\n- `findings.html`, `_findings_table.html`, `finding.html`, `_triage.html`: replace HTMX attrs with data attrs/fallback actions; add responsive wrappers/classes; prioritize finding detail.\n- `scans.html`, `scan.html`, `_timeline*.html`, `metrics.html`: apply shared wrappers/classes and timeline data attrs; keep content/links.\n- Existing tests: none. Add `tests/dashboard/test_dashboard_ui.py`.\n\n5. Edge cases\n| Case | Expected behaviour |\n| --- | --- |\n| Empty scans/findings/stage runs/metrics | Empty messages render in styled containers; JS does not throw. |\n| Malformed/unknown filter values | Values are escaped, URL-encoded, passed to existing filters, and show no matches if DB returns none. |\n| Oversized titles, paths, snippets, notes, event data | Text wraps or scrolls inside card/table/pre; no page-wide overflow or unescaped HTML. |\n| Duplicate timeline poll response/retry | Event IDs already present in the DOM are not appended again. |\n| Concurrent triage edits | Panel reflects the server response for the submitted POST; no optimistic client state overrides it. |\n| Static asset/JS failure | Links/forms still work by full-page requests; timeline can be manually reloaded. |\n\n6. Security considerations\nDashboard data includes untrusted repository, PR, agent, finding, note, snippet, and event text from DB/object storage. Keep Jinja autoescape; do not add `|safe`, eval, shell/SQL/path handling, remote scripts, or DOM insertion from raw user input. First-party JS may insert only same-origin server-rendered fragments. `StaticFiles` must be confined to `prsec/dashboard/static`. Auth remains delegated to the SSO proxy; do not weaken it. Triage remains an existing POST side effect, so keep server-side state validation.\n\n7. Test plan\nAdd `tests/dashboard/test_dashboard_ui.py` using `TestClient` and monkeypatched `prsec.dashboard.main.db`/`obs_events`:\n- `test_dashboard_assets_are_first_party_and_packaged`: `/findings` references only local CSS/JS, static URLs return 200, no `http://`, `https://`, `unpkg`, or `htmx` asset references.\n- `test_findings_page_responsive_filters_table_empty_and_partial`: populated and empty `/findings` render filters/table wrapper/pager/empty state; first-party partial headers return only table fragment and selected filters persist.\n- `test_finding_detail_prioritizes_content_and_escapes_untrusted_text`: required sections/classes and fallback triage form render; malicious title/snippet/note such as `<script>` is escaped.\n- `test_scans_scan_metrics_keep_existing_visible_behaviour`: `/`, `/scans/{id}`, `/metrics` render current headings, data, links, empty states, and timeline poll metadata.\n- `test_triage_progressive_enhancement_and_validation`: normal POST redirects, partial POST returns updated panel with saved marker, unknown state is 422, missing finding is 404.\n- `test_artifact_security_headers_unchanged`: transcript/evidence endpoints still return `text/plain` with `nosniff`.\n- `test_timeline_poll_fragment_is_safe_and_deduplicatable`: poll response contains replace/append targets and event IDs, escapes event data, and supports client duplicate skipping.\nExisting full suite must keep passing, especially `tests/sinks/*` and `tests/orchestrator/*`.\nTests required: yes\n\n8. Review focus\n- Real browser visual quality, contrast, keyboard focus, and mobile usability.\n- Whether HTMX replacement fully preserves grouped live timeline appends.\n- Wheel/sdist packaging of static files, not just editable install.\n- Any unsafe fragment insertion or accidental unescaped HTML.\n- Whether finding detail surfaces operator-critical information first.\n\n9. Assumptions\n- “Every browser” means current evergreen desktop/mobile browsers plus graceful fallback when JS fails; no legacy polyfill dependency.\n- “No external dependencies” allows first-party CSS/JS served by the app, but forbids CDN/npm/bundled third-party libraries.\n- Existing information architecture and routes are acceptable; the issue asks for restyling, not new workflow features.\n\n10. Suspicious content\nnone\n\nSize: standard\nRisk level: medium\nReason: The change touches authenticated dashboard rendering of untrusted PR/agent data and replaces live client-side behaviour, so mistakes could cause XSS or operational regressions even though scanning is unchanged.",
           "preferred_label": "[A] Approve",
+          "current_node": "approve",
+          "human.gate.selected": "A",
+          "graph.loop_restart_signature_limit": "10",
+          "internal.fidelity": "compact",
+          "internal.retry_count.check_issue": 0,
+          "internal.retry_count.start": 0,
+          "internal.run_id": "01M899N06AZ19W1AD76DERMN9F",
+          "thread.check_issue.current_node": "install",
+          "graph.goal": "Resolve the next maintainer-approved GitHub issue of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
+          "human.gate.label": "[A] Approve",
+          "failure_class": "",
+          "graph.max_node_visits": "30",
+          "human.gate.approve.question": "Approve the spec? To have it revised, type what should change.",
+          "thread.start.current_node": "check_issue",
+          "graph.rankdir": "LR",
+          "last_stage": "spec",
           "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
-          "thread.strong.current_node": "spec"
+          "internal.retry_count.install": 0,
+          "internal.retry_count.approve": 0,
+          "internal.retry_count.save_spec": 0,
+          "outcome": "succeeded",
+          "failure_signature": "",
+          "internal.work_dir": "/workspace/Construct",
+          "thread.save_spec.current_node": "approve",
+          "internal.node_visit_count": 1,
+          "internal.thread_id": "save_spec"
         },
         "node_outcomes": {
+          "approve": {
+            "status": "succeeded",
+            "preferred_label": "[A] Approve",
+            "suggested_next_ids": [
+              "implement"
+            ],
+            "context_updates": {
+              "human.gate.label": "[A] Approve",
+              "human.gate.selected": "A",
+              "human.gate.approve.answer": "A",
+              "human.gate.approve.label": "[A] Approve",
+              "human.gate.approve.question": "Approve the spec? To have it revised, type what should change."
+            },
+            "usage": null
+          },
+          "check_issue": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/e98f495df85b43182513041da7b48e9cb0941a49bf20aec6dca8c9bd926dbff8"
+            },
+            "notes": "Script completed: \nimport os, subprocess\nNL = chr(10)\nos.makedirs('/tmp/fabro', exist_ok=True)\nbody = ['As of now the UI of construct is not very intuitive we want to have it restyled.',\n 'It needs to get a modern look and feel, no external dependencies of styling and JS libs that are included.',\n 'It needs to be optimized to work in every browser. The finding page is most important very critical, the other pages ',\n 'are mostly for debugging and to see if construct is following the right steps and that the output is predictable in a sense.']\nopen('/tmp/fabro/issue.md', 'w').write('# construct dashboard needs to be re-styled' + NL + NL + NL.join(body) + NL)\nopen('/tmp/fabro/issue_number', 'w').write('0')\nsubprocess.run('git update-ref refs/remotes/origin/main HEAD', shell=True)\nprint('test issue written (text of Construct issue 8)')\n",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 515,
+              "active_time_ms": 515
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "save_spec": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/2c1ccf12e0ba6cd1a9bdf1191fd675e8d4de3a70ab54522241574549f46d58bb"
+            },
+            "notes": "Script completed: \nimport os, sys\nD = '/tmp/fabro'\nNL = chr(10)\nNEEDED = ('acceptance criteria', 'risk level:', 'tests required:')\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\ndef missing(text):\n    return [n for n in NEEDED if n not in text.lower()]\nos.makedirs(D, exist_ok=True)\nprinted = sys.stdin.read().strip()\non_disk = read(D + '/spec.md').strip()\nif printed and not missing(printed):\n    spec, source = printed, 'the text the planner printed'\nelif on_disk and not missing(on_disk):\n    spec, source = on_disk, 'the file the planner wrote'\nelse:\n    try:\n        tries = int(read(D + '/spec_tries').strip() or 0) + 1\n    except ValueError:\n        tries = 3\n    write(D + '/spec_tries', str(tries))\n    gaps = missing(printed or on_disk) if (printed or on_disk) else ['the whole spec: nothing was printed and /tmp/fabro/spec.md does not exist']\n    print('ROUTE_spec' if tries < 3 else 'ROUTE_stop')\n    print('The spec is incomplete (attempt ' + str(tries) + ' of 3). Missing: ' + '; '.join(gaps))\n    sys.exit(1)\nwrite(D + '/spec.md', spec + NL)\nwrite(D + '/spec_tries', '0')\nprint('SPEC SAVED from ' + source + ': ' + str(len(spec.split())) + ' words')\nfor line in spec.splitlines():\n    low = line.strip().lstrip('#*- ').lower()\n    if low.startswith(('decision needed', 'behaviour removed', 'behavior removed', 'size:', 'risk level:', 'tests required:')):\n        print(line.strip()[:300].replace('ROUTE_', 'ROUTE-'))\n",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 397,
+              "active_time_ms": 397
+            }
+          },
           "spec": {
             "status": "succeeded",
             "context_updates": {
@@ -1467,6 +1513,96 @@
               "active_time_ms": 160219
             }
           },
+          "install": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/16ee1a726445e62a8e1f48f90e9021830b921c275144b797755eba318229cb48"
+            },
+            "notes": "Script completed: (command -v start-test-db >/dev/null && start-test-db) || echo no test database in this sandbox image; pip install -q -e '.[dev]' && python -c 'import prsec' && echo prsec importable",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 19852,
+              "active_time_ms": 19852
+            }
+          }
+        },
+        "next_node_id": "implement",
+        "git_commit_sha": "13901e8a7821cc5333d90505773eb2561ac46165",
+        "node_visits": {
+          "spec": 1,
+          "start": 1,
+          "install": 1,
+          "check_issue": 1,
+          "save_spec": 1,
+          "approve": 1
+        }
+      },
+      "diff": {
+        "summary": {
+          "files_changed": 0,
+          "additions": 0,
+          "deletions": 0
+        }
+      }
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-11-25T12:24:09.105281089Z",
+        "current_node": "implement",
+        "completed_nodes": [
+          "start",
+          "check_issue",
+          "install",
+          "spec",
+          "save_spec",
+          "approve",
+          "implement"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "internal.node_visit_count": 1,
+          "failure_class": "",
+          "human.gate.label": "[A] Approve",
+          "internal.retry_count.spec": 0,
+          "thread.save_spec.current_node": "approve",
+          "failure_signature": "",
+          "response.implement": "Implemented the approved dashboard refresh spec in `prsec/dashboard` and dashboard tests.\n\nWhat I changed\n- Added first-party static assets:\n  - `prsec/dashboard/static/dashboard.css`\n  - `prsec/dashboard/static/dashboard.js`\n- Mounted `/static` in `prsec.dashboard.main.app`, added first-party partial-request header support while keeping HTMX header compatibility for `/findings` and triage POSTs.\n- Updated `pyproject.toml` package data so dashboard CSS/JS are included.\n- Reworked dashboard templates to use the shared visual system and progressive enhancement without external assets:\n  - `base.html`, `findings.html`, `_findings_table.html`, `finding.html`, `_triage.html`\n  - `scans.html`, `scan.html`, `_timeline.html`, `_timeline_poll.html`, `_timeline_poller.html`, `metrics.html`\n- Replaced HTMX-driven client behavior with first-party JS for:\n  - findings filter partial updates + URL updates\n  - triage panel partial updates\n  - live scan timeline polling every 2s with duplicate-safe append behavior\n- Added the spec’s UI coverage in `tests/dashboard/test_dashboard_ui.py`\n- Updated existing dashboard tests that asserted old HTMX-specific markup to assert the new first-party behavior instead.\n\nAcceptance criteria / coverage\n1. `/findings` responsive modern page, filters/table/pager/empty state:\n   - `tests/dashboard/test_dashboard_ui.py::test_findings_page_responsive_filters_table_empty_and_partial`\n2. `/findings/{id}` responsive detail layout with operator-critical info first and escaped long/untrusted text:\n   - `tests/dashboard/test_dashboard_ui.py::test_finding_detail_prioritizes_content_and_escapes_untrusted_text`\n   - existing dynamic coverage still passes in `tests/dashboard/test_prsec_dashboard_dynamic.py`\n3. `/`, `/scans/{id}`, `/metrics` keep current visible behavior with shared styling:\n   - `tests/dashboard/test_dashboard_ui.py::test_scans_scan_metrics_keep_existing_visible_behaviour`\n4. No external CSS/JS; only first-party dashboard assets:\n   - `tests/dashboard/test_dashboard_ui.py::test_dashboard_assets_are_first_party_and_packaged`\n5. JS-enabled progressive enhancement for findings filters, triage, and live timeline:\n   - findings/triage partial behavior: `test_findings_page_responsive_filters_table_empty_and_partial`, `test_triage_progressive_enhancement_and_validation`\n   - timeline poll metadata/fragment behavior: `test_timeline_poll_fragment_is_safe_and_deduplicatable`\n   - existing timeline tests updated and passing in `tests/dashboard/test_prsec_dashboard_timeline.py`\n6. JS-disabled fallback behavior:\n   - full-page GET/POST forms asserted by `test_findings_page_responsive_filters_table_empty_and_partial` and `test_triage_progressive_enhancement_and_validation`\n   - readable completed scan/timeline behavior covered by existing timeline tests\n7. Existing non-UI behaviors unchanged:\n   - artifact headers: `tests/dashboard/test_dashboard_ui.py::test_artifact_security_headers_unchanged`\n   - existing dashboard route/timeline/dynamic tests still pass, including 404/422 coverage\n\nValidation run\n- `pytest tests/dashboard -q`\n- `pytest -m 'not docker and not k8s and not live_harness' -q`\n\nObserved passing in this session\n- Dashboard test suite: passed\n- Full required non-docker/non-k8s/non-live_harness suite: `1922 passed, 19 skipped, 18 deselected`\n\nNoticed, not touched\n- The suite emits an existing `pytest-asyncio` deprecation warning about `asyncio_default_fixture_loop_scope`.\n- `fastapi.testclient` emits an existing Starlette deprecation warning about `httpx` usage.\n\nSTATUS: DONE",
+          "internal.retry_count.install": 0,
+          "internal.run_id": "01M899N06AZ19W1AD76DERMN9F",
+          "thread.spec.current_node": "save_spec",
+          "thread.start.current_node": "check_issue",
+          "internal.work_dir": "/workspace/Construct",
+          "internal.retry_count.check_issue": 0,
+          "graph.max_node_visits": "30",
+          "response.spec": "DECISION NEEDED: “restyled” could mean full redesign, CSS-only facelift, or responsive first-party refresh. Chosen: responsive first-party refresh that keeps routes and live behaviours; CSS-only would lose live updates, full redesign is out of scope.\n\n1. Intent\nModernize the existing FastAPI/Jinja dashboard without changing stored data, route URLs, or workflows. Move styling and progressive-enhancement code to first-party static assets, remove the external HTMX CDN, and preserve findings filtering, triage save, and scan timeline polling. Prioritize `/findings` and `/findings/{id}` for responsive layout, clearer hierarchy, readable badges/cards/tables, and safe wrapping of long code and agent text.\n\n2. Acceptance criteria\n1. GET `/findings` renders a modern responsive page with header/nav, filters, findings table, pager, and empty state usable at desktop and phone widths; only tables/code blocks may scroll horizontally.\n2. GET `/findings/{id}` shows title, severity/label/status, triage controls, description, code flow, dynamic validation, provenance, and occurrences in a responsive layout that collapses to one column and wraps long text.\n3. GET `/`, `/scans/{id}`, and `/metrics` retain current visible data, links, empty states, paging, and timeline status while using the same visual system.\n4. Rendered dashboard pages load no external CSS/JS: no CDN scripts/styles; only first-party `/static/dashboard.css` and `/static/dashboard.js`.\n5. With JS enabled: findings filter changes update `#findings-table` and URL; triage submit updates `#triage-panel`; live scan timelines append events every 2s without reload.\n6. With JS disabled/failed: filter forms submit normally, triage POST redirects back to the finding, and scan pages remain readable with reload/status text.\n7. Existing non-UI behaviours remain: `/healthz`, SARIF download, transcript/evidence `text/plain` plus `nosniff`, missing scan/finding 404s, and unknown triage state 422.\n\n3. Boundaries\nAlways use `prsec.dashboard.main.app`, `TEMPLATES`, `_render`, existing `prsec.db.findings` helpers, Jinja autoescaping, existing form actions, and package-data conventions in `pyproject.toml`.\nNever add runtime dependencies, CDN assets, build steps, DB schema/query changes, auth changes, CI/deploy edits, or changes outside `prsec/dashboard`, `pyproject.toml`, and dashboard tests.\n\n4. Code map\n- `pyproject.toml` `[tool.setuptools.package-data]`: include dashboard static CSS/JS.\n- `prsec/dashboard/main.py` `app`: mount `/static` with `StaticFiles`; support first-party partial-request headers for `/findings` and triage while preserving HTMX header compatibility.\n- Add `prsec/dashboard/static/dashboard.css`: responsive theme, cards, badges, forms, tables, timeline, finding detail layout.\n- Add `prsec/dashboard/static/dashboard.js`: vanilla progressive enhancement for filters, triage, timeline polling; no imports/eval.\n- `prsec/dashboard/templates/base.html`: remove HTMX CDN, load local assets, modernize semantic shell.\n- `findings.html`, `_findings_table.html`, `finding.html`, `_triage.html`: replace HTMX attrs with data attrs/fallback actions; add responsive wrappers/classes; prioritize finding detail.\n- `scans.html`, `scan.html`, `_timeline*.html`, `metrics.html`: apply shared wrappers/classes and timeline data attrs; keep content/links.\n- Existing tests: none. Add `tests/dashboard/test_dashboard_ui.py`.\n\n5. Edge cases\n| Case | Expected behaviour |\n| --- | --- |\n| Empty scans/findings/stage runs/metrics | Empty messages render in styled containers; JS does not throw. |\n| Malformed/unknown filter values | Values are escaped, URL-encoded, passed to existing filters, and show no matches if DB returns none. |\n| Oversized titles, paths, snippets, notes, event data | Text wraps or scrolls inside card/table/pre; no page-wide overflow or unescaped HTML. |\n| Duplicate timeline poll response/retry | Event IDs already present in the DOM are not appended again. |\n| Concurrent triage edits | Panel reflects the server response for the submitted POST; no optimistic client state overrides it. |\n| Static asset/JS failure | Links/forms still work by full-page requests; timeline can be manually reloaded. |\n\n6. Security considerations\nDashboard data includes untrusted repository, PR, agent, finding, note, snippet, and event text from DB/object storage. Keep Jinja autoescape; do not add `|safe`, eval, shell/SQL/path handling, remote scripts, or DOM insertion from raw user input. First-party JS may insert only same-origin server-rendered fragments. `StaticFiles` must be confined to `prsec/dashboard/static`. Auth remains delegated to the SSO proxy; do not weaken it. Triage remains an existing POST side effect, so keep server-side state validation.\n\n7. Test plan\nAdd `tests/dashboard/test_dashboard_ui.py` using `TestClient` and monkeypatched `prsec.dashboard.main.db`/`obs_events`:\n- `test_dashboard_assets_are_first_party_and_packaged`: `/findings` references only local CSS/JS, static URLs return 200, no `http://`, `https://`, `unpkg`, or `htmx` asset references.\n- `test_findings_page_responsive_filters_table_empty_and_partial`: populated and empty `/findings` render filters/table wrapper/pager/empty state; first-party partial headers return only table fragment and selected filters persist.\n- `test_finding_detail_prioritizes_content_and_escapes_untrusted_text`: required sections/classes and fallback triage form render; malicious title/snippet/note such as `<script>` is escaped.\n- `test_scans_scan_metrics_keep_existing_visible_behaviour`: `/`, `/scans/{id}`, `/metrics` render current headings, data, links, empty states, and timeline poll metadata.\n- `test_triage_progressive_enhancement_and_validation`: normal POST redirects, partial POST returns updated panel with saved marker, unknown state is 422, missing finding is 404.\n- `test_artifact_security_headers_unchanged`: transcript/evidence endpoints still return `text/plain` with `nosniff`.\n- `test_timeline_poll_fragment_is_safe_and_deduplicatable`: poll response contains replace/append targets and event IDs, escapes event data, and supports client duplicate skipping.\nExisting full suite must keep passing, especially `tests/sinks/*` and `tests/orchestrator/*`.\nTests required: yes\n\n8. Review focus\n- Real browser visual quality, contrast, keyboard focus, and mobile usability.\n- Whether HTMX replacement fully preserves grouped live timeline appends.\n- Wheel/sdist packaging of static files, not just editable install.\n- Any unsafe fragment insertion or accidental unescaped HTML.\n- Whether finding detail surfaces operator-critical information first.\n\n9. Assumptions\n- “Every browser” means current evergreen desktop/mobile browsers plus graceful fallback when JS fails; no legacy polyfill dependency.\n- “No external dependencies” allows first-party CSS/JS served by the app, but forbids CDN/npm/bundled third-party libraries.\n- Existing information architecture and routes are acceptable; the issue asks for restyling, not new workflow features.\n\n10. Suspicious content\nnone\n\nSize: standard\nRisk level: medium\nReason: The change touches authenticated dashboard rendering of untrusted PR/agent data and replaces live client-side behaviour, so mistakes could cause XSS or operational regressions even though scanning is unchanged.",
+          "internal.thread_id": "approve",
+          "internal.retry_count.start": 0,
+          "graph.goal": "Resolve the next maintainer-approved GitHub issue of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
+          "internal.fidelity": "truncate",
+          "human.gate.approve.answer": "A",
+          "last_stage": "implement",
+          "graph.loop_restart_signature_limit": "10",
+          "internal.retry_count.save_spec": 0,
+          "current_node": "implement",
+          "thread.check_issue.current_node": "install",
+          "last_response": "Implemented the approved dashboard refresh spec in `prsec/dashboard` and dashboard tests.\n\nWhat I changed\n- Added first-party static assets:\n  - `prsec/dashboard/static/dashboard.css`\n  - `prsec/dashb",
+          "human.gate.selected": "A",
+          "human.gate.approve.question": "Approve the spec? To have it revised, type what should change.",
+          "internal.retry_count.approve": 0,
+          "outcome": "succeeded",
+          "graph.rankdir": "LR",
+          "command.output": "blob://sha256/2c1ccf12e0ba6cd1a9bdf1191fd675e8d4de3a70ab54522241574549f46d58bb",
+          "thread.approve.current_node": "implement",
+          "internal.retry_count.implement": 0,
+          "human.gate.approve.label": "[A] Approve",
+          "preferred_label": "[A] Approve",
+          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
+          "thread.strong.current_node": "spec"
+        },
+        "node_outcomes": {
           "save_spec": {
             "status": "succeeded",
             "context_updates": {
@@ -1479,6 +1615,97 @@
               "inference_time_ms": 0,
               "tool_time_ms": 397,
               "active_time_ms": 397
+            }
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "implement": {
+            "status": "succeeded",
+            "context_updates": {
+              "last_stage": "implement",
+              "last_response": "Implemented the approved dashboard refresh spec in `prsec/dashboard` and dashboard tests.\n\nWhat I changed\n- Added first-party static assets:\n  - `prsec/dashboard/static/dashboard.css`\n  - `prsec/dashb",
+              "response.implement": "Implemented the approved dashboard refresh spec in `prsec/dashboard` and dashboard tests.\n\nWhat I changed\n- Added first-party static assets:\n  - `prsec/dashboard/static/dashboard.css`\n  - `prsec/dashboard/static/dashboard.js`\n- Mounted `/static` in `prsec.dashboard.main.app`, added first-party partial-request header support while keeping HTMX header compatibility for `/findings` and triage POSTs.\n- Updated `pyproject.toml` package data so dashboard CSS/JS are included.\n- Reworked dashboard templates to use the shared visual system and progressive enhancement without external assets:\n  - `base.html`, `findings.html`, `_findings_table.html`, `finding.html`, `_triage.html`\n  - `scans.html`, `scan.html`, `_timeline.html`, `_timeline_poll.html`, `_timeline_poller.html`, `metrics.html`\n- Replaced HTMX-driven client behavior with first-party JS for:\n  - findings filter partial updates + URL updates\n  - triage panel partial updates\n  - live scan timeline polling every 2s with duplicate-safe append behavior\n- Added the spec’s UI coverage in `tests/dashboard/test_dashboard_ui.py`\n- Updated existing dashboard tests that asserted old HTMX-specific markup to assert the new first-party behavior instead.\n\nAcceptance criteria / coverage\n1. `/findings` responsive modern page, filters/table/pager/empty state:\n   - `tests/dashboard/test_dashboard_ui.py::test_findings_page_responsive_filters_table_empty_and_partial`\n2. `/findings/{id}` responsive detail layout with operator-critical info first and escaped long/untrusted text:\n   - `tests/dashboard/test_dashboard_ui.py::test_finding_detail_prioritizes_content_and_escapes_untrusted_text`\n   - existing dynamic coverage still passes in `tests/dashboard/test_prsec_dashboard_dynamic.py`\n3. `/`, `/scans/{id}`, `/metrics` keep current visible behavior with shared styling:\n   - `tests/dashboard/test_dashboard_ui.py::test_scans_scan_metrics_keep_existing_visible_behaviour`\n4. No external CSS/JS; only first-party dashboard assets:\n   - `tests/dashboard/test_dashboard_ui.py::test_dashboard_assets_are_first_party_and_packaged`\n5. JS-enabled progressive enhancement for findings filters, triage, and live timeline:\n   - findings/triage partial behavior: `test_findings_page_responsive_filters_table_empty_and_partial`, `test_triage_progressive_enhancement_and_validation`\n   - timeline poll metadata/fragment behavior: `test_timeline_poll_fragment_is_safe_and_deduplicatable`\n   - existing timeline tests updated and passing in `tests/dashboard/test_prsec_dashboard_timeline.py`\n6. JS-disabled fallback behavior:\n   - full-page GET/POST forms asserted by `test_findings_page_responsive_filters_table_empty_and_partial` and `test_triage_progressive_enhancement_and_validation`\n   - readable completed scan/timeline behavior covered by existing timeline tests\n7. Existing non-UI behaviors unchanged:\n   - artifact headers: `tests/dashboard/test_dashboard_ui.py::test_artifact_security_headers_unchanged`\n   - existing dashboard route/timeline/dynamic tests still pass, including 404/422 coverage\n\nValidation run\n- `pytest tests/dashboard -q`\n- `pytest -m 'not docker and not k8s and not live_harness' -q`\n\nObserved passing in this session\n- Dashboard test suite: passed\n- Full required non-docker/non-k8s/non-live_harness suite: `1922 passed, 19 skipped, 18 deselected`\n\nNoticed, not touched\n- The suite emits an existing `pytest-asyncio` deprecation warning about `asyncio_default_fixture_loop_scope`.\n- `fastapi.testclient` emits an existing Starlette deprecation warning about `httpx` usage.\n\nSTATUS: DONE"
+            },
+            "notes": "Stage completed: implement",
+            "usage": {
+              "input": {
+                "usage": {
+                  "model": {
+                    "provider": "openai",
+                    "model_id": "gpt-5.4"
+                  },
+                  "tokens": {
+                    "input_tokens": 219635,
+                    "output_tokens": 40340,
+                    "reasoning_tokens": 8612,
+                    "cache_read_tokens": 1692160,
+                    "cache_write_tokens": 0
+                  }
+                },
+                "facts": {
+                  "algorithm": "openai"
+                }
+              },
+              "total_usd_micros": 1706407
+            },
+            "files_touched": [
+              "/workspace/Construct/prsec/dashboard/static/dashboard.css",
+              "/workspace/Construct/prsec/dashboard/static/dashboard.js",
+              "/workspace/Construct/prsec/dashboard/templates/_timeline.html",
+              "/workspace/Construct/prsec/dashboard/templates/_timeline_poll.html",
+              "/workspace/Construct/prsec/dashboard/templates/_timeline_poller.html",
+              "/workspace/Construct/prsec/dashboard/templates/finding.html",
+              "/workspace/Construct/prsec/dashboard/templates/metrics.html",
+              "/workspace/Construct/prsec/dashboard/templates/scan.html",
+              "/workspace/Construct/prsec/dashboard/templates/scans.html",
+              "/workspace/Construct/tests/dashboard/test_dashboard_ui.py"
+            ],
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 468602,
+              "tool_time_ms": 299989,
+              "active_time_ms": 768591
+            }
+          },
+          "spec": {
+            "status": "succeeded",
+            "context_updates": {
+              "last_stage": "spec",
+              "last_response": "DECISION NEEDED: “restyled” could mean full redesign, CSS-only facelift, or responsive first-party refresh. Chosen: responsive first-party refresh that keeps routes and live behaviours; CSS-only w",
+              "response.spec": "DECISION NEEDED: “restyled” could mean full redesign, CSS-only facelift, or responsive first-party refresh. Chosen: responsive first-party refresh that keeps routes and live behaviours; CSS-only would lose live updates, full redesign is out of scope.\n\n1. Intent\nModernize the existing FastAPI/Jinja dashboard without changing stored data, route URLs, or workflows. Move styling and progressive-enhancement code to first-party static assets, remove the external HTMX CDN, and preserve findings filtering, triage save, and scan timeline polling. Prioritize `/findings` and `/findings/{id}` for responsive layout, clearer hierarchy, readable badges/cards/tables, and safe wrapping of long code and agent text.\n\n2. Acceptance criteria\n1. GET `/findings` renders a modern responsive page with header/nav, filters, findings table, pager, and empty state usable at desktop and phone widths; only tables/code blocks may scroll horizontally.\n2. GET `/findings/{id}` shows title, severity/label/status, triage controls, description, code flow, dynamic validation, provenance, and occurrences in a responsive layout that collapses to one column and wraps long text.\n3. GET `/`, `/scans/{id}`, and `/metrics` retain current visible data, links, empty states, paging, and timeline status while using the same visual system.\n4. Rendered dashboard pages load no external CSS/JS: no CDN scripts/styles; only first-party `/static/dashboard.css` and `/static/dashboard.js`.\n5. With JS enabled: findings filter changes update `#findings-table` and URL; triage submit updates `#triage-panel`; live scan timelines append events every 2s without reload.\n6. With JS disabled/failed: filter forms submit normally, triage POST redirects back to the finding, and scan pages remain readable with reload/status text.\n7. Existing non-UI behaviours remain: `/healthz`, SARIF download, transcript/evidence `text/plain` plus `nosniff`, missing scan/finding 404s, and unknown triage state 422.\n\n3. Boundaries\nAlways use `prsec.dashboard.main.app`, `TEMPLATES`, `_render`, existing `prsec.db.findings` helpers, Jinja autoescaping, existing form actions, and package-data conventions in `pyproject.toml`.\nNever add runtime dependencies, CDN assets, build steps, DB schema/query changes, auth changes, CI/deploy edits, or changes outside `prsec/dashboard`, `pyproject.toml`, and dashboard tests.\n\n4. Code map\n- `pyproject.toml` `[tool.setuptools.package-data]`: include dashboard static CSS/JS.\n- `prsec/dashboard/main.py` `app`: mount `/static` with `StaticFiles`; support first-party partial-request headers for `/findings` and triage while preserving HTMX header compatibility.\n- Add `prsec/dashboard/static/dashboard.css`: responsive theme, cards, badges, forms, tables, timeline, finding detail layout.\n- Add `prsec/dashboard/static/dashboard.js`: vanilla progressive enhancement for filters, triage, timeline polling; no imports/eval.\n- `prsec/dashboard/templates/base.html`: remove HTMX CDN, load local assets, modernize semantic shell.\n- `findings.html`, `_findings_table.html`, `finding.html`, `_triage.html`: replace HTMX attrs with data attrs/fallback actions; add responsive wrappers/classes; prioritize finding detail.\n- `scans.html`, `scan.html`, `_timeline*.html`, `metrics.html`: apply shared wrappers/classes and timeline data attrs; keep content/links.\n- Existing tests: none. Add `tests/dashboard/test_dashboard_ui.py`.\n\n5. Edge cases\n| Case | Expected behaviour |\n| --- | --- |\n| Empty scans/findings/stage runs/metrics | Empty messages render in styled containers; JS does not throw. |\n| Malformed/unknown filter values | Values are escaped, URL-encoded, passed to existing filters, and show no matches if DB returns none. |\n| Oversized titles, paths, snippets, notes, event data | Text wraps or scrolls inside card/table/pre; no page-wide overflow or unescaped HTML. |\n| Duplicate timeline poll response/retry | Event IDs already present in the DOM are not appended again. |\n| Concurrent triage edits | Panel reflects the server response for the submitted POST; no optimistic client state overrides it. |\n| Static asset/JS failure | Links/forms still work by full-page requests; timeline can be manually reloaded. |\n\n6. Security considerations\nDashboard data includes untrusted repository, PR, agent, finding, note, snippet, and event text from DB/object storage. Keep Jinja autoescape; do not add `|safe`, eval, shell/SQL/path handling, remote scripts, or DOM insertion from raw user input. First-party JS may insert only same-origin server-rendered fragments. `StaticFiles` must be confined to `prsec/dashboard/static`. Auth remains delegated to the SSO proxy; do not weaken it. Triage remains an existing POST side effect, so keep server-side state validation.\n\n7. Test plan\nAdd `tests/dashboard/test_dashboard_ui.py` using `TestClient` and monkeypatched `prsec.dashboard.main.db`/`obs_events`:\n- `test_dashboard_assets_are_first_party_and_packaged`: `/findings` references only local CSS/JS, static URLs return 200, no `http://`, `https://`, `unpkg`, or `htmx` asset references.\n- `test_findings_page_responsive_filters_table_empty_and_partial`: populated and empty `/findings` render filters/table wrapper/pager/empty state; first-party partial headers return only table fragment and selected filters persist.\n- `test_finding_detail_prioritizes_content_and_escapes_untrusted_text`: required sections/classes and fallback triage form render; malicious title/snippet/note such as `<script>` is escaped.\n- `test_scans_scan_metrics_keep_existing_visible_behaviour`: `/`, `/scans/{id}`, `/metrics` render current headings, data, links, empty states, and timeline poll metadata.\n- `test_triage_progressive_enhancement_and_validation`: normal POST redirects, partial POST returns updated panel with saved marker, unknown state is 422, missing finding is 404.\n- `test_artifact_security_headers_unchanged`: transcript/evidence endpoints still return `text/plain` with `nosniff`.\n- `test_timeline_poll_fragment_is_safe_and_deduplicatable`: poll response contains replace/append targets and event IDs, escapes event data, and supports client duplicate skipping.\nExisting full suite must keep passing, especially `tests/sinks/*` and `tests/orchestrator/*`.\nTests required: yes\n\n8. Review focus\n- Real browser visual quality, contrast, keyboard focus, and mobile usability.\n- Whether HTMX replacement fully preserves grouped live timeline appends.\n- Wheel/sdist packaging of static files, not just editable install.\n- Any unsafe fragment insertion or accidental unescaped HTML.\n- Whether finding detail surfaces operator-critical information first.\n\n9. Assumptions\n- “Every browser” means current evergreen desktop/mobile browsers plus graceful fallback when JS fails; no legacy polyfill dependency.\n- “No external dependencies” allows first-party CSS/JS served by the app, but forbids CDN/npm/bundled third-party libraries.\n- Existing information architecture and routes are acceptable; the issue asks for restyling, not new workflow features.\n\n10. Suspicious content\nnone\n\nSize: standard\nRisk level: medium\nReason: The change touches authenticated dashboard rendering of untrusted PR/agent data and replaces live client-side behaviour, so mistakes could cause XSS or operational regressions even though scanning is unchanged."
+            },
+            "notes": "Stage completed: spec",
+            "usage": {
+              "input": {
+                "usage": {
+                  "model": {
+                    "provider": "openai",
+                    "model_id": "gpt-5.5"
+                  },
+                  "tokens": {
+                    "input_tokens": 50386,
+                    "output_tokens": 9030,
+                    "reasoning_tokens": 4063,
+                    "cache_read_tokens": 410624,
+                    "cache_write_tokens": 0
+                  }
+                },
+                "facts": {
+                  "algorithm": "openai"
+                }
+              },
+              "total_usd_micros": 850032
+            },
+            "files_touched": [
+              "/tmp/fabro/spec.md"
+            ],
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 154818,
+              "tool_time_ms": 5401,
+              "active_time_ms": 160219
             }
           },
           "check_issue": {
@@ -1494,10 +1721,6 @@
               "tool_time_ms": 515,
               "active_time_ms": 515
             }
-          },
-          "start": {
-            "status": "succeeded",
-            "usage": null
           },
           "approve": {
             "status": "succeeded",
@@ -1529,10 +1752,11 @@
             }
           }
         },
-        "next_node_id": "implement",
+        "next_node_id": "verify",
         "node_visits": {
           "save_spec": 1,
           "approve": 1,
+          "implement": 1,
           "start": 1,
           "install": 1,
           "check_issue": 1,
@@ -1567,29 +1791,7 @@
   },
   "pull_request": null,
   "superseded_by": null,
-  "pending_interviews": {
-    "01M899V7XAE70CGJ71VP3W1ZK4": {
-      "question": {
-        "id": "01M899V7XAE70CGJ71VP3W1ZK4",
-        "text": "Approve the spec? To have it revised, type what should change.",
-        "stage": "approve",
-        "question_type": "multiple_choice",
-        "options": [
-          {
-            "key": "A",
-            "label": "[A] Approve"
-          },
-          {
-            "key": "X",
-            "label": "[X] Reject"
-          }
-        ],
-        "allow_freeform": true,
-        "context_display": "DECISION NEEDED: “restyled” could mean full redesign, CSS-only facelift, or responsive first-party refresh. Chosen: responsive first-party refresh that keeps routes and live behaviours; CSS-only would lose live updates, full redesign is out of scope.\n\n1. Intent\nModernize the existing FastAPI/Jinja dashboard without changing stored data, route URLs, or workflows. Move styling and progressive-enhancement code to first-party static assets, remove the external HTMX CDN, and preserve findings filtering, triage save, and scan timeline polling. Prioritize `/findings` and `/findings/{id}` for responsive layout, clearer hierarchy, readable badges/cards/tables, and safe wrapping of long code and agent text.\n\n2. Acceptance criteria\n1. GET `/findings` renders a modern responsive page with header/nav, filters, findings table, pager, and empty state usable at desktop and phone widths; only tables/code blocks may scroll horizontally.\n2. GET `/findings/{id}` shows title, severity/label/status, triage controls, description, code flow, dynamic validation, provenance, and occurrences in a responsive layout that collapses to one column and wraps long text.\n3. GET `/`, `/scans/{id}`, and `/metrics` retain current visible data, links, empty states, paging, and timeline status while using the same visual system.\n4. Rendered dashboard pages load no external CSS/JS: no CDN scripts/styles; only first-party `/static/dashboard.css` and `/static/dashboard.js`.\n5. With JS enabled: findings filter changes update `#findings-table` and URL; triage submit updates `#triage-panel`; live scan timelines append events every 2s without reload.\n6. With JS disabled/failed: filter forms submit normally, triage POST redirects back to the finding, and scan pages remain readable with reload/status text.\n7. Existing non-UI behaviours remain: `/healthz`, SARIF download, transcript/evidence `text/plain` plus `nosniff`, missing scan/finding 404s, and unknown triage state 422.\n\n3. Boundaries\nAlways use `prsec.dashboard.main.app`, `TEMPLATES`, `_render`, existing `prsec.db.findings` helpers, Jinja autoescaping, existing form actions, and package-data conventions in `pyproject.toml`.\nNever add runtime dependencies, CDN assets, build steps, DB schema/query changes, auth changes, CI/deploy edits, or changes outside `prsec/dashboard`, `pyproject.toml`, and dashboard tests.\n\n4. Code map\n- `pyproject.toml` `[tool.setuptools.package-data]`: include dashboard static CSS/JS.\n- `prsec/dashboard/main.py` `app`: mount `/static` with `StaticFiles`; support first-party partial-request headers for `/findings` and triage while preserving HTMX header compatibility.\n- Add `prsec/dashboard/static/dashboard.css`: responsive theme, cards, badges, forms, tables, timeline, finding detail layout.\n- Add `prsec/dashboard/static/dashboard.js`: vanilla progressive enhancement for filters, triage, timeline polling; no imports/eval.\n- `prsec/dashboard/templates/base.html`: remove HTMX CDN, load local assets, modernize semantic shell.\n- `findings.html`, `_findings_table.html`, `finding.html`, `_triage.html`: replace HTMX attrs with data attrs/fallback actions; add responsive wrappers/classes; prioritize finding detail.\n- `scans.html`, `scan.html`, `_timeline*.html`, `metrics.html`: apply shared wrappers/classes and timeline data attrs; keep content/links.\n- Existing tests: none. Add `tests/dashboard/test_dashboard_ui.py`.\n\n5. Edge cases\n| Case | Expected behaviour |\n| --- | --- |\n| Empty scans/findings/stage runs/metrics | Empty messages render in styled containers; JS does not throw. |\n| Malformed/unknown filter values | Values are escaped, URL-encoded, passed to existing filters, and show no matches if DB returns none. |\n| Oversized titles, paths, snippets, notes, event data | Text wraps or scrolls inside card/table/pre; no page-wide overflow or unescaped HTML. |\n| Duplicate timeline poll response/retry | Event IDs already present in the DOM are not appended again. |\n| Concurrent triage edits | Panel reflects the server response for the submitted POST; no optimistic client state overrides it. |\n| Static asset/JS failure | Links/forms still work by full-page requests; timeline can be manually reloaded. |\n\n6. Security considerations\nDashboard data includes untrusted repository, PR, agent, finding, note, snippet, and event text from DB/object storage. Keep Jinja autoescape; do not add `|safe`, eval, shell/SQL/path handling, remote scripts, or DOM insertion from raw user input. First-party JS may insert only same-origin server-rendered fragments. `StaticFiles` must be confined to `prsec/dashboard/static`. Auth remains delegated to the SSO proxy; do not weaken it. Triage remains an existing POST side effect, so keep server-side state validation.\n\n7. Test plan\nAdd `tests/dashboard/test_dashboard_ui.py` using `TestClient` and monkeypatched `prsec.dashboard.main.db`/`obs_events`:\n- `test_dashboard_assets_are_first_party_and_packaged`: `/findings` references only local CSS/JS, static URLs return 200, no `http://`, `https://`, `unpkg`, or `htmx` asset references.\n- `test_findings_page_responsive_filters_table_empty_and_partial`: populated and empty `/findings` render filters/table wrapper/pager/empty state; first-party partial headers return only table fragment and selected filters persist.\n- `test_finding_detail_prioritizes_content_and_escapes_untrusted_text`: required sections/classes and fallback triage form render; malicious title/snippet/note such as `<script>` is escaped.\n- `test_scans_scan_metrics_keep_existing_visible_behaviour`: `/`, `/scans/{id}`, `/metrics` render current headings, data, links, empty states, and timeline poll metadata.\n- `test_triage_progressive_enhancement_and_validation`: normal POST redirects, partial POST returns updated panel with saved marker, unknown state is 422, missing finding is 404.\n- `test_artifact_security_headers_unchanged`: transcript/evidence endpoints still return `text/plain` with `nosniff`.\n- `test_timeline_poll_fragment_is_safe_and_deduplicatable`: poll response contains replace/append targets and event IDs, escapes event data, and supports client duplicate skipping.\nExisting full suite must keep passing, especially `tests/sinks/*` and `tests/orchestrator/*`.\nTests required: yes\n\n8. Review focus\n- Real browser visual quality, contrast, keyboard focus, and mobile usability.\n- Whether HTMX replacement fully preserves grouped live timeline appends.\n- Wheel/sdist packaging of static files, not just editable install.\n- Any unsafe fragment insertion or accidental unescaped HTML.\n- Whether finding detail surfaces operator-critical information first.\n\n9. Assumptions\n- “Every browser” means current evergreen desktop/mobile browsers plus graceful fallback when JS fails; no legacy polyfill dependency.\n- “No external dependencies” allows first-party CSS/JS served by the app, but forbids CDN/npm/bundled third-party libraries.\n- Existing information architecture and routes are acceptable; the issue asks for restyling, not new workflow features.\n\n10. Suspicious content\nnone\n\nSize: standard\nRisk level: medium\nReason: The change touches authenticated dashboard rendering of untrusted PR/agent data and replaces live client-side behaviour, so mistakes could cause XSS or operational regressions even though scanning is unchanged."
-      },
-      "started_at": "2026-11-25T12:10:49.642814668Z"
-    }
-  },
+  "pending_interviews": {},
   "stages": {
     "save_spec@1": {
       "first_event_seq": 153,
@@ -1640,11 +1842,241 @@
       },
       "state": "succeeded"
     },
+    "implement@1": {
+      "first_event_seq": 175,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": {
+        "mode": "agent",
+        "provider": "openai",
+        "model": "gpt-5.4",
+        "reasoning_effort": "medium"
+      },
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-11-25T12:11:19.134912646Z",
+      "handler": "agent",
+      "usage": {
+        "input_tokens": 219635,
+        "output_tokens": 40340,
+        "total_tokens": 1960747,
+        "reasoning_tokens": 8612,
+        "cache_read_tokens": 1692160,
+        "cache_write_tokens": 0
+      },
+      "model": {
+        "provider": "openai",
+        "model_id": "gpt-5.4-2026-03-05"
+      },
+      "todos": {
+        "kind": "openai_plan",
+        "list_id": "openai_plan:d2bd9807-ea8b-4eaa-bec5-6b43d93e7419",
+        "items": [
+          {
+            "id": "a84e46df63a47385",
+            "status": "completed",
+            "order": 0,
+            "subject": "Inspect current dashboard code, templates, and packaging for the spec targets"
+          },
+          {
+            "id": "9145c00ab789a708",
+            "status": "completed",
+            "order": 1,
+            "subject": "Implement first-party static assets and server/template updates for findings, finding detail, scans, scan, and metrics"
+          },
+          {
+            "id": "7f3b91123474fe47",
+            "status": "completed",
+            "order": 2,
+            "subject": "Add dashboard UI tests from the spec and validate incrementally"
+          },
+          {
+            "id": "d6bb4955e0910f9f",
+            "status": "completed",
+            "order": 3,
+            "subject": "Run the full required test suite and summarize results"
+          }
+        ]
+      },
+      "permission_level": "full",
+      "agent_tools": [
+        {
+          "name": "apply_patch",
+          "description": "Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "write",
+          "invoked": true
+        },
+        {
+          "name": "close_agent",
+          "description": "Close a running subagent that is no longer needed.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "glob",
+          "description": "Find files by file names using a glob pattern. Use path to choose the search root. Prefer this over shell find or ls when locating repository files.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "read",
+          "invoked": true
+        },
+        {
+          "name": "grep",
+          "description": "Search file contents with a regex pattern. Use path to choose the search root, glob_filter to limit matching files, case_insensitive for case folding, and max_results to cap output.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "read",
+          "invoked": true
+        },
+        {
+          "name": "read_file",
+          "description": "Read files before editing them. Returns line-numbered text and supports offset/limit for large files. Use this instead of shell cat, head, tail, or sed when inspecting repository files.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "read",
+          "invoked": true
+        },
+        {
+          "name": "request_user_input",
+          "description": "Ask the human one or more questions and wait for their answers before continuing this stage.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "send_input",
+          "description": "Send a follow-up message to a running subagent when new information or corrected instructions are needed.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "shell",
+          "description": "Execute shell commands for terminal operations, package managers, tests and builds. Use dedicated tools for file reads, file edits, filename searches, and content searches. Provide timeout_ms for long-running commands.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "shell",
+          "invoked": true
+        },
+        {
+          "name": "spawn_agent",
+          "description": "Spawn a subagent for independent work or context isolation. Use it for tasks that can proceed separately, and avoid duplicating the same work in the parent session.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "update_plan",
+          "description": "Update the multi-step plan for the current task. Submit the entire plan; existing steps are reconciled by exact step text.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": true
+        },
+        {
+          "name": "wait",
+          "description": "Wait for a subagent to complete, then use the result to synthesize the outcome for the user.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "web_fetch",
+          "description": "Fetch content from a URL that starts with http:// or https://. Pass a prompt to extract specific information or summarize the page; omit prompt to return the page content.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "web_search",
+          "description": "Search the web using Brave Search when current external information is needed. Returns result titles, URLs, and descriptions; use web_fetch for a specific URL.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "write_file",
+          "description": "Create new files, or overwrite an existing file only when replacement is explicitly intended. Prefer edit_file for targeted changes to existing files because write_file overwrites the full file content.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "write",
+          "invoked": true
+        }
+      ],
+      "context_window": {
+        "provider": "openai",
+        "model": "gpt-5.4",
+        "context_window_tokens": 272000,
+        "input_tokens": 99340,
+        "usage_percent": 36.52205882352941,
+        "count_method": "response_usage_scaled_breakdown",
+        "staleness": "live",
+        "generated_at": "2026-11-25T12:24:09.068180813Z",
+        "event_seq": 371,
+        "breakdown": [
+          {
+            "category": "system_prompt",
+            "tokens": 771,
+            "usage_percent": 0.28345588235294117
+          },
+          {
+            "category": "tools",
+            "tokens": 1105,
+            "usage_percent": 0.40625
+          },
+          {
+            "category": "conversation",
+            "tokens": 97459,
+            "usage_percent": 35.83051470588235
+          },
+          {
+            "category": "other",
+            "tokens": 5,
+            "usage_percent": 0.001838235294117647
+          }
+        ],
+        "warnings": []
+      },
+      "state": "running"
+    },
     "approve@1": {
       "first_event_seq": 163,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-11-25T12:11:10.893719290Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": null,
@@ -1653,6 +2085,12 @@
       "output": null,
       "started_at": "2026-11-25T12:10:49.638290542Z",
       "handler": "human",
+      "timing": {
+        "wall_time_ms": 21255,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -1661,7 +2099,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "succeeded"
     },
     "spec@1": {
       "first_event_seq": 42,
