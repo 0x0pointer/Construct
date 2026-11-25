@@ -1,50 +1,81 @@
 _version = 1
 
-# Issue -> spec -> human approval -> code -> checks -> independent review
-# -> draft PR, for Construct.
+# Issue -> spec -> human approval -> code -> checks -> one independent review
+# (standard or security) -> draft PR.
 #
-# Run one issue (from the repo root):
-#   fabro run .fabro/workflows/issue-to-pr/workflow.toml -I issue=<number>
-# Without -I issue, and when started by a Fabro automation (the Run button in
-# the web UI), the run picks the oldest approved issue not yet picked up.
+# Started by its Fabro automation (schedule or the Run button in the web UI) or:
+#   fabro run .fabro/workflows/issue-to-pr/workflow.toml [-I issue=<number>]
 #
-# No secrets belong in this file. Keys and tokens live in Fabro's vault
-# (`fabro secret set ...`), never in the repository.
+# The graph in workflow.fabro is the same in every repository that uses this
+# pipeline. Everything specific to this repository is set below.
+# No secrets belong in this file. Keys and tokens live in Fabro's vault.
 
 [workflow]
 graph = "workflow.fabro"
 
 [run.inputs]
-# Issue number to work on, passed with -I issue=<number>. "0" lets the run
-# pick the oldest open issue that carries approval_label and not
-# in_progress_label. Automations cannot pass inputs, so they always get "0".
+# Issue number to work on. "0" lets the run pick the oldest open issue that
+# carries approval_label and not in_progress_label. Automations cannot pass
+# inputs, so they always get "0".
 issue = "0"
 # Label a maintainer adds to release an issue to the pipeline.
 approval_label = "fabro-approved"
-# Label the run adds to the issue it accepts. A run that picks its own issue
-# skips issues carrying it; remove the label to have the issue built again.
+# Label the run adds to the issue it accepts. While any open issue carries
+# it, automation runs pick no other issue: one build at a time. The last step
+# of the run replaces it with built_label or failed_label. If a run was
+# killed and the label stayed behind, remove it by hand.
 in_progress_label = "fabro-in-progress"
+# How the run ended. Automation runs skip issues carrying either; remove the
+# label to have the issue built again.
+built_label = "fabro-built"
+failed_label = "fabro-failed"
 # GitHub logins allowed to release an issue (comma separated, no spaces).
 maintainers = "RiieCco,blabla1337,JorgeCarvalhoPT"
 
 # Retry budgets. When a budget is used up the run pauses and asks a human.
-# Failed verifications in a row that the cheap model may try to fix.
-max_cheap_fixes = "2"
+# Failed verifications in a row that go back to the implementer.
+first_fix_attempts = "2"
 # Failed verifications in a row before a human is asked (the strong model
-# handles the attempts after max_cheap_fixes).
-max_fix_attempts = "4"
-# Times the reviewer may reject the change before a human is asked.
+# handles the attempts after first_fix_attempts).
+max_fix_attempts = "3"
+# Times a reviewer may reject the change before a human is asked. The first
+# rejection goes back to the implementer, the next one to the strong model.
 max_review_rounds = "3"
 
-# Review depth. A change gets the cheaper reviewer only if it is at most this
-# many changed lines, the spec says "Risk level: low", and it touches none of
-# the paths below. Everything else goes to the strong reviewer.
-max_light_review_lines = "40"
-# Comma separated, no spaces. Matched as substrings of changed non-test paths.
+# Which reviewer. A change gets the security reviewer (strong model, Trail of
+# Bits differential-review skill in .fabro/skills/) if it touches one of the
+# sensitive paths (substrings of changed non-test paths), adds a risky
+# construct, has more changed lines than this, or the spec says
+# "Risk level: high". Everything else gets the standard reviewer, which can
+# still hand a change over to the security reviewer.
+max_standard_review_lines = "400"
 sensitive_paths = "auth,secret,token,crypt,password,sandbox,policy,gateway,egress,proxy,orchestrator,launcher,adapters,dynamic,prsec/api,prsec/db,config,Dockerfile,pyproject.toml,requirements"
+# Directory that holds the tests, or "none". Python code changes must come
+# with a change under it unless the spec says "Tests required: no".
+tests_dir = "tests/"
+
+# --- This repository --------------------------------------------------------
+repo_owner = "0x0pointer"
+repo_name = "Construct"
+# Shown to every agent as: the <owner>/<name> repository (<description>).
+repo_description = "Python 3.12 package `prsec`: the API in prsec/api/, the orchestrator and worker in prsec/orchestrator/, the sandbox tooling in prsec/sandbox/, the dashboard in prsec/dashboard/, scan-stage skills in prsec-skills/, tests in tests/"
+# Extra rule appended to the list of paths agents may not touch.
+repo_rules = "deploy/ holds the deployment manifests and is changed by maintainers only."
+# Shell commands. install_command also runs as the first step of every run
+# and again in the verify step, so it is also what starts the test database.
+# lint_command may be "none". Do not end a command with a quote character.
+install_command = "(command -v start-test-db >/dev/null && start-test-db) || echo no test database in this sandbox image; pip install -q -e '.[dev]' && python -c 'import prsec' && echo prsec importable"
+lint_command = "prsec-skills-lint prsec-skills"
+test_command = "pytest -m 'not docker and not k8s and not live_harness' -q"
+# Told to the agents: what can and cannot be run in the sandbox.
+test_notes = "The sandbox has a Postgres test database (PRSEC_TEST_DATABASE_URL is set), so tests marked db run here; run start-test-db if a connection is refused. Tests marked docker, k8s or live_harness cannot run here."
+# Paths a run may never change (comma separated, no spaces): prefixes and
+# exact file names. The verify step rejects the run if one of them changed.
+protected_prefixes = ".github/,.fabro/,deploy/,.env"
+protected_files = "LICENSE,sonar-project.properties"
 
 # Default model for any stage the stylesheet in workflow.fabro does not cover.
-# Per-stage models (strong / balanced / cheap) are set in that stylesheet.
+# Per-stage models (strong / balanced) are set in that stylesheet.
 [run.model]
 name = "gpt-5.4"
 

@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""Give Fabro runs a title that names the issue or pull request they work on.
+
+A run started from the web UI picks its issue (issue-to-pr) or pull request
+(fix-ci) in its first step, after Fabro has already titled the run. This
+watcher reads the first step's output and sets the title:
+
+  Construct #8: construct dashboard needs to be re-styled
+  Fix CI Construct: PR #11 (test)
+
+It serves every repository on the server that uses these two workflows; the
+title starts with the repository's name.
+
+It also tidies up after runs that found nothing to do, which matters once
+the automations run on a schedule: such a run is archived (hidden from the
+default run list) and its empty `fabro/run/<id>` branch is deleted on GitHub.
+Runs that picked an issue or pull request are never archived or pruned.
+
+  fabro-run-titles          keep watching (run it as a service)
+  fabro-run-titles --once   look once and exit
+
+Runs on the machine that hosts the Fabro server and talks to its local API
+with the server's dev token; branches are deleted over this machine's SSH key.
+State: ~/.fabro/run-titles.json (runs already handled).
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.request
+from datetime import datetime, timedelta, timezone
+
+SERVER = os.environ.get("FABRO_SERVER", "http://127.0.0.1:32276").rstrip("/") + "/api/v1"
+TOKEN_FILE = os.path.expanduser("~/.fabro/storage/server.dev-token")
+STATE = os.path.expanduser("~/.fabro/run-titles.json")
+# Workflow graph name -> the node whose output names what the run works on.
+FIRST_STEP = {"IssueToPR": "check_issue", "FixCI": "pick_pr"}
+MAX_TITLE = 100
+# Endings of the titles this script gives to runs that ended at the first step with no work.
+NOTHING_TO_DO = (": no approved issue is waiting", ": no pull request with failed checks", " to finish")
+TERMINAL = ("succeeded", "failed", "cancelled", "canceled", "dead")
+SCRATCH_REPO = os.path.expanduser("~/.fabro/run-titles.git")
+MAX_AGE = timedelta(days=2)
+
+
+def api(path, body=None, method=None):
+    with open(TOKEN_FILE) as f:
+        token = f.read().strip()
+    data = json.dumps(body).encode() if body is not None else None
+    headers = {"Authorization": "Bearer " + token, "Content-Type": "application/json"}
+    req = urllib.request.Request(SERVER + path, data=data, headers=headers, method=method)
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        content = resp.read()
+    return json.loads(content) if content else None
+
+
+def items(reply):
+    return reply.get("data", []) if isinstance(reply, dict) else (reply or [])
+
+
+def first_step_output(run_id, node):
+    """Output of the node's finished command, or None while it has not finished."""
+    for event in items(api(f"/runs/{run_id}/events?limit=200")):
+        if event.get("event") == "command.completed" and event.get("node_id") == node:
+            ref = str((event.get("properties") or {}).get("output") or "")
+            if not ref.startswith("blob://"):
+                return ref
+            text = api(f"/runs/{run_id}/blobs/{ref.rsplit('/', 1)[-1]}")
+            return text if isinstance(text, str) else json.dumps(text)
+    return None
+
+
+def clean(text):
+    return re.sub(r"\s+", " ", "".join(c for c in text if c.isprintable())).strip()
+
+
+def title_for(graph, output, repo):
+    """The title for a run, from its first step's output. None leaves it alone."""
+    if graph == "IssueToPR":
+        picked = re.search(r"^APPROVED: issue (\d+)\b", output, re.M)
+        if picked:
+            name = re.search(r"^title: (.*)$", output, re.M)
+            return f"{repo} #{picked.group(1)}: {clean(name.group(1)) if name else 'approved issue'}"
+        waiting = re.search(r"^WAITING: issue (\d+)\b", output, re.M)
+        if waiting:
+            return f"{repo}: waiting for issue #{waiting.group(1)} to finish"
+        if "NOTHING TO BUILD" in output:
+            return f"{repo}: no approved issue is waiting"
+        refused = re.search(r"^REFUSED: (.*)$", output, re.M)
+        if refused:
+            return f"{repo}: refused - " + clean(refused.group(1))
+    if graph == "FixCI":
+        picked = re.search(r"^PICKED: pull request (\d+)\b", output, re.M)
+        if picked:
+            checks = re.search(r"^failed checks: (.*)$", output, re.M)
+            return f"Fix CI {repo}: PR #{picked.group(1)}" + (f" ({clean(checks.group(1))})" if checks else "")
+        if "NOTHING TO FIX" in output:
+            return f"Fix CI {repo}: no pull request with failed checks"
+        refused = re.search(r"^REFUSED: (.*)$", output, re.M)
+        if refused:
+            return f"Fix CI {repo}: refused - " + clean(refused.group(1))
+    return None
+
+
+def tidy(run):
+    """Archive a finished run that had nothing to do and delete its empty branch."""
+    run_id = run["id"]
+    api(f"/runs/{run_id}/archive", method="POST")
+    slug = str((run.get("repository") or {}).get("name") or "")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", slug):
+        return "archived"
+    if not os.path.isdir(SCRATCH_REPO):
+        subprocess.run(["git", "init", "-q", "--bare", SCRATCH_REPO], check=True)
+    pushed = subprocess.run(
+        ["git", "-C", SCRATCH_REPO, "push", "-q", f"git@github.com:{slug}.git", "--delete", f"refs/heads/fabro/run/{run_id}"],
+        capture_output=True, text=True, timeout=60,
+        env=dict(os.environ, GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new"))
+    # A branch that is already gone is fine.
+    return "archived, branch deleted" if pushed.returncode == 0 else "archived"
+
+
+def load_state():
+    try:
+        with open(STATE) as f:
+            return json.load(f)
+    except (FileNotFoundError, ValueError):
+        return {}
+
+
+def save_state(state):
+    tmp = STATE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(state, f, indent=1, sort_keys=True)
+    os.replace(tmp, STATE)
+
+
+def sweep(state):
+    """Title every recent run that has finished its first step. Returns the number changed."""
+    changed = 0
+    cutoff = datetime.now(timezone.utc) - MAX_AGE
+    for run in items(api("/runs?page%5Blimit%5D=50")):
+        run_id = run.get("id")
+        graph = (run.get("workflow") or {}).get("graph_name")
+        status = ((run.get("lifecycle") or {}).get("status") or {}).get("kind")
+        if run_id and str(state.get(run_id, "")).endswith(NOTHING_TO_DO) and status in TERMINAL:
+            try:
+                state[run_id] = tidy(run)
+                print(f"{run_id}: {state[run_id]}", flush=True)
+            except Exception as exc:
+                print(f"{run_id}: could not tidy up: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+                state[run_id] = "tidy failed"
+            continue
+        if not run_id or run_id in state or graph not in FIRST_STEP:
+            continue
+        created = str((run.get("timestamps") or {}).get("created_at") or "")
+        try:
+            if datetime.fromisoformat(created.replace("Z", "+00:00")) < cutoff:
+                state[run_id] = "old"
+                continue
+        except ValueError:
+            pass
+        output = first_step_output(run_id, FIRST_STEP[graph])
+        if output is None:
+            if status in TERMINAL:
+                state[run_id] = "no first step"
+            continue
+        repo = str((run.get("repository") or {}).get("name") or "").rsplit("/", 1)[-1] or "run"
+        title = title_for(graph, output, clean(repo))
+        if title:
+            title = title[:MAX_TITLE].strip()
+            api(f"/runs/{run_id}", body={"title": title}, method="PATCH")
+            print(f"{run_id}: {title}", flush=True)
+            changed += 1
+        state[run_id] = title or "unrecognised output"
+    # Forget runs the server no longer lists among its recent ones.
+    for run_id in sorted(state)[:-500]:
+        del state[run_id]
+    return changed
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Title Fabro runs after the issue or PR they picked.")
+    parser.add_argument("--once", action="store_true", help="look once and exit")
+    parser.add_argument("--interval", type=float, default=5.0, help="seconds between looks (default 5)")
+    args = parser.parse_args()
+    state = load_state()
+    while True:
+        before = dict(state)
+        try:
+            sweep(state)
+        except Exception as exc:  # the server may be restarting; keep watching
+            print(f"could not reach the Fabro server: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+        if state != before:
+            save_state(state)
+        if args.once:
+            return 0
+        time.sleep(args.interval)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
