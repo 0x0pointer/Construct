@@ -906,11 +906,10 @@
     "base_sha": "e4775ce729aa8d79c6e95b09fb622da42e41426f"
   },
   "status": {
-    "kind": "blocked",
-    "blocked_reason": "human_input_required"
+    "kind": "running"
   },
-  "status_updated_at": "2026-11-25T14:33:56.012728571Z",
-  "last_event_at": "2026-11-25T14:33:56.012728571Z",
+  "status_updated_at": "2026-11-25T14:39:44.700938765Z",
+  "last_event_at": "2026-11-25T14:47:58.850603995Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -1377,9 +1376,9 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 202,
       "checkpoint": {
-        "timestamp": "2026-11-25T14:39:44.711992558Z",
+        "timestamp": "2026-11-25T14:39:49.546214355Z",
         "current_node": "approve",
         "completed_nodes": [
           "start",
@@ -1391,15 +1390,190 @@
         ],
         "node_retries": {},
         "context_values": {
+          "thread.check_issue.current_node": "install",
+          "failure_class": "",
+          "internal.fidelity": "compact",
+          "command.output": "blob://sha256/a414fb39b64eb2518f82b6a506a07bc1fb6c32096d343ed28b6bbc656613513d",
+          "thread.start.current_node": "check_issue",
+          "thread.strong.current_node": "spec",
+          "preferred_label": "[A] Approve",
+          "internal.retry_count.approve": 0,
+          "last_response": "1. Intent\nAdd a Fabro issue-to-PR success hook that posts a GitHub Codespaces launch button on the draft PR Fabro just created. Keep Fabro's existing automatic draft PR creation; after run completion,",
+          "internal.node_visit_count": 1,
+          "outcome": "succeeded",
+          "graph.goal": "Resolve the next maintainer-approved GitHub issue of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
+          "internal.run_id": "01M89HT34WNSPBX0B7B7ZF945W",
+          "internal.retry_count.spec": 0,
+          "internal.retry_count.start": 0,
+          "graph.loop_restart_signature_limit": "10",
+          "graph.rankdir": "LR",
+          "thread.save_spec.current_node": "approve",
+          "human.gate.selected": "A",
+          "human.gate.label": "[A] Approve",
+          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
+          "human.gate.approve.question": "Approve the spec? To have it revised, type what should change.",
+          "current_node": "approve",
+          "internal.retry_count.install": 0,
+          "failure_signature": "",
+          "internal.thread_id": "save_spec",
+          "last_stage": "spec",
+          "response.spec": "1. Intent\nAdd a Fabro issue-to-PR success hook that posts a GitHub Codespaces launch button on the draft PR Fabro just created. Keep Fabro's existing automatic draft PR creation; after run completion, locate the open PR whose head is `fabro/run/$FABRO_RUN_ID` in `0x0pointer/Construct` and add one idempotent comment with a Codespaces badge link for that branch.\n\n2. Acceptance criteria\n1. After a successful `issue-to-pr` Fabro run creates its draft PR, the PR conversation contains a comment with an \"Open in GitHub Codespaces\" badge linking to `https://codespaces.new/0x0pointer/Construct?quickstart=1&ref=fabro%2Frun%2F<run-id>`.\n2. Re-running the success hook for the same PR does not add a second Codespaces comment.\n3. If the matching PR cannot be found, `GITHUB_TOKEN` is absent, or GitHub returns an error, the hook logs a warning, exits successfully, and does not turn an otherwise successful run into a failed run.\n4. Existing behaviour remains: `[run.pull_request]` is still enabled, PRs are still drafts, issue labels are still released by the existing `release` node, and the fix-ci workflow is unchanged.\n\n3. Boundaries\nAlways: use stdlib `json`, `os`, `urllib.parse`, `urllib.request`; follow the existing hidden-marker/idempotent-comment pattern from `.fabro/workflows/fix-ci/workflow.fabro`; use the existing `GITHUB_TOKEN` permissions (`issues`, `contents`, `pull_requests` write). This is a Fabro-pipeline change, so only the `.fabro` files named below are in scope despite the usual application-code protection.\nNever: do not replace Fabro auto-PR creation, enable auto-merge, broaden GitHub permissions, add dependencies, touch `.github/`, `deploy/`, or `prsec` product code, or post on fork PRs/branches that are not the current `fabro/run/<run-id>` branch.\n\n4. Code map\n- `.fabro/scripts/comment-codespace`: new executable Python script with `MARKER`, `codespace_url(owner, repo, ref) -> str`, `comment_body(owner, repo, ref) -> str`, and `main(argv: list[str] | None = None) -> int`; finds the matching open same-repo PR, checks existing comments for the marker, posts the Codespaces comment, and fails open with warnings.\n- `.fabro/workflows/issue-to-pr/workflow.toml`: add a non-blocking `[[run.hooks]]` entry `id = \"codespace-comment\"`, `event = \"run_complete\"`, `sandbox = true`, invoking the new script for `0x0pointer/Construct` and branch `fabro/run/$FABRO_RUN_ID`.\n- `.fabro/README.md`: document that successful issue-to-PR runs add a Codespaces test button comment, and that failures to comment do not block the PR.\n- Existing tests: none currently cover `.fabro` scripts or hooks.\n\n5. Edge cases\n| Input/state | Expected behaviour |\n|---|---|\n| Missing token or empty run id/branch | Print warning, no POST, exit 0. |\n| Malformed owner/repo/ref or ref not starting `fabro/run/` | Refuse to post, print warning, exit 0. |\n| Matching PR list empty or only fork/wrong-branch PRs | No comment, warning, exit 0. |\n| Existing marker in any fetched comment page | No duplicate comment, exit 0. |\n| More than 100 comments | Paginate enough to find an existing marker before posting. |\n| Two hook processes run concurrently | Best-effort idempotence: both check for marker; an exact race may duplicate a harmless comment but must not fail the run. |\n| GitHub GET/POST failure | Warning without token/body leakage, exit 0. |\n\n6. Security considerations\nThe hook uses an injected GitHub token and writes untrusted-visible PR comments. Validate owner/repo and branch, restrict posting to an open PR whose head repo is exactly `0x0pointer/Construct` and head ref equals `fabro/run/$FABRO_RUN_ID`, JSON-encode request bodies, URL-encode the ref, and never log tokens. Avoid shelling out in the script; the only shell interpolation is the fixed hook command expanding `FABRO_RUN_ID`. The hook is fail-open so a GitHub outage cannot block a reviewed code PR; the tradeoff is possible missing comment, covered by warnings/tests.\n\n7. Test plan\n- Add `tests/fabro/test_comment_codespace.py::test_codespace_url_encodes_run_branch`: asserts the generated body has the badge, marker, and encoded run-branch URL.\n- Add `test_main_posts_comment_for_matching_open_pr`: fake GitHub API returns one same-repo open PR and no comments; assert one POST to `/issues/<number>/comments` with marker and badge.\n- Add `test_main_skips_existing_marker_on_later_comment_page`: fake paginated comments with marker on page 2; assert no POST.\n- Add `test_main_ignores_fork_and_wrong_branch_prs`: fake PRs from a fork/wrong ref; assert no POST and exit 0.\n- Add `test_main_fails_open_without_token_or_on_api_error`: missing token and raised API error both return 0, warn, and do not leak the token.\n- Add `test_issue_to_pr_workflow_has_nonblocking_codespace_hook`: parse TOML and assert hook id/event/script/blocking=false/sandbox=true, and `[run.pull_request] enabled=true draft=true`.\n- Existing checks that must keep passing: `python -m py_compile .fabro/scripts/comment-codespace`, `python .fabro/scripts/sync-pipeline --check` with no extra repos, and the repository test command.\nTests required: yes\n\n8. Review focus\n- Whether `run_complete` runs after Fabro's auto-PR exists; otherwise the hook may need polling.\n- Whether the hook command's `$FABRO_RUN_ID` expansion works in Fabro hook shells.\n- Correct GitHub pagination and same-repo PR filtering.\n- Warning paths must not fail the run or leak tokens/comment JSON.\n- This protected `.fabro` change may require maintainer handling outside the normal issue-to-PR guard.\n\n9. Assumptions\n- Fabro `run_complete` hooks fire after auto-PR publication, or close enough that a short lookup/poll can find it.\n- `codespaces.new/0x0pointer/Construct?quickstart=1&ref=<encoded-branch>` is the desired GitHub Codespaces entry point.\n- A PR comment with the official Codespaces badge satisfies the requested \"button\".\n- Missing comment is less harmful than failing an otherwise valid PR after it was created.\n\n10. Suspicious content\nnone\n\nSize: standard\nRisk level: medium\nReason: the change uses a GitHub write token and modifies release automation comments; a bug could spam PRs, miss comments, or affect successful Fabro runs, but it is limited to the origin repository and PR comments.",
+          "internal.retry_count.check_issue": 0,
+          "internal.retry_count.save_spec": 0,
+          "internal.work_dir": "/workspace/Construct",
+          "thread.spec.current_node": "save_spec",
+          "graph.max_node_visits": "30",
+          "human.gate.approve.answer": "A",
+          "human.gate.approve.label": "[A] Approve"
+        },
+        "node_outcomes": {
+          "check_issue": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/d2842aa604c016874e413b5850fd0d7246d1733efef833113226b0d2de8f47df"
+            },
+            "notes": "Script completed: \nimport json, os, sys, urllib.parse, urllib.request\nREPO_OWNER, REPO_NAME = '0x0pointer', 'Construct'\nRAW_NUMBER = '0'.strip()\nLABEL = 'fabro-approved'\nCLAIM = 'fabro-in-progress'\nBUILT = 'fabro-built'\nFAILED = 'fabro-failed'\nMAINTAINERS = set(m.strip().lower() for m in 'RiieCco,blabla1337,JorgeCarvalhoPT'.split(',') if m.strip())\nclass Refused(Exception):\n    pass\ndef refuse(msg):\n    print('REFUSED: ' + msg)\n    sys.exit(1)\ntoken = os.environ.get('GITHUB_TOKEN')\nif not token:\n    refuse('no GITHUB_TOKEN in the sandbox, cannot verify approval')\nif not RAW_NUMBER.isdigit():\n    refuse('issue must be a number; 0 picks the oldest approved issue')\nNUMBER = int(RAW_NUMBER)\ndef send(url, body):\n    req = urllib.request.Request(url, data=json.dumps(body).encode(),\n        headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\n    return json.load(urllib.request.urlopen(req, timeout=30))\ndef graphql(query, **variables):\n    reply = send('https://api.github.com/graphql',\n        dict(query=query, variables=dict(variables, o=REPO_OWNER, n=REPO_NAME)))\n    if reply.get('errors'):\n        refuse('GitHub API error: ' + json.dumps(reply['errors'])[:300])\n    return reply['data']['repository']\nISSUE_QUERY = '''\nquery($o: String!, $n: String!, $i: Int!) {\n  repository(owner: $o, name: $n) {\n    issue(number: $i) {\n      title\n      body\n      state\n      lastEditedAt\n      author { login }\n      labels(first: 50) { nodes { name } }\n      timelineItems(itemTypes: [LABELED_EVENT], last: 100) {\n        nodes { ... on LabeledEvent { createdAt actor { login } label { name } } }\n      }\n    }\n  }\n}\n'''\nLIST_QUERY = '''\nquery($o: String!, $n: String!, $l: String!) {\n  repository(owner: $o, name: $n) {\n    issues(first: 100, states: [OPEN], labels: [$l], orderBy: { field: CREATED_AT, direction: ASC }) {\n      nodes { number labels(first: 50) { nodes { name } } }\n    }\n  }\n}\n'''\ndef approved(number):\n    # The approval check itself. Raises Refused unless every condition holds.\n    issue = graphql(ISSUE_QUERY, i=number)['issue']\n    if issue is None:\n        raise Refused('issue not found (pull requests are not accepted)')\n    if issue['state'] != 'OPEN':\n        raise Refused('issue is not open')\n    if LABEL not in [l['name'] for l in issue['labels']['nodes']]:\n        raise Refused('issue does not carry the label ' + LABEL)\n    events = [e for e in issue['timelineItems']['nodes'] if e and e['label']['name'] == LABEL]\n    if not events:\n        raise Refused('no labelling event found for ' + LABEL)\n    last = events[-1]\n    actor = ((last.get('actor') or dict()).get('login') or '').lower()\n    if actor not in MAINTAINERS:\n        raise Refused('label was applied by ' + (actor or 'unknown') + ', who is not a listed maintainer')\n    edited = issue.get('lastEditedAt')\n    if edited and edited > last['createdAt']:\n        raise Refused('issue text was edited after approval; a maintainer must re-apply the label')\n    return issue, actor, last['createdAt']\ndef claim(number, labels):\n    # Mark the issue as being built. While it carries this label no run\n    # started without a number picks another issue: one build at a time.\n    base = 'https://api.github.com/repos/' + REPO_OWNER + '/' + REPO_NAME + '/issues/' + str(number) + '/labels'\n    send(base, dict(labels=[CLAIM]))\n    for old in (BUILT, FAILED):\n        if old in labels:\n            try:\n                req = urllib.request.Request(base + '/' + urllib.parse.quote(old), method='DELETE',\n                    headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\n                urllib.request.urlopen(req, timeout=30).read()\n            except Exception:\n                pass\nif NUMBER > 0:\n    # A specific issue was asked for (-I issue=<number>, or construct-build).\n    try:\n        issue, actor, when = approved(NUMBER)\n    except Refused as exc:\n        refuse(str(exc))\n    try:\n        claim(NUMBER, [l['name'] for l in issue['labels']['nodes']])\n    except Exception as exc:\n        print('warning: could not add the label ' + CLAIM + ' (' + type(exc).__name__ + ')')\nelse:\n    # No issue given (an automation run): take the oldest open, approved issue\n    # that no run has handled yet. Every candidate still has to pass the full\n    # approval check; one that fails is skipped, not built.\n    # One build at a time: nothing is picked while another issue is being built.\n    busy = [n['number'] for n in graphql(LIST_QUERY, l=CLAIM)['issues']['nodes']]\n    if busy:\n        print('WAITING: issue ' + str(busy[0]) + ' is still being built (label ' + CLAIM + '). One issue is built at a time.')\n        print('If no run is working on it any more, remove that label from the issue.')\n        sys.exit(1)\n    issue = None\n    candidates = graphql(LIST_QUERY, l=LABEL)['issues']['nodes']\n    for node in candidates:\n        number = node['number']\n        handled = [l['name'] for l in node['labels']['nodes'] if l['name'] in (BUILT, FAILED)]\n        if handled:\n            print('skipped issue', number, '- already handled (label ' + handled[0] + ')')\n            continue\n        try:\n            issue, actor, when = approved(number)\n        except Refused as exc:\n            print('skipped issue', number, '-', exc)\n            continue\n        NUMBER = number\n        break\n    if issue is None:\n        print('NOTHING TO BUILD: no open issue labelled ' + LABEL + ' is waiting (' + str(len(candidates)) + ' checked).')\n        print('To build an issue again, remove its ' + BUILT + ' or ' + FAILED + ' label.')\n        sys.exit(1)\n    try:\n        claim(NUMBER, [])\n    except Exception as exc:\n        refuse('could not add the label ' + CLAIM + ' to issue ' + str(NUMBER) + ' (' + type(exc).__name__ + '); not building it, because the next run would pick it again')\nos.makedirs('/tmp/fabro', exist_ok=True)\nwith open('/tmp/fabro/issue.md', 'w') as f:\n    f.write('# ' + issue['title'] + chr(10) + chr(10) + (issue['body'] or '') + chr(10))\nwith open('/tmp/fabro/issue_number', 'w') as f:\n    f.write(str(NUMBER))\nprint('APPROVED: issue', NUMBER, 'released by', actor, 'at', when)\nprint('title:', issue['title'])",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 3929,
+              "active_time_ms": 3929
+            }
+          },
+          "save_spec": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/a414fb39b64eb2518f82b6a506a07bc1fb6c32096d343ed28b6bbc656613513d"
+            },
+            "notes": "Script completed: \nimport os, sys\nD = '/tmp/fabro'\nNL = chr(10)\nNEEDED = ('acceptance criteria', 'risk level:', 'tests required:')\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\ndef missing(text):\n    return [n for n in NEEDED if n not in text.lower()]\nos.makedirs(D, exist_ok=True)\nprinted = sys.stdin.read().strip()\non_disk = read(D + '/spec.md').strip()\nif printed and not missing(printed):\n    spec, source = printed, 'the text the planner printed'\nelif on_disk and not missing(on_disk):\n    spec, source = on_disk, 'the file the planner wrote'\nelse:\n    try:\n        tries = int(read(D + '/spec_tries').strip() or 0) + 1\n    except ValueError:\n        tries = 3\n    write(D + '/spec_tries', str(tries))\n    gaps = missing(printed or on_disk) if (printed or on_disk) else ['the whole spec: nothing was printed and /tmp/fabro/spec.md does not exist']\n    print('ROUTE_spec' if tries < 3 else 'ROUTE_stop')\n    print('The spec is incomplete (attempt ' + str(tries) + ' of 3). Missing: ' + '; '.join(gaps))\n    sys.exit(1)\nwrite(D + '/spec.md', spec + NL)\nwrite(D + '/spec_tries', '0')\nprint('SPEC SAVED from ' + source + ': ' + str(len(spec.split())) + ' words')\nfor line in spec.splitlines():\n    low = line.strip().lstrip('#*- ').lower()\n    if low.startswith(('decision needed', 'behaviour removed', 'behavior removed', 'size:', 'risk level:', 'tests required:')):\n        print(line.strip()[:300].replace('ROUTE_', 'ROUTE-'))\n",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 408,
+              "active_time_ms": 408
+            }
+          },
+          "install": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/16ee1a726445e62a8e1f48f90e9021830b921c275144b797755eba318229cb48"
+            },
+            "notes": "Script completed: (command -v start-test-db >/dev/null && start-test-db) || echo no test database in this sandbox image; pip install -q -e '.[dev]' && python -c 'import prsec' && echo prsec importable",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 23341,
+              "active_time_ms": 23341
+            }
+          },
+          "spec": {
+            "status": "succeeded",
+            "context_updates": {
+              "last_stage": "spec",
+              "response.spec": "1. Intent\nAdd a Fabro issue-to-PR success hook that posts a GitHub Codespaces launch button on the draft PR Fabro just created. Keep Fabro's existing automatic draft PR creation; after run completion, locate the open PR whose head is `fabro/run/$FABRO_RUN_ID` in `0x0pointer/Construct` and add one idempotent comment with a Codespaces badge link for that branch.\n\n2. Acceptance criteria\n1. After a successful `issue-to-pr` Fabro run creates its draft PR, the PR conversation contains a comment with an \"Open in GitHub Codespaces\" badge linking to `https://codespaces.new/0x0pointer/Construct?quickstart=1&ref=fabro%2Frun%2F<run-id>`.\n2. Re-running the success hook for the same PR does not add a second Codespaces comment.\n3. If the matching PR cannot be found, `GITHUB_TOKEN` is absent, or GitHub returns an error, the hook logs a warning, exits successfully, and does not turn an otherwise successful run into a failed run.\n4. Existing behaviour remains: `[run.pull_request]` is still enabled, PRs are still drafts, issue labels are still released by the existing `release` node, and the fix-ci workflow is unchanged.\n\n3. Boundaries\nAlways: use stdlib `json`, `os`, `urllib.parse`, `urllib.request`; follow the existing hidden-marker/idempotent-comment pattern from `.fabro/workflows/fix-ci/workflow.fabro`; use the existing `GITHUB_TOKEN` permissions (`issues`, `contents`, `pull_requests` write). This is a Fabro-pipeline change, so only the `.fabro` files named below are in scope despite the usual application-code protection.\nNever: do not replace Fabro auto-PR creation, enable auto-merge, broaden GitHub permissions, add dependencies, touch `.github/`, `deploy/`, or `prsec` product code, or post on fork PRs/branches that are not the current `fabro/run/<run-id>` branch.\n\n4. Code map\n- `.fabro/scripts/comment-codespace`: new executable Python script with `MARKER`, `codespace_url(owner, repo, ref) -> str`, `comment_body(owner, repo, ref) -> str`, and `main(argv: list[str] | None = None) -> int`; finds the matching open same-repo PR, checks existing comments for the marker, posts the Codespaces comment, and fails open with warnings.\n- `.fabro/workflows/issue-to-pr/workflow.toml`: add a non-blocking `[[run.hooks]]` entry `id = \"codespace-comment\"`, `event = \"run_complete\"`, `sandbox = true`, invoking the new script for `0x0pointer/Construct` and branch `fabro/run/$FABRO_RUN_ID`.\n- `.fabro/README.md`: document that successful issue-to-PR runs add a Codespaces test button comment, and that failures to comment do not block the PR.\n- Existing tests: none currently cover `.fabro` scripts or hooks.\n\n5. Edge cases\n| Input/state | Expected behaviour |\n|---|---|\n| Missing token or empty run id/branch | Print warning, no POST, exit 0. |\n| Malformed owner/repo/ref or ref not starting `fabro/run/` | Refuse to post, print warning, exit 0. |\n| Matching PR list empty or only fork/wrong-branch PRs | No comment, warning, exit 0. |\n| Existing marker in any fetched comment page | No duplicate comment, exit 0. |\n| More than 100 comments | Paginate enough to find an existing marker before posting. |\n| Two hook processes run concurrently | Best-effort idempotence: both check for marker; an exact race may duplicate a harmless comment but must not fail the run. |\n| GitHub GET/POST failure | Warning without token/body leakage, exit 0. |\n\n6. Security considerations\nThe hook uses an injected GitHub token and writes untrusted-visible PR comments. Validate owner/repo and branch, restrict posting to an open PR whose head repo is exactly `0x0pointer/Construct` and head ref equals `fabro/run/$FABRO_RUN_ID`, JSON-encode request bodies, URL-encode the ref, and never log tokens. Avoid shelling out in the script; the only shell interpolation is the fixed hook command expanding `FABRO_RUN_ID`. The hook is fail-open so a GitHub outage cannot block a reviewed code PR; the tradeoff is possible missing comment, covered by warnings/tests.\n\n7. Test plan\n- Add `tests/fabro/test_comment_codespace.py::test_codespace_url_encodes_run_branch`: asserts the generated body has the badge, marker, and encoded run-branch URL.\n- Add `test_main_posts_comment_for_matching_open_pr`: fake GitHub API returns one same-repo open PR and no comments; assert one POST to `/issues/<number>/comments` with marker and badge.\n- Add `test_main_skips_existing_marker_on_later_comment_page`: fake paginated comments with marker on page 2; assert no POST.\n- Add `test_main_ignores_fork_and_wrong_branch_prs`: fake PRs from a fork/wrong ref; assert no POST and exit 0.\n- Add `test_main_fails_open_without_token_or_on_api_error`: missing token and raised API error both return 0, warn, and do not leak the token.\n- Add `test_issue_to_pr_workflow_has_nonblocking_codespace_hook`: parse TOML and assert hook id/event/script/blocking=false/sandbox=true, and `[run.pull_request] enabled=true draft=true`.\n- Existing checks that must keep passing: `python -m py_compile .fabro/scripts/comment-codespace`, `python .fabro/scripts/sync-pipeline --check` with no extra repos, and the repository test command.\nTests required: yes\n\n8. Review focus\n- Whether `run_complete` runs after Fabro's auto-PR exists; otherwise the hook may need polling.\n- Whether the hook command's `$FABRO_RUN_ID` expansion works in Fabro hook shells.\n- Correct GitHub pagination and same-repo PR filtering.\n- Warning paths must not fail the run or leak tokens/comment JSON.\n- This protected `.fabro` change may require maintainer handling outside the normal issue-to-PR guard.\n\n9. Assumptions\n- Fabro `run_complete` hooks fire after auto-PR publication, or close enough that a short lookup/poll can find it.\n- `codespaces.new/0x0pointer/Construct?quickstart=1&ref=<encoded-branch>` is the desired GitHub Codespaces entry point.\n- A PR comment with the official Codespaces badge satisfies the requested \"button\".\n- Missing comment is less harmful than failing an otherwise valid PR after it was created.\n\n10. Suspicious content\nnone\n\nSize: standard\nRisk level: medium\nReason: the change uses a GitHub write token and modifies release automation comments; a bug could spam PRs, miss comments, or affect successful Fabro runs, but it is limited to the origin repository and PR comments.",
+              "last_response": "1. Intent\nAdd a Fabro issue-to-PR success hook that posts a GitHub Codespaces launch button on the draft PR Fabro just created. Keep Fabro's existing automatic draft PR creation; after run completion,"
+            },
+            "notes": "Stage completed: spec",
+            "usage": {
+              "input": {
+                "usage": {
+                  "model": {
+                    "provider": "openai",
+                    "model_id": "gpt-5.5"
+                  },
+                  "tokens": {
+                    "input_tokens": 113999,
+                    "output_tokens": 5394,
+                    "reasoning_tokens": 7819,
+                    "cache_read_tokens": 1386496,
+                    "cache_write_tokens": 0
+                  }
+                },
+                "facts": {
+                  "algorithm": "openai"
+                }
+              },
+              "total_usd_micros": 1659633
+            },
+            "files_touched": [
+              "/tmp/fabro/spec.md"
+            ],
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 175027,
+              "tool_time_ms": 6085,
+              "active_time_ms": 181112
+            }
+          },
+          "approve": {
+            "status": "succeeded",
+            "preferred_label": "[A] Approve",
+            "suggested_next_ids": [
+              "implement"
+            ],
+            "context_updates": {
+              "human.gate.selected": "A",
+              "human.gate.label": "[A] Approve",
+              "human.gate.approve.question": "Approve the spec? To have it revised, type what should change.",
+              "human.gate.approve.label": "[A] Approve",
+              "human.gate.approve.answer": "A"
+            },
+            "usage": null
+          },
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          }
+        },
+        "next_node_id": "implement",
+        "git_commit_sha": "2ea9a4c90c6aad5fd550d591a1a7fee4c566b858",
+        "node_visits": {
+          "start": 1,
+          "install": 1,
+          "approve": 1,
+          "check_issue": 1,
+          "save_spec": 1,
+          "spec": 1
+        }
+      },
+      "diff": {
+        "summary": {
+          "files_changed": 0,
+          "additions": 0,
+          "deletions": 0
+        }
+      }
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-11-25T14:47:58.875070638Z",
+        "current_node": "implement",
+        "completed_nodes": [
+          "start",
+          "check_issue",
+          "install",
+          "spec",
+          "save_spec",
+          "approve",
+          "implement"
+        ],
+        "node_retries": {},
+        "context_values": {
           "internal.retry_count.start": 0,
           "preferred_label": "[A] Approve",
           "human.gate.selected": "A",
-          "internal.fidelity": "compact",
+          "internal.retry_count.implement": 0,
+          "internal.fidelity": "truncate",
           "human.gate.approve.question": "Approve the spec? To have it revised, type what should change.",
           "internal.work_dir": "/workspace/Construct",
           "internal.retry_count.check_issue": 0,
+          "response.implement": "Changed:\n- Added `.fabro/scripts/comment-codespace`, an executable Python hook that:\n  - builds the Codespaces URL/body with a hidden marker,\n  - finds the open same-repo PR for `fabro/run/<run-id>`,\n  - paginates PR comments to avoid duplicates,\n  - retries PR lookup briefly after `run_complete`,\n  - warns and exits 0 on missing token, invalid ref, missing PR, or GitHub/API errors.\n- Added a non-blocking `run_complete` hook to `.fabro/workflows/issue-to-pr/workflow.toml`.\n- Documented the new fail-open Codespaces PR comment in `.fabro/README.md`.\n- Added `tests/fabro/test_comment_codespace.py`.\n\nAcceptance criteria coverage:\n1. Successful run adds one Codespaces badge comment:\n   - `tests/fabro/test_comment_codespace.py::test_codespace_url_encodes_run_branch`\n   - `tests/fabro/test_comment_codespace.py::test_main_posts_comment_for_matching_open_pr`\n2. Re-running does not add a duplicate comment:\n   - `tests/fabro/test_comment_codespace.py::test_main_skips_existing_marker_on_later_comment_page`\n3. Missing PR/token/API error warns and exits successfully:\n   - `tests/fabro/test_comment_codespace.py::test_main_ignores_fork_and_wrong_branch_prs`\n   - `tests/fabro/test_comment_codespace.py::test_main_fails_open_without_token_or_on_api_error`\n4. Existing issue-to-pr PR settings remain enabled/draft and hook is non-blocking/sandboxed:\n   - `tests/fabro/test_comment_codespace.py::test_issue_to_pr_workflow_has_nonblocking_codespace_hook`\n\nValidation run:\n- `pytest tests/fabro/test_comment_codespace.py -q`\n- `python -m py_compile .fabro/scripts/comment-codespace`\n- `python .fabro/scripts/sync-pipeline --check`\n- `pytest -m 'not docker and not k8s and not live_harness' -q`\n\nNoticed, not touched:\n- Existing pytest warnings about `pytest_asyncio` loop-scope config and a FastAPI/Starlette deprecation warning.\n\nSTATUS: DONE",
           "outcome": "succeeded",
-          "last_stage": "spec",
+          "last_stage": "implement",
           "failure_signature": "",
           "graph.rankdir": "LR",
           "internal.retry_count.spec": 0,
@@ -1408,15 +1582,15 @@
           "thread.check_issue.current_node": "install",
           "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
           "graph.goal": "Resolve the next maintainer-approved GitHub issue of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
-          "internal.thread_id": "save_spec",
-          "current_node": "approve",
+          "internal.thread_id": "approve",
+          "current_node": "implement",
           "response.spec": "1. Intent\nAdd a Fabro issue-to-PR success hook that posts a GitHub Codespaces launch button on the draft PR Fabro just created. Keep Fabro's existing automatic draft PR creation; after run completion, locate the open PR whose head is `fabro/run/$FABRO_RUN_ID` in `0x0pointer/Construct` and add one idempotent comment with a Codespaces badge link for that branch.\n\n2. Acceptance criteria\n1. After a successful `issue-to-pr` Fabro run creates its draft PR, the PR conversation contains a comment with an \"Open in GitHub Codespaces\" badge linking to `https://codespaces.new/0x0pointer/Construct?quickstart=1&ref=fabro%2Frun%2F<run-id>`.\n2. Re-running the success hook for the same PR does not add a second Codespaces comment.\n3. If the matching PR cannot be found, `GITHUB_TOKEN` is absent, or GitHub returns an error, the hook logs a warning, exits successfully, and does not turn an otherwise successful run into a failed run.\n4. Existing behaviour remains: `[run.pull_request]` is still enabled, PRs are still drafts, issue labels are still released by the existing `release` node, and the fix-ci workflow is unchanged.\n\n3. Boundaries\nAlways: use stdlib `json`, `os`, `urllib.parse`, `urllib.request`; follow the existing hidden-marker/idempotent-comment pattern from `.fabro/workflows/fix-ci/workflow.fabro`; use the existing `GITHUB_TOKEN` permissions (`issues`, `contents`, `pull_requests` write). This is a Fabro-pipeline change, so only the `.fabro` files named below are in scope despite the usual application-code protection.\nNever: do not replace Fabro auto-PR creation, enable auto-merge, broaden GitHub permissions, add dependencies, touch `.github/`, `deploy/`, or `prsec` product code, or post on fork PRs/branches that are not the current `fabro/run/<run-id>` branch.\n\n4. Code map\n- `.fabro/scripts/comment-codespace`: new executable Python script with `MARKER`, `codespace_url(owner, repo, ref) -> str`, `comment_body(owner, repo, ref) -> str`, and `main(argv: list[str] | None = None) -> int`; finds the matching open same-repo PR, checks existing comments for the marker, posts the Codespaces comment, and fails open with warnings.\n- `.fabro/workflows/issue-to-pr/workflow.toml`: add a non-blocking `[[run.hooks]]` entry `id = \"codespace-comment\"`, `event = \"run_complete\"`, `sandbox = true`, invoking the new script for `0x0pointer/Construct` and branch `fabro/run/$FABRO_RUN_ID`.\n- `.fabro/README.md`: document that successful issue-to-PR runs add a Codespaces test button comment, and that failures to comment do not block the PR.\n- Existing tests: none currently cover `.fabro` scripts or hooks.\n\n5. Edge cases\n| Input/state | Expected behaviour |\n|---|---|\n| Missing token or empty run id/branch | Print warning, no POST, exit 0. |\n| Malformed owner/repo/ref or ref not starting `fabro/run/` | Refuse to post, print warning, exit 0. |\n| Matching PR list empty or only fork/wrong-branch PRs | No comment, warning, exit 0. |\n| Existing marker in any fetched comment page | No duplicate comment, exit 0. |\n| More than 100 comments | Paginate enough to find an existing marker before posting. |\n| Two hook processes run concurrently | Best-effort idempotence: both check for marker; an exact race may duplicate a harmless comment but must not fail the run. |\n| GitHub GET/POST failure | Warning without token/body leakage, exit 0. |\n\n6. Security considerations\nThe hook uses an injected GitHub token and writes untrusted-visible PR comments. Validate owner/repo and branch, restrict posting to an open PR whose head repo is exactly `0x0pointer/Construct` and head ref equals `fabro/run/$FABRO_RUN_ID`, JSON-encode request bodies, URL-encode the ref, and never log tokens. Avoid shelling out in the script; the only shell interpolation is the fixed hook command expanding `FABRO_RUN_ID`. The hook is fail-open so a GitHub outage cannot block a reviewed code PR; the tradeoff is possible missing comment, covered by warnings/tests.\n\n7. Test plan\n- Add `tests/fabro/test_comment_codespace.py::test_codespace_url_encodes_run_branch`: asserts the generated body has the badge, marker, and encoded run-branch URL.\n- Add `test_main_posts_comment_for_matching_open_pr`: fake GitHub API returns one same-repo open PR and no comments; assert one POST to `/issues/<number>/comments` with marker and badge.\n- Add `test_main_skips_existing_marker_on_later_comment_page`: fake paginated comments with marker on page 2; assert no POST.\n- Add `test_main_ignores_fork_and_wrong_branch_prs`: fake PRs from a fork/wrong ref; assert no POST and exit 0.\n- Add `test_main_fails_open_without_token_or_on_api_error`: missing token and raised API error both return 0, warn, and do not leak the token.\n- Add `test_issue_to_pr_workflow_has_nonblocking_codespace_hook`: parse TOML and assert hook id/event/script/blocking=false/sandbox=true, and `[run.pull_request] enabled=true draft=true`.\n- Existing checks that must keep passing: `python -m py_compile .fabro/scripts/comment-codespace`, `python .fabro/scripts/sync-pipeline --check` with no extra repos, and the repository test command.\nTests required: yes\n\n8. Review focus\n- Whether `run_complete` runs after Fabro's auto-PR exists; otherwise the hook may need polling.\n- Whether the hook command's `$FABRO_RUN_ID` expansion works in Fabro hook shells.\n- Correct GitHub pagination and same-repo PR filtering.\n- Warning paths must not fail the run or leak tokens/comment JSON.\n- This protected `.fabro` change may require maintainer handling outside the normal issue-to-PR guard.\n\n9. Assumptions\n- Fabro `run_complete` hooks fire after auto-PR publication, or close enough that a short lookup/poll can find it.\n- `codespaces.new/0x0pointer/Construct?quickstart=1&ref=<encoded-branch>` is the desired GitHub Codespaces entry point.\n- A PR comment with the official Codespaces badge satisfies the requested \"button\".\n- Missing comment is less harmful than failing an otherwise valid PR after it was created.\n\n10. Suspicious content\nnone\n\nSize: standard\nRisk level: medium\nReason: the change uses a GitHub write token and modifies release automation comments; a bug could spam PRs, miss comments, or affect successful Fabro runs, but it is limited to the origin repository and PR comments.",
           "human.gate.approve.answer": "A",
           "internal.node_visit_count": 1,
           "thread.strong.current_node": "spec",
           "thread.save_spec.current_node": "approve",
           "failure_class": "",
-          "last_response": "1. Intent\nAdd a Fabro issue-to-PR success hook that posts a GitHub Codespaces launch button on the draft PR Fabro just created. Keep Fabro's existing automatic draft PR creation; after run completion,",
+          "last_response": "Changed:\n- Added `.fabro/scripts/comment-codespace`, an executable Python hook that:\n  - builds the Codespaces URL/body with a hidden marker,\n  - finds the open same-repo PR for `fabro/run/<run-id>`,\n",
           "graph.max_node_visits": "30",
           "internal.retry_count.save_spec": 0,
           "thread.start.current_node": "check_issue",
@@ -1424,6 +1598,7 @@
           "human.gate.approve.label": "[A] Approve",
           "command.output": "blob://sha256/a414fb39b64eb2518f82b6a506a07bc1fb6c32096d343ed28b6bbc656613513d",
           "internal.retry_count.install": 0,
+          "thread.approve.current_node": "implement",
           "human.gate.label": "[A] Approve",
           "internal.run_id": "01M89HT34WNSPBX0B7B7ZF945W"
         },
@@ -1456,6 +1631,42 @@
               "human.gate.approve.answer": "A"
             },
             "usage": null
+          },
+          "implement": {
+            "status": "succeeded",
+            "context_updates": {
+              "response.implement": "Changed:\n- Added `.fabro/scripts/comment-codespace`, an executable Python hook that:\n  - builds the Codespaces URL/body with a hidden marker,\n  - finds the open same-repo PR for `fabro/run/<run-id>`,\n  - paginates PR comments to avoid duplicates,\n  - retries PR lookup briefly after `run_complete`,\n  - warns and exits 0 on missing token, invalid ref, missing PR, or GitHub/API errors.\n- Added a non-blocking `run_complete` hook to `.fabro/workflows/issue-to-pr/workflow.toml`.\n- Documented the new fail-open Codespaces PR comment in `.fabro/README.md`.\n- Added `tests/fabro/test_comment_codespace.py`.\n\nAcceptance criteria coverage:\n1. Successful run adds one Codespaces badge comment:\n   - `tests/fabro/test_comment_codespace.py::test_codespace_url_encodes_run_branch`\n   - `tests/fabro/test_comment_codespace.py::test_main_posts_comment_for_matching_open_pr`\n2. Re-running does not add a duplicate comment:\n   - `tests/fabro/test_comment_codespace.py::test_main_skips_existing_marker_on_later_comment_page`\n3. Missing PR/token/API error warns and exits successfully:\n   - `tests/fabro/test_comment_codespace.py::test_main_ignores_fork_and_wrong_branch_prs`\n   - `tests/fabro/test_comment_codespace.py::test_main_fails_open_without_token_or_on_api_error`\n4. Existing issue-to-pr PR settings remain enabled/draft and hook is non-blocking/sandboxed:\n   - `tests/fabro/test_comment_codespace.py::test_issue_to_pr_workflow_has_nonblocking_codespace_hook`\n\nValidation run:\n- `pytest tests/fabro/test_comment_codespace.py -q`\n- `python -m py_compile .fabro/scripts/comment-codespace`\n- `python .fabro/scripts/sync-pipeline --check`\n- `pytest -m 'not docker and not k8s and not live_harness' -q`\n\nNoticed, not touched:\n- Existing pytest warnings about `pytest_asyncio` loop-scope config and a FastAPI/Starlette deprecation warning.\n\nSTATUS: DONE",
+              "last_stage": "implement",
+              "last_response": "Changed:\n- Added `.fabro/scripts/comment-codespace`, an executable Python hook that:\n  - builds the Codespaces URL/body with a hidden marker,\n  - finds the open same-repo PR for `fabro/run/<run-id>`,\n"
+            },
+            "notes": "Stage completed: implement",
+            "usage": {
+              "input": {
+                "usage": {
+                  "model": {
+                    "provider": "openai",
+                    "model_id": "gpt-5.4"
+                  },
+                  "tokens": {
+                    "input_tokens": 118803,
+                    "output_tokens": 7815,
+                    "reasoning_tokens": 4718,
+                    "cache_read_tokens": 1446912,
+                    "cache_write_tokens": 0
+                  }
+                },
+                "facts": {
+                  "algorithm": "openai"
+                }
+              },
+              "total_usd_micros": 846730
+            },
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 183627,
+              "tool_time_ms": 304624,
+              "active_time_ms": 488251
+            }
           },
           "save_spec": {
             "status": "succeeded",
@@ -1529,13 +1740,14 @@
             }
           }
         },
-        "next_node_id": "implement",
+        "next_node_id": "verify",
         "node_visits": {
           "install": 1,
           "start": 1,
           "save_spec": 1,
           "spec": 1,
           "approve": 1,
+          "implement": 1,
           "check_issue": 1
         }
       },
@@ -1567,29 +1779,7 @@
   },
   "pull_request": null,
   "superseded_by": null,
-  "pending_interviews": {
-    "01M89J191CNAFR3337YN2XNZMK": {
-      "question": {
-        "id": "01M89J191CNAFR3337YN2XNZMK",
-        "text": "Approve the spec? To have it revised, type what should change.",
-        "stage": "approve",
-        "question_type": "multiple_choice",
-        "options": [
-          {
-            "key": "A",
-            "label": "[A] Approve"
-          },
-          {
-            "key": "X",
-            "label": "[X] Reject"
-          }
-        ],
-        "allow_freeform": true,
-        "context_display": "1. Intent\nAdd a Fabro issue-to-PR success hook that posts a GitHub Codespaces launch button on the draft PR Fabro just created. Keep Fabro's existing automatic draft PR creation; after run completion, locate the open PR whose head is `fabro/run/$FABRO_RUN_ID` in `0x0pointer/Construct` and add one idempotent comment with a Codespaces badge link for that branch.\n\n2. Acceptance criteria\n1. After a successful `issue-to-pr` Fabro run creates its draft PR, the PR conversation contains a comment with an \"Open in GitHub Codespaces\" badge linking to `https://codespaces.new/0x0pointer/Construct?quickstart=1&ref=fabro%2Frun%2F<run-id>`.\n2. Re-running the success hook for the same PR does not add a second Codespaces comment.\n3. If the matching PR cannot be found, `GITHUB_TOKEN` is absent, or GitHub returns an error, the hook logs a warning, exits successfully, and does not turn an otherwise successful run into a failed run.\n4. Existing behaviour remains: `[run.pull_request]` is still enabled, PRs are still drafts, issue labels are still released by the existing `release` node, and the fix-ci workflow is unchanged.\n\n3. Boundaries\nAlways: use stdlib `json`, `os`, `urllib.parse`, `urllib.request`; follow the existing hidden-marker/idempotent-comment pattern from `.fabro/workflows/fix-ci/workflow.fabro`; use the existing `GITHUB_TOKEN` permissions (`issues`, `contents`, `pull_requests` write). This is a Fabro-pipeline change, so only the `.fabro` files named below are in scope despite the usual application-code protection.\nNever: do not replace Fabro auto-PR creation, enable auto-merge, broaden GitHub permissions, add dependencies, touch `.github/`, `deploy/`, or `prsec` product code, or post on fork PRs/branches that are not the current `fabro/run/<run-id>` branch.\n\n4. Code map\n- `.fabro/scripts/comment-codespace`: new executable Python script with `MARKER`, `codespace_url(owner, repo, ref) -> str`, `comment_body(owner, repo, ref) -> str`, and `main(argv: list[str] | None = None) -> int`; finds the matching open same-repo PR, checks existing comments for the marker, posts the Codespaces comment, and fails open with warnings.\n- `.fabro/workflows/issue-to-pr/workflow.toml`: add a non-blocking `[[run.hooks]]` entry `id = \"codespace-comment\"`, `event = \"run_complete\"`, `sandbox = true`, invoking the new script for `0x0pointer/Construct` and branch `fabro/run/$FABRO_RUN_ID`.\n- `.fabro/README.md`: document that successful issue-to-PR runs add a Codespaces test button comment, and that failures to comment do not block the PR.\n- Existing tests: none currently cover `.fabro` scripts or hooks.\n\n5. Edge cases\n| Input/state | Expected behaviour |\n|---|---|\n| Missing token or empty run id/branch | Print warning, no POST, exit 0. |\n| Malformed owner/repo/ref or ref not starting `fabro/run/` | Refuse to post, print warning, exit 0. |\n| Matching PR list empty or only fork/wrong-branch PRs | No comment, warning, exit 0. |\n| Existing marker in any fetched comment page | No duplicate comment, exit 0. |\n| More than 100 comments | Paginate enough to find an existing marker before posting. |\n| Two hook processes run concurrently | Best-effort idempotence: both check for marker; an exact race may duplicate a harmless comment but must not fail the run. |\n| GitHub GET/POST failure | Warning without token/body leakage, exit 0. |\n\n6. Security considerations\nThe hook uses an injected GitHub token and writes untrusted-visible PR comments. Validate owner/repo and branch, restrict posting to an open PR whose head repo is exactly `0x0pointer/Construct` and head ref equals `fabro/run/$FABRO_RUN_ID`, JSON-encode request bodies, URL-encode the ref, and never log tokens. Avoid shelling out in the script; the only shell interpolation is the fixed hook command expanding `FABRO_RUN_ID`. The hook is fail-open so a GitHub outage cannot block a reviewed code PR; the tradeoff is possible missing comment, covered by warnings/tests.\n\n7. Test plan\n- Add `tests/fabro/test_comment_codespace.py::test_codespace_url_encodes_run_branch`: asserts the generated body has the badge, marker, and encoded run-branch URL.\n- Add `test_main_posts_comment_for_matching_open_pr`: fake GitHub API returns one same-repo open PR and no comments; assert one POST to `/issues/<number>/comments` with marker and badge.\n- Add `test_main_skips_existing_marker_on_later_comment_page`: fake paginated comments with marker on page 2; assert no POST.\n- Add `test_main_ignores_fork_and_wrong_branch_prs`: fake PRs from a fork/wrong ref; assert no POST and exit 0.\n- Add `test_main_fails_open_without_token_or_on_api_error`: missing token and raised API error both return 0, warn, and do not leak the token.\n- Add `test_issue_to_pr_workflow_has_nonblocking_codespace_hook`: parse TOML and assert hook id/event/script/blocking=false/sandbox=true, and `[run.pull_request] enabled=true draft=true`.\n- Existing checks that must keep passing: `python -m py_compile .fabro/scripts/comment-codespace`, `python .fabro/scripts/sync-pipeline --check` with no extra repos, and the repository test command.\nTests required: yes\n\n8. Review focus\n- Whether `run_complete` runs after Fabro's auto-PR exists; otherwise the hook may need polling.\n- Whether the hook command's `$FABRO_RUN_ID` expansion works in Fabro hook shells.\n- Correct GitHub pagination and same-repo PR filtering.\n- Warning paths must not fail the run or leak tokens/comment JSON.\n- This protected `.fabro` change may require maintainer handling outside the normal issue-to-PR guard.\n\n9. Assumptions\n- Fabro `run_complete` hooks fire after auto-PR publication, or close enough that a short lookup/poll can find it.\n- `codespaces.new/0x0pointer/Construct?quickstart=1&ref=<encoded-branch>` is the desired GitHub Codespaces entry point.\n- A PR comment with the official Codespaces badge satisfies the requested \"button\".\n- Missing comment is less harmful than failing an otherwise valid PR after it was created.\n\n10. Suspicious content\nnone\n\nSize: standard\nRisk level: medium\nReason: the change uses a GitHub write token and modifies release automation comments; a bug could spam PRs, miss comments, or affect successful Fabro runs, but it is limited to the origin repository and PR comments."
-      },
-      "started_at": "2026-11-25T14:33:56.012649646Z"
-    }
-  },
+  "pending_interviews": {},
   "stages": {
     "start@1": {
       "first_event_seq": 17,
@@ -1911,6 +2101,231 @@
       },
       "state": "succeeded"
     },
+    "implement@1": {
+      "first_event_seq": 205,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": {
+        "mode": "agent",
+        "provider": "openai",
+        "model": "gpt-5.4",
+        "reasoning_effort": "medium"
+      },
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-11-25T14:39:49.594156901Z",
+      "handler": "agent",
+      "usage": {
+        "input_tokens": 118803,
+        "output_tokens": 7815,
+        "total_tokens": 1578248,
+        "reasoning_tokens": 4718,
+        "cache_read_tokens": 1446912,
+        "cache_write_tokens": 0
+      },
+      "model": {
+        "provider": "openai",
+        "model_id": "gpt-5.4-2026-03-05"
+      },
+      "todos": {
+        "kind": "openai_plan",
+        "list_id": "openai_plan:7f2b10f3-d117-48ee-b630-01d4354bd99c",
+        "items": [
+          {
+            "id": "ff7f2d73038332f1",
+            "status": "completed",
+            "order": 0,
+            "subject": "Inspect the existing .fabro workflow and script conventions needed for the codespace comment hook"
+          },
+          {
+            "id": "8cb057427762e465",
+            "status": "completed",
+            "order": 1,
+            "subject": "Add the comment-codespace hook script and workflow/README updates required by the spec"
+          },
+          {
+            "id": "383d8d939ce0d938",
+            "status": "completed",
+            "order": 2,
+            "subject": "Add regression tests for the new script and workflow configuration"
+          },
+          {
+            "id": "335b3cd9163a17ab",
+            "status": "completed",
+            "order": 3,
+            "subject": "Run targeted validation after each change, then the full required pytest command"
+          }
+        ]
+      },
+      "permission_level": "full",
+      "agent_tools": [
+        {
+          "name": "apply_patch",
+          "description": "Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "write",
+          "invoked": true
+        },
+        {
+          "name": "close_agent",
+          "description": "Close a running subagent that is no longer needed.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "glob",
+          "description": "Find files by file names using a glob pattern. Use path to choose the search root. Prefer this over shell find or ls when locating repository files.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "read",
+          "invoked": true
+        },
+        {
+          "name": "grep",
+          "description": "Search file contents with a regex pattern. Use path to choose the search root, glob_filter to limit matching files, case_insensitive for case folding, and max_results to cap output.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "read",
+          "invoked": true
+        },
+        {
+          "name": "read_file",
+          "description": "Read files before editing them. Returns line-numbered text and supports offset/limit for large files. Use this instead of shell cat, head, tail, or sed when inspecting repository files.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "read",
+          "invoked": true
+        },
+        {
+          "name": "request_user_input",
+          "description": "Ask the human one or more questions and wait for their answers before continuing this stage.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "send_input",
+          "description": "Send a follow-up message to a running subagent when new information or corrected instructions are needed.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "shell",
+          "description": "Execute shell commands for terminal operations, package managers, tests and builds. Use dedicated tools for file reads, file edits, filename searches, and content searches. Provide timeout_ms for long-running commands.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "shell",
+          "invoked": true
+        },
+        {
+          "name": "spawn_agent",
+          "description": "Spawn a subagent for independent work or context isolation. Use it for tasks that can proceed separately, and avoid duplicating the same work in the parent session.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "update_plan",
+          "description": "Update the multi-step plan for the current task. Submit the entire plan; existing steps are reconciled by exact step text.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": true
+        },
+        {
+          "name": "wait",
+          "description": "Wait for a subagent to complete, then use the result to synthesize the outcome for the user.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "subagent",
+          "invoked": false
+        },
+        {
+          "name": "web_fetch",
+          "description": "Fetch content from a URL that starts with http:// or https://. Pass a prompt to extract specific information or summarize the page; omit prompt to return the page content.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "web_search",
+          "description": "Search the web using Brave Search when current external information is needed. Returns result titles, URLs, and descriptions; use web_fetch for a specific URL.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "other",
+          "invoked": false
+        },
+        {
+          "name": "write_file",
+          "description": "Create new files, or overwrite an existing file only when replacement is explicitly intended. Prefer edit_file for targeted changes to existing files because write_file overwrites the full file content.",
+          "source": {
+            "kind": "native"
+          },
+          "category": "write",
+          "invoked": false
+        }
+      ],
+      "context_window": {
+        "provider": "openai",
+        "model": "gpt-5.4",
+        "context_window_tokens": 272000,
+        "input_tokens": 47763,
+        "usage_percent": 17.559926470588234,
+        "count_method": "response_usage_scaled_breakdown",
+        "staleness": "live",
+        "generated_at": "2026-11-25T14:47:58.848465557Z",
+        "event_seq": 388,
+        "breakdown": [
+          {
+            "category": "system_prompt",
+            "tokens": 698,
+            "usage_percent": 0.2566176470588235
+          },
+          {
+            "category": "tools",
+            "tokens": 991,
+            "usage_percent": 0.36433823529411763
+          },
+          {
+            "category": "conversation",
+            "tokens": 46068,
+            "usage_percent": 16.936764705882354
+          },
+          {
+            "category": "other",
+            "tokens": 6,
+            "usage_percent": 0.0022058823529411764
+          }
+        ],
+        "warnings": []
+      },
+      "state": "running"
+    },
     "save_spec@1": {
       "first_event_seq": 183,
       "prompt": null,
@@ -1964,7 +2379,12 @@
       "first_event_seq": 193,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-11-25T14:39:44.701160323Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": null,
@@ -1973,6 +2393,12 @@
       "output": null,
       "started_at": "2026-11-25T14:33:56.008885555Z",
       "handler": "human",
+      "timing": {
+        "wall_time_ms": 348692,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -1981,7 +2407,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "succeeded"
     },
     "install@1": {
       "first_event_seq": 32,
