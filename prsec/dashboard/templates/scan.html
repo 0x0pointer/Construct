@@ -1,7 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Scan {{ scan.id }}{% endblock %}
 {% block content %}
-<h1>Scan #{{ scan.id }} · {{ scan.repo }}#{{ scan.pr }} <span class="badge st-{{ scan.status }}">{{ scan.status }}</span></h1>
+<section class="page-header">
+  <div class="page-header-copy">
+    <div class="eyebrow">Scan #{{ scan.id }}</div>
+    <h1>{{ scan.repo }}#{{ scan.pr }} <span class="badge st-{{ scan.status }}">{{ scan.status }}</span></h1>
+    <p class="lead">Read-only debugging view for the scan, its agent pipeline, timeline, and findings.</p>
+  </div>
+</section>
 <div class="grid2">
   <div class="panel">
     <h2 style="margin-top:0">Triage</h2>
@@ -36,7 +42,7 @@
 {% set health_badge = {'ok': 'st-ok', 'failed': 'st-failed', 'partial': 'st-running'} %}
 <h2>Agents</h2>
 <p class="muted" style="margin-top:0">The agent pipeline for this scan, in order. Each row is one agent (fan-out stages collapse all per-hypothesis runs).</p>
-<table>
+<div class="table-wrap"><table>
   <thead><tr><th>Agent</th><th>Stage</th><th class="num">Runs</th><th>Status</th><th>Decision</th>
     <th class="num">Tokens</th><th class="num">Turns</th><th class="num">Cost</th><th class="num">Duration</th></tr></thead>
   <tbody>
@@ -56,12 +62,12 @@
     <tr><td colspan="9" class="muted">No agent runs.</td></tr>
   {% endfor %}
   </tbody>
-</table>
+</table></div>
 
 {% include "_timeline.html" %}
 
 <h2>Stage runs</h2>
-<table>
+<div class="table-wrap"><table>
   <thead><tr><th>Agent</th><th>Task</th><th>Harness</th><th>Model</th><th>Status</th><th>Decision</th>
     <th class="num">Attempts</th><th class="num">Tokens in/out</th><th class="num">Turns</th><th class="num">Cost</th><th class="num">Duration</th><th>Errors</th></tr></thead>
   <tbody>
@@ -84,10 +90,10 @@
     <tr><td colspan="12" class="muted">No stage runs.</td></tr>
   {% endfor %}
   </tbody>
-</table>
+</table></div>
 
 <h2>Findings</h2>
-<table>
+<div class="table-wrap"><table>
   <thead><tr><th>#</th><th>Severity</th><th>Label</th><th>Class</th><th>Title</th><th>Sink</th><th>Status</th><th>Triage</th></tr></thead>
   <tbody>
   {% for f in scan.findings %}
@@ -105,5 +111,5 @@
     <tr><td colspan="8" class="muted">No findings.</td></tr>
   {% endfor %}
   </tbody>
-</table>
+</table></div>
 {% endblock %}

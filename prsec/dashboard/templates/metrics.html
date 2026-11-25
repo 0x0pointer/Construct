@@ -1,10 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Metrics{% endblock %}
 {% block content %}
-<h1>Metrics</h1>
+<section class="page-header">
+  <div class="page-header-copy">
+    <div class="eyebrow">Metrics</div>
+    <h1>Operational metrics</h1>
+    <p class="lead">Simple diagnostics with the shared dashboard layout, readable cards, and scroll-safe tables.</p>
+  </div>
+</section>
 <div class="grid2">
   <div>
     <h2 style="margin-top:0">Scans by status</h2>
+    <div class="table-wrap">
     <table>
       <thead><tr><th>Status</th><th class="num">7 days</th><th class="num">30 days</th></tr></thead>
       <tbody>
@@ -14,6 +21,7 @@
       {% else %}<tr><td colspan="3" class="muted">No scans in the last 30 days.</td></tr>{% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
   <div class="panel">
     <h2 style="margin-top:0">Last 30 days</h2>
@@ -42,14 +50,14 @@
 {% endmacro %}
 
 <h2>Precision by label</h2>
-{{ precision_table(m.precision_by_label, 'Label') }}
+<div class="table-wrap">{{ precision_table(m.precision_by_label, 'Label') }}</div>
 <h2>Precision by bug class</h2>
-{{ precision_table(m.precision_by_bug_class, 'Bug class') }}
+<div class="table-wrap">{{ precision_table(m.precision_by_bug_class, 'Bug class') }}</div>
 <p class="muted">Precision = TP / (TP + FP) over triaged findings; accepted (real, risk-accepted) is excluded.</p>
 
 <h2>By agent (30 days)</h2>
 <p class="muted" style="margin-top:0">One row per agent (pipeline stage): how reliably it runs, what it costs and how much work it does.</p>
-<table>
+<div class="table-wrap"><table>
   <thead><tr><th>Agent</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Failed</th>
     <th class="num">Avg duration</th><th class="num">Avg cost</th><th class="num">Total cost</th>
     <th class="num">Avg tokens</th><th class="num">Avg turns</th></tr></thead>
@@ -62,7 +70,7 @@
       <td class="num">{{ r.avg_turns | round(1) }}</td></tr>
   {% else %}<tr><td colspan="9" class="muted">No stage runs.</td></tr>{% endfor %}
   </tbody>
-</table>
+</table></div>
 
 {% macro harness_row(r) %}
   <td class="num">{{ r.runs }}</td><td class="num">{{ r.ok_rate | pct }}</td>
@@ -70,21 +78,21 @@
   <td class="num">{{ r.total_cost | usd }}</td><td class="num">{{ r.avg_tokens | int }}</td>
 {% endmacro %}
 <h2>Harness comparison (30 days)</h2>
-<table>
+<div class="table-wrap"><table>
   <thead><tr><th>Harness</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Avg duration</th>
     <th class="num">Avg cost</th><th class="num">Total cost</th><th class="num">Avg tokens</th></tr></thead>
   <tbody>
   {% for r in m.per_harness %}<tr><td>{{ r.harness }}</td>{{ harness_row(r) }}</tr>
   {% else %}<tr><td colspan="7" class="muted">No stage runs.</td></tr>{% endfor %}
   </tbody>
-</table>
+</table></div>
 <h2>By stage, harness and model</h2>
-<table>
+<div class="table-wrap"><table>
   <thead><tr><th>Stage</th><th>Harness</th><th>Model</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Avg duration</th>
     <th class="num">Avg cost</th><th class="num">Total cost</th><th class="num">Avg tokens</th></tr></thead>
   <tbody>
   {% for r in m.per_stage_harness %}<tr><td>{{ r.stage }}</td><td>{{ r.harness }}</td><td>{{ r.model }}</td>{{ harness_row(r) }}</tr>
   {% else %}<tr><td colspan="9" class="muted">No stage runs.</td></tr>{% endfor %}
   </tbody>
-</table>
+</table></div>
 {% endblock %}

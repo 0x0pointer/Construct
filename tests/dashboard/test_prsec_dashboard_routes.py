@@ -20,7 +20,8 @@ def test_scans_list(client, seeded):
     assert "acme/web" in r.text
     assert "$1.25" in r.text
     assert "2m00s" in r.text or "1m59s" in r.text
-    assert "htmx.org@2.0.4" in r.text
+    assert 'class="site-header"' in r.text
+    assert 'class="table-wrap"' in r.text
     r = client.get("/", params={"status": "skipped"})
     assert "acme/web" in r.text
     assert "acme/shop" not in r.text
@@ -74,11 +75,43 @@ def test_findings_filters(client, seeded):
     assert "idor in get" not in r.text
 
 
+def test_dashboard_pages_do_not_load_external_assets(client, seeded):
+    fid = _fid(seeded["findings"][0].fingerprint)
+    for path in ("/", "/findings", "/metrics", f"/findings/{fid}"):
+        r = client.get(path)
+        assert r.status_code == 200
+        text = r.text.lower()
+        assert '<script src="http' not in text
+        assert '<link rel="stylesheet" href="http' not in text
+        assert "unpkg.com" not in text
+        assert "cdn." not in text
+        assert 'class="site-header"' in r.text
+        assert 'class="page-shell"' in r.text
+
+
+def test_findings_page_is_usable_without_javascript(client, seeded):
+    r = client.get("/findings", params={"label": "reproduced", "repo": "acme/shop"})
+    assert r.status_code == 200
+    assert '<form class="filters" method="get"' in r.text
+    assert 'name="repo"' in r.text
+    assert 'name="label"' in r.text
+    assert '<button type="submit"' in r.text
+    assert "<noscript>" not in r.text
+    assert 'value="reproduced" selected' in r.text
+    assert 'value="acme/shop" selected' in r.text
+    assert "idor in get" in r.text
+    assert "sqli in find" not in r.text
+
+
 def test_finding_detail_and_triage(client, seeded):
     f = seeded["findings"][0]
     fid = _fid(f.fingerprint)
     r = client.get(f"/findings/{fid}")
     assert r.status_code == 200
+    assert 'finding-hero' in r.text
+    assert 'class="card-grid"' in r.text
+    assert "Metadata" in r.text
+    assert "Provenance" in r.text
     assert "app/api.py:10" in r.text
     assert "app/orders.py:42-43" in r.text
     assert "oid = request.args[&#39;id&#39;]" in r.text

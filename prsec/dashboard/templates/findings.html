@@ -1,16 +1,27 @@
 {% extends "base.html" %}
 {% block title %}Findings{% endblock %}
 {% block content %}
-<h1>Findings</h1>
-<form class="filters" method="get" hx-get="/findings" hx-target="#findings-table" hx-push-url="true"
-      hx-trigger="change, submit">
-  {% for key in ['repo', 'label', 'bug_class', 'severity', 'triage_state', 'status'] %}
-  <label>{{ key | replace('_', ' ') }}
-    <select name="{{ key }}"><option value="">any</option>
-      {% for v in options[key] %}<option {% if filters[key] == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
-    </select></label>
-  {% endfor %}
-  <noscript><button type="submit">Filter</button></noscript>
-</form>
+<section class="hero-card">
+  <div class="page-header">
+    <div class="page-header-copy">
+      <div class="eyebrow">Findings</div>
+      <h1>Prioritise and review findings</h1>
+      <p class="lead">Filter the existing findings backlog, keep the current pagination flow, and submit filters without relying on JavaScript.</p>
+    </div>
+  </div>
+  <form class="filters" method="get" hx-get="/findings" hx-target="#findings-table" hx-push-url="true"
+        hx-trigger="change, submit">
+    {% for key in ['repo', 'label', 'bug_class', 'severity', 'triage_state', 'status'] %}
+    <label>{{ key | replace('_', ' ') }}
+      <select name="{{ key }}"><option value="">any</option>
+        {% for v in options[key] %}<option value="{{ v }}" {% if filters[key] == v %}selected{% endif %}>{{ v }}</option>{% endfor %}
+      </select></label>
+    {% endfor %}
+    <div class="button-row">
+      <button type="submit">Apply filters</button>
+      <a class="button-secondary" href="/findings">Clear</a>
+    </div>
+  </form>
+</section>
 <div id="findings-table">{% include "_findings_table.html" %}</div>
 {% endblock %}

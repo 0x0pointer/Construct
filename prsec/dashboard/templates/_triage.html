@@ -3,7 +3,7 @@
 {% if f.triage_note %}<p class="muted" style="white-space: pre-wrap">{{ f.triage_note }}</p>{% endif %}
 <form method="post" action="/findings/{{ f.id }}/triage"
       hx-post="/findings/{{ f.id }}/triage" hx-target="#triage-panel" hx-swap="innerHTML">
-  <p>
+  <p class="meta-list">
   {% for s in triage_states if s != 'new' %}
     <label><input type="radio" name="state" value="{{ s }}" {% if f.triage_state == s %}checked{% endif %} required> {{ s }}</label>
   {% endfor %}
