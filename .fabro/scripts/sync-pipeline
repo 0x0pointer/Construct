@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Copy the shared pipeline files from this repository to the others.
+
+The workflow graphs and the skills folder are the same in every repository
+that uses the pipeline; only each repository's workflow.toml differs. This
+repository holds the copy that is edited. After changing a shared file here:
+
+  sync-pipeline ../agent-smith ../skills           copy the shared files there
+  sync-pipeline --check ../agent-smith ../skills   only report differences
+
+It changes files in the given checkouts and nothing else: branch, commit and
+pull request are up to you. Both modes also check that every workflow.toml
+sets the inputs its graph uses, here and in the given checkouts, and exit
+with status 1 if something is missing or (with --check) differs.
+
+Fabro 0.254.0 cannot load a workflow from another repository. Once a release
+supports `workflow_source` on automations, the graphs can live in one place
+and this script can go.
+"""
+import argparse
+import filecmp
+import re
+import shutil
+import sys
+import tomllib
+from pathlib import Path
+
+SOURCE = Path(__file__).resolve().parents[2]
+SHARED_FILES = [
+    ".fabro/workflows/issue-to-pr/workflow.fabro",
+    ".fabro/workflows/fix-ci/workflow.fabro",
+]
+SHARED_DIRS = [".fabro/skills"]
+WORKFLOWS = ["issue-to-pr", "fix-ci"]
+INPUT = re.compile(r"\{\{ inputs\.(\w+) \}\}")
+
+
+def shared_paths():
+    paths = list(SHARED_FILES)
+    for folder in SHARED_DIRS:
+        paths += sorted(
+            str(p.relative_to(SOURCE)) for p in (SOURCE / folder).rglob("*") if p.is_file()
+        )
+    return paths
+
+
+def stale_files(repo):
+    """Files in a shared folder of `repo` that the source no longer has."""
+    wanted = set(shared_paths())
+    stale = []
+    for folder in SHARED_DIRS:
+        base = repo / folder
+        if base.is_dir():
+            stale += [
+                str(p.relative_to(repo))
+                for p in base.rglob("*")
+                if p.is_file() and str(p.relative_to(repo)) not in wanted
+            ]
+    return sorted(stale)
+
+
+def input_problems(repo):
+    """Inputs a graph uses that its workflow.toml does not set, and values the graphs cannot embed."""
+    problems = []
+    for name in WORKFLOWS:
+        folder = repo / ".fabro" / "workflows" / name
+        graph, settings = folder / "workflow.fabro", folder / "workflow.toml"
+        if not graph.is_file() or not settings.is_file():
+            problems.append(f"{name}: workflow.fabro or workflow.toml is missing")
+            continue
+        inputs = tomllib.loads(settings.read_text()).get("run", {}).get("inputs", {})
+        used = set(INPUT.findall(graph.read_text()))
+        for key in sorted(used - set(inputs)):
+            problems.append(f"{name}: workflow.toml does not set the input '{key}'")
+        for key in sorted(set(inputs) - used):
+            problems.append(f"{name}: workflow.toml sets '{key}', which the graph does not use")
+        for key, value in sorted(inputs.items()):
+            text = str(value)
+            if '"' in text or text.rstrip().endswith("'") or "'''" in text:
+                problems.append(
+                    f"{name}: input '{key}' contains a double quote or ends with a quote;"
+                    " the graph embeds inputs in quoted strings"
+                )
+    return problems
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("repos", nargs="*", type=Path, help="checkouts of the other repositories")
+    parser.add_argument("--check", action="store_true", help="report differences, change nothing")
+    args = parser.parse_args()
+
+    failed = False
+    for problem in input_problems(SOURCE):
+        print(f"{SOURCE.name}: {problem}")
+        failed = True
+
+    for repo in args.repos:
+        repo = repo.resolve()
+        if not (repo / ".fabro").is_dir():
+            print(f"{repo}: no .fabro folder, skipped")
+            failed = True
+            continue
+        changed = []
+        for rel in shared_paths():
+            src, dst = SOURCE / rel, repo / rel
+            if dst.is_file() and filecmp.cmp(src, dst, shallow=False):
+                continue
+            changed.append(rel)
+            if not args.check:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(src, dst)
+        stale = stale_files(repo)
+        if not args.check:
+            for rel in stale:
+                (repo / rel).unlink()
+        verb = "differs" if args.check else "updated"
+        for rel in changed:
+            print(f"{repo.name}: {verb}: {rel}")
+        for rel in stale:
+            print(f"{repo.name}: {'not in the source' if args.check else 'removed'}: {rel}")
+        if not changed and not stale:
+            print(f"{repo.name}: shared files are up to date")
+        elif args.check:
+            failed = True
+        for problem in input_problems(repo):
+            print(f"{repo.name}: {problem}")
+            failed = True
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

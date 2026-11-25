@@ -1,11 +1,12 @@
 _version = 1
 
-# Failed CI on a Fabro pull request -> read the failures -> fix -> local
-# checks -> push the fix to the same PR branch, for Construct.
+# Failed CI on a Fabro pull request -> read the failures -> fix -> local checks -> push to the same PR branch.
 #
-# Started by a Fabro automation (the Run button in the web UI) or:
+# Started by its Fabro automation (schedule or the Run button in the web UI) or:
 #   fabro run .fabro/workflows/fix-ci/workflow.toml [-I pr=<number>]
 #
+# The graph in workflow.fabro is the same in every repository that uses this
+# pipeline. Everything specific to this repository is set below.
 # No secrets belong in this file. Keys and tokens live in Fabro's vault.
 
 [workflow]
@@ -25,8 +26,28 @@ max_rounds = "3"
 max_fix_attempts = "2"
 # Failed checks with these names are ignored (comma separated, no spaces).
 ignore_checks = "notify"
-# SonarCloud project, read through its public API when the Sonar check fails.
+# SonarCloud project read through its public API, or "none".
 sonar_project = "0x0pointer_Construct"
+
+# --- This repository --------------------------------------------------------
+repo_owner = "0x0pointer"
+repo_name = "Construct"
+# Shown to every agent as: the <owner>/<name> repository (<description>).
+repo_description = "Python 3.12 package `prsec`: the API in prsec/api/, the orchestrator and worker in prsec/orchestrator/, the sandbox tooling in prsec/sandbox/, the dashboard in prsec/dashboard/, scan-stage skills in prsec-skills/, tests in tests/"
+# Extra rule appended to the list of paths agents may not touch.
+repo_rules = "deploy/ holds the deployment manifests and is changed by maintainers only."
+# Shell commands. install_command also runs as the first step of every run
+# and again in the verify step, so it is also what starts the test database.
+# lint_command may be "none". Do not end a command with a quote character.
+install_command = "(command -v start-test-db >/dev/null && start-test-db) || echo no test database in this sandbox image; pip install -q -e '.[dev]' && python -c 'import prsec' && echo prsec importable"
+lint_command = "prsec-skills-lint prsec-skills"
+test_command = "pytest -m 'not docker and not k8s and not live_harness' -q"
+# Told to the agents: what can and cannot be run in the sandbox.
+test_notes = "The sandbox has a Postgres test database (PRSEC_TEST_DATABASE_URL is set), so tests marked db run here; run start-test-db if a connection is refused. Tests marked docker, k8s or live_harness cannot run here."
+# Paths a run may never change (comma separated, no spaces): prefixes and
+# exact file names. The verify step rejects the run if one of them changed.
+protected_prefixes = ".github/,.fabro/,deploy/,.env"
+protected_files = "LICENSE,sonar-project.properties"
 
 # Default model for any stage the stylesheet in workflow.fabro does not cover.
 [run.model]

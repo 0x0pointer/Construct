@@ -16,6 +16,7 @@ on a machine where Fabro is installed and logged in.
 | `workflows/issue-to-pr/` | The workflow graph (`workflow.fabro`) and its run settings (`workflow.toml`). The graph is the same file in every repository that uses the pipeline; what is specific to this one is in `workflow.toml`. |
 | `skills/` | Skills a stage is told to follow. Holds the Trail of Bits `differential-review` skill for the security reviewer; see `skills/README.md` for its source and license. |
 | `workflows/fix-ci/` | Second workflow: repairs a Fabro pull request whose CI checks failed. |
+| `scripts/sync-pipeline` | Copies the shared pipeline files to the other repositories, or checks that they match. |
 | `scripts/construct-build` | Convenience command that builds every approved issue. |
 | `scripts/fabro-run-titles` | Watcher that titles runs after the issue or pull request they picked. |
 
@@ -288,6 +289,26 @@ systemctl daemon-reload && systemctl enable --now fabro-run-titles
 ```
 
 After changing the script, copy it again and `systemctl restart fabro-run-titles`.
+
+## Changing the pipeline for every repository
+
+`0x0pointer/agent-smith` and `0x0pointer/skills` use the same pipeline. The
+two `workflow.fabro` graphs and the `skills/` folder are identical in all
+three repositories; this repository holds the copy that is edited, and each
+repository keeps its own `workflow.toml`.
+
+```bash
+# after changing a graph or a skill here, with the other two checked out next to this one:
+.fabro/scripts/sync-pipeline ../agent-smith ../skills          # copy the shared files
+.fabro/scripts/sync-pipeline --check ../agent-smith ../skills  # or only report differences
+```
+
+Both modes also check that every `workflow.toml` sets the inputs its graph
+uses. Each repository still needs its own pull request, because automations
+read the workflow from that repository's `main`. Fabro 0.254.0 cannot load a
+workflow from another repository; when a release supports `workflow_source`
+on automations, the graphs can move to one place and one pull request will
+change all three.
 
 ## Configuration
 
