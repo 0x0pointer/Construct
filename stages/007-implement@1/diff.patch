@@ -1,0 +1,549 @@
+diff --git a/prsec/dashboard/main.py b/prsec/dashboard/main.py
+index 2f7763d..61d9ece 100644
+--- a/prsec/dashboard/main.py
++++ b/prsec/dashboard/main.py
+@@ -65,6 +65,15 @@ STAGE_ROLES = {
+     "rules": "Rules gate", "triage": "Triage", "hypothesise": "Hypothesise",
+     "static_verify": "Static verify", "skeptic": "Skeptic", "env": "Env builder", "dynamic": "Dynamic",
+ }
++STAGE_PHASES = {
++    "rules": "Review intake",
++    "triage": "Review intake",
++    "hypothesise": "Static review",
++    "static_verify": "Static review",
++    "skeptic": "Static review",
++    "env": "Dynamic reproduction",
++    "dynamic": "Dynamic reproduction",
++}
+ STAGE_ORDER = {s.value: i for i, s in enumerate(Stage)}
+ 
+ 
+@@ -98,15 +107,62 @@ def _turns(usage: Any) -> int:
+     return int((usage or {}).get("turns") or 0) if isinstance(usage, dict) else 0
+ 
+ 
++def _stage_decision_key(stage: str | None, status: str | None, output: Any) -> str:
++    if isinstance(output, dict):
++        if stage in {"rules", "triage"} and output.get("decision"):
++            return str(output["decision"])
++        if stage == "hypothesise" and isinstance(output.get("hypotheses"), list):
++            count = len(output["hypotheses"])
++            return f"{count}_hypothesis" if count == 1 else f"{count}_hypotheses"
++        if stage == "static_verify" and output.get("verdict"):
++            return str(output["verdict"])
++        if stage == "skeptic" and isinstance(output.get("refuted"), bool):
++            return "refuted" if output["refuted"] else "upheld"
++        if stage == "env" and output.get("envspec") is not None:
++            return "envspec_written"
++        if stage == "dynamic" and output.get("outcome"):
++            return str(output["outcome"])
++    if status and status != "ok":
++        return str(status)
++    return "unknown"
++
++
+ def _enrich_stage_runs(stage_runs: list[dict[str, Any]]) -> None:
+     """Attach a friendly role name, decision summary and turn count to each stage run (in place)."""
+     for r in stage_runs:
+         st = r.get("stage")
++        r["phase"] = STAGE_PHASES.get(st, st)
+         r["role"] = STAGE_ROLES.get(st, st)
++        r["decision"] = _stage_decision_key(st, r.get("status"), r.get("output"))
+         r["summary"] = _stage_summary(st, r.get("output"))
+         r["turns"] = _turns(r.get("usage"))
+ 
+ 
++def _review_decision_rows(stage_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
++    rows = []
++    for idx, r in enumerate(stage_runs):
++        st = r.get("stage")
++        status = str(r.get("status") or "unknown")
++        rows.append(
++            {
++                "seq": idx,
++                "stage": st,
++                "role": STAGE_ROLES.get(st, st),
++                "phase": STAGE_PHASES.get(st, st),
++                "status": status,
++                "decision": _stage_decision_key(st, status, r.get("output")),
++                "summary": _stage_summary(st, r.get("output")),
++                "errors": r.get("errors") or [],
++                "task_id": r.get("task_id"),
++                "health": "ok" if status == "ok" else "failed",
++            }
++        )
++    rows.sort(key=lambda row: (STAGE_ORDER.get(row["stage"], 99), row["seq"]))
++    for row in rows:
++        row.pop("seq", None)
++    return rows
++
++
+ def _agent_pipeline(stage_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+     """Per-agent rollup for one scan: one row per canonical stage, in pipeline order.
+ 
+@@ -116,9 +172,9 @@ def _agent_pipeline(stage_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+     agents: dict[str, dict[str, Any]] = {}
+     for r in stage_runs:
+         st = r.get("stage") or "?"
+-        a = agents.setdefault(st, {"stage": st, "role": STAGE_ROLES.get(st, st), "runs": 0, "ok": 0,
+-                                   "failed": 0, "cost": 0.0, "tokens": 0, "turns": 0, "duration_s": 0.0,
+-                                   "decisions": []})
++        a = agents.setdefault(st, {"stage": st, "role": STAGE_ROLES.get(st, st), "phase": STAGE_PHASES.get(st, st),
++                                   "runs": 0, "ok": 0, "failed": 0, "cost": 0.0, "tokens": 0, "turns": 0,
++                                   "duration_s": 0.0, "decisions": []})
+         usage = r.get("usage") if isinstance(r.get("usage"), dict) else {}
+         a["runs"] += 1
+         a["ok" if r.get("status") == "ok" else "failed"] += 1
+@@ -201,8 +257,9 @@ def scan_detail(request: Request, scan_id: int):
+     stage_runs = scan.get("stage_runs") or []
+     _enrich_stage_runs(stage_runs)
+     agents = _agent_pipeline(stage_runs)
++    decision_path = _review_decision_rows(stage_runs)
+     events = obs_events.list_events(scan_id, after_id=0, limit=TIMELINE_INITIAL)
+-    return _render(request, "scan.html", scan=scan, agents=agents,
++    return _render(request, "scan.html", scan=scan, agents=agents, decision_path=decision_path,
+                    tl=_timeline_ctx(scan, events, 0, set(), TIMELINE_INITIAL))
+ 
+ 
+@@ -394,7 +451,12 @@ def triage(request: Request, finding_id: int, state: Annotated[str, Form()], not
+ 
+ @app.get("/metrics", response_class=HTMLResponse)
+ def metrics(request: Request):
+-    return _render(request, "metrics.html", m=db.metrics())
++    data = db.metrics()
++    for row in data.get("stage_decisions") or []:
++        st = row.get("stage")
++        row["role"] = STAGE_ROLES.get(st, st)
++        row["phase"] = STAGE_PHASES.get(st, st)
++    return _render(request, "metrics.html", m=data)
+ 
+ 
+ @app.get("/sarif/{scan_id}", responses={404: {"description": "No SARIF stored for this scan, or it is unreadable"}})
+diff --git a/prsec/dashboard/templates/metrics.html b/prsec/dashboard/templates/metrics.html
+index f8928fd..6a281ef 100644
+--- a/prsec/dashboard/templates/metrics.html
++++ b/prsec/dashboard/templates/metrics.html
+@@ -8,6 +8,26 @@
+ </section>
+ 
+ <div class="grid2 grid2--equal">
++  <section class="card">
++    <div class="section-heading">
++      <h2>PR review funnel (30 days)</h2>
++      <p class="muted">How many PR scans were triggered, where they ended up, and what findings they produced.</p>
++    </div>
++    <div class="table-wrap">
++      <table>
++        <thead><tr><th>Step</th><th class="num">Count</th><th>Details</th></tr></thead>
++        <tbody>
++          <tr><td>Triggered scans</td><td class="num">{{ m.review_funnel.triggered }}</td><td class="muted">All scans started in the last 30 days, including superseded ones.</td></tr>
++          <tr><td>Active scans</td><td class="num">{{ m.review_funnel.active }}</td><td class="muted">Queued or currently running scans.</td></tr>
++          <tr><td>Skipped scans</td><td class="num">{{ m.review_funnel.skipped }}</td><td class="muted">Stopped before full review.</td></tr>
++          <tr><td>Failed scans</td><td class="num">{{ m.review_funnel.failed }}</td><td class="muted">Ended with a scan-level failure.</td></tr>
++          <tr><td>Fully reviewed scans</td><td class="num">{{ m.review_funnel.fully_reviewed }}</td><td class="muted">Completed reviews with final findings.</td></tr>
++          <tr><td>Findings produced</td><td class="num">{{ m.review_funnel.findings_total }}</td>
++              <td class="muted">reproduced {{ m.review_funnel.reproduced }}, likely {{ m.review_funnel.likely }}, inconclusive {{ m.review_funnel.inconclusive }}</td></tr>
++        </tbody>
++      </table>
++    </div>
++  </section>
+   <section class="card">
+     <div class="section-heading">
+       <h2>Scans by status</h2>
+@@ -24,8 +44,6 @@
+         </tbody>
+       </table>
+     </div>
+-  </section>
+-  <section class="card">
+     <div class="section-heading">
+       <h2>Last 30 days</h2>
+       <p class="muted">Top-level scan efficiency and spend.</p>
+@@ -40,6 +58,28 @@
+   </section>
+ </div>
+ 
++<section class="card">
++  <div class="section-heading">
++    <h2>Decision outcomes by stage (30 days)</h2>
++    <p class="muted">Observed decision keys per pipeline stage, ordered by the canonical stage enum.</p>
++  </div>
++  <div class="table-wrap">
++    <table>
++      <thead><tr><th>Phase</th><th>Stage</th><th>Role</th><th>Decision key</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Failed</th>
++        <th class="num">Avg duration</th><th class="num">Avg cost</th><th class="num">Avg tokens</th><th class="num">Avg turns</th></tr></thead>
++      <tbody>
++      {% for r in m.stage_decisions %}
++        <tr><td>{{ r.phase }}</td><td><code>{{ r.stage }}</code></td><td>{{ r.role }}</td><td><code>{{ r.decision }}</code></td>
++          <td class="num">{{ r.runs }}</td><td class="num">{{ r.ok_rate | pct }}</td>
++          <td class="num">{% if r.failed %}<span class="err">{{ r.failed }}</span>{% else %}0{% endif %}</td>
++          <td class="num">{{ r.avg_duration_s | dur }}</td><td class="num">{{ r.avg_cost | usd }}</td>
++          <td class="num">{{ r.avg_tokens | int }}</td><td class="num">{{ r.avg_turns | round(1) }}</td></tr>
++      {% else %}<tr><td colspan="11" class="muted">No stage decisions in the last 30 days.</td></tr>{% endfor %}
++      </tbody>
++    </table>
++  </div>
++</section>
++
+ {% macro precision_table(rows, title) %}
+ <table>
+   <thead><tr><th>{{ title }}</th><th class="num">Findings</th><th class="num">TP</th><th class="num">FP</th>
+@@ -55,6 +95,10 @@
+ {% endmacro %}
+ 
+ <section class="card stack">
++  <div class="section-heading">
++    <h2>Review quality and findings</h2>
++    <p class="muted">Triage precision over findings reported by recent reviews.</p>
++  </div>
+   <div class="section-heading">
+     <h2>Precision by label</h2>
+   </div>
+@@ -67,6 +111,10 @@
+ </section>
+ 
+ <section class="card">
++  <div class="section-heading">
++    <h2>Agent execution health</h2>
++    <p class="muted">Per-stage execution reliability, cost, and effort across recent runs.</p>
++  </div>
+   <div class="section-heading">
+     <h2>By agent (30 days)</h2>
+     <p class="muted">One row per agent (pipeline stage): how reliably it runs, what it costs, and how much work it does.</p>
+diff --git a/prsec/dashboard/templates/scan.html b/prsec/dashboard/templates/scan.html
+index e6c1838..1db0843 100644
+--- a/prsec/dashboard/templates/scan.html
++++ b/prsec/dashboard/templates/scan.html
+@@ -58,6 +58,33 @@
+ </div>
+ 
+ {% set health_badge = {'ok': 'st-ok', 'failed': 'st-failed', 'partial': 'st-running'} %}
++<section class="card">
++  <div class="section-heading">
++    <h2>Review decision path</h2>
++    <p class="muted">Each stage decision in pipeline order, including fan-out stage runs and malformed or failed outputs.</p>
++  </div>
++  <div class="table-wrap">
++    <table>
++      <thead><tr><th>Phase</th><th>Agent</th><th>Status</th><th>Decision</th><th>Details</th><th>Task</th><th>Errors</th></tr></thead>
++      <tbody>
++      {% for r in decision_path %}
++        <tr>
++          <td>{{ r.phase }}</td>
++          <td><strong>{{ r.role }}</strong><br><span class="muted">{{ r.stage }}</span></td>
++          <td><span class="badge st-{{ r.status }}">{{ r.status }}</span></td>
++          <td><code>{{ r.decision }}</code></td>
++          <td class="wrap-anywhere">{{ r.summary or '-' }}</td>
++          <td><code>{{ r.task_id or '-' }}</code></td>
++          <td>{% for e in r.errors %}<div class="err wrap-anywhere">{{ e }}</div>{% else %}<span class="muted">-</span>{% endfor %}</td>
++        </tr>
++      {% else %}
++        <tr><td colspan="7" class="muted">No stage decisions recorded yet.</td></tr>
++      {% endfor %}
++      </tbody>
++    </table>
++  </div>
++</section>
++
+ <section class="card">
+   <div class="section-heading">
+     <h2>Agents</h2>
+@@ -65,11 +92,12 @@
+   </div>
+   <div class="table-wrap">
+     <table>
+-      <thead><tr><th>Agent</th><th>Stage</th><th class="num">Runs</th><th>Status</th><th>Decision</th>
++      <thead><tr><th>Phase</th><th>Agent</th><th>Stage</th><th class="num">Runs</th><th>Status</th><th>Decision</th>
+         <th class="num">Tokens</th><th class="num">Turns</th><th class="num">Cost</th><th class="num">Duration</th></tr></thead>
+       <tbody>
+       {% for a in agents %}
+         <tr>
++          <td>{{ a.phase }}</td>
+           <td><strong>{{ a.role }}</strong></td>
+           <td><code>{{ a.stage }}</code></td>
+           <td class="num">{{ a.runs }}</td>
+@@ -81,7 +109,7 @@
+           <td class="num">{{ a.duration_s | dur }}</td>
+         </tr>
+       {% else %}
+-        <tr><td colspan="9" class="muted">No agent runs.</td></tr>
++        <tr><td colspan="10" class="muted">No agent runs.</td></tr>
+       {% endfor %}
+       </tbody>
+     </table>
+@@ -107,7 +135,7 @@
+           <td>{{ r.harness }}</td>
+           <td>{{ r.model }}</td>
+           <td><span class="badge st-{{ r.status }}">{{ r.status }}</span></td>
+-          <td class="wrap-anywhere">{{ r.summary or '-' }}</td>
++          <td class="wrap-anywhere">{{ r.summary or r.decision }}</td>
+           <td class="num">{{ r.attempts }}</td>
+           <td class="num">{{ r.usage.tokens_in or 0 }} / {{ r.usage.tokens_out or 0 }}</td>
+           <td class="num">{{ r.turns or '-' }}</td>
+diff --git a/prsec/db/findings.py b/prsec/db/findings.py
+index b1be87d..4b26a3d 100644
+--- a/prsec/db/findings.py
++++ b/prsec/db/findings.py
+@@ -292,13 +292,31 @@ def metrics() -> dict[str, Any]:
+         ).fetchall()
+         agg = conn.execute(
+             """SELECT count(*) FILTER (WHERE status IN ('done', 'skipped', 'failed')) AS finished,
+-                      count(*) FILTER (WHERE status = 'skipped') AS skipped,
+-                      count(*) FILTER (WHERE status = 'done') AS done,
+-                      COALESCE(avg(cost_usd) FILTER (WHERE status IN ('done', 'skipped', 'failed')), 0)::float AS avg_cost,
++                       count(*) FILTER (WHERE status = 'skipped') AS skipped,
++                       count(*) FILTER (WHERE status = 'done') AS done,
++                       COALESCE(avg(cost_usd) FILTER (WHERE status IN ('done', 'skipped', 'failed')), 0)::float AS avg_cost,
+                       COALESCE(sum(cost_usd), 0)::float AS total_cost,
+                       avg(EXTRACT(EPOCH FROM (finished_at - started_at)))::float AS avg_duration_s
+                FROM scans WHERE created_at > now() - interval '30 days'"""
+         ).fetchone()
++        review_funnel = conn.execute(
++            """SELECT count(*) AS triggered,
++                      count(*) FILTER (WHERE status IN ('queued', 'running')) AS active,
++                      count(*) FILTER (WHERE status = 'skipped') AS skipped,
++                      count(*) FILTER (WHERE status = 'failed') AS failed,
++                      count(*) FILTER (WHERE status = 'done') AS fully_reviewed
++               FROM scans
++               WHERE created_at > now() - interval '30 days'"""
++        ).fetchone()
++        findings_funnel = conn.execute(
++            """SELECT count(*) AS findings_total,
++                      count(*) FILTER (WHERE o.label = 'reproduced') AS reproduced,
++                      count(*) FILTER (WHERE o.label = 'likely') AS likely,
++                      count(*) FILTER (WHERE o.label = 'inconclusive') AS inconclusive
++               FROM finding_occurrences o
++               JOIN scans s ON s.id = o.scan_id
++               WHERE s.created_at > now() - interval '30 days'"""
++        ).fetchone()
+ 
+         def precision_by(col: str) -> list[dict]:
+             rows = conn.execute(
+@@ -341,10 +359,52 @@ def metrics() -> dict[str, Any]:
+                  AND task_id NOT LIKE '%-shadow-%'  -- shadow arms (policy `shadows`) are not the stage's agent
+                GROUP BY stage"""
+         ).fetchall()
++        stage_decisions = conn.execute(
++            """SELECT stage,
++                      CASE
++                          WHEN jsonb_typeof(output) = 'object' AND stage IN ('rules', 'triage')
++                               AND COALESCE(output->>'decision', '') <> ''
++                              THEN output->>'decision'
++                          WHEN jsonb_typeof(output) = 'object' AND stage = 'hypothesise'
++                               AND jsonb_typeof(output->'hypotheses') = 'array'
++                              THEN CASE
++                                  WHEN jsonb_array_length(output->'hypotheses') = 1 THEN '1_hypothesis'
++                                  ELSE jsonb_array_length(output->'hypotheses')::text || '_hypotheses'
++                              END
++                          WHEN jsonb_typeof(output) = 'object' AND stage = 'static_verify'
++                               AND COALESCE(output->>'verdict', '') <> ''
++                              THEN output->>'verdict'
++                          WHEN jsonb_typeof(output) = 'object' AND stage = 'skeptic'
++                               AND output ? 'refuted'
++                              THEN CASE output->>'refuted' WHEN 'true' THEN 'refuted' WHEN 'false' THEN 'upheld' END
++                          WHEN jsonb_typeof(output) = 'object' AND stage = 'env'
++                               AND output ? 'envspec' AND output->'envspec' <> 'null'::jsonb
++                              THEN 'envspec_written'
++                          WHEN jsonb_typeof(output) = 'object' AND stage = 'dynamic'
++                               AND COALESCE(output->>'outcome', '') <> ''
++                              THEN output->>'outcome'
++                          WHEN status <> 'ok' THEN status
++                          ELSE 'unknown'
++                      END AS decision,
++                      count(*) AS runs,
++                      count(*) FILTER (WHERE status = 'ok') AS ok,
++                      count(*) FILTER (WHERE status <> 'ok') AS failed,
++                      avg(duration_s)::float AS avg_duration_s,
++                      COALESCE(avg((usage->>'usd')::float), 0)::float AS avg_cost,
++                      COALESCE(avg((usage->>'tokens_in')::float + (usage->>'tokens_out')::float), 0)::float AS avg_tokens,
++                      COALESCE(avg((usage->>'turns')::float), 0)::float AS avg_turns
++               FROM stage_runs
++               WHERE created_at > now() - interval '30 days'
++                 AND task_id NOT LIKE '%-shadow-%'
++               GROUP BY stage, decision"""
++        ).fetchall()
+         for r in [*per_harness, *per_stage_harness, *per_stage]:
+             r["ok_rate"] = round(r["ok"] / r["runs"], 3) if r["runs"] else None
+         order = {s.value: i for i, s in enumerate(Stage)}
+         per_stage.sort(key=lambda r: order.get(r["stage"], 99))
++        for r in stage_decisions:
++            r["ok_rate"] = round(r["ok"] / r["runs"], 3) if r["runs"] else None
++        stage_decisions.sort(key=lambda r: (order.get(r["stage"], 99), r["decision"]))
+         by_bug_class = precision_by("bug_class")
+         by_label = precision_by("label")
+ 
+@@ -359,6 +419,18 @@ def metrics() -> dict[str, Any]:
+         "avg_cost_usd": round(agg["avg_cost"], 4),
+         "total_cost_usd": round(agg["total_cost"], 4),
+         "avg_duration_s": agg["avg_duration_s"],
++        "review_funnel": {
++            "triggered": review_funnel["triggered"],
++            "active": review_funnel["active"],
++            "skipped": review_funnel["skipped"],
++            "failed": review_funnel["failed"],
++            "fully_reviewed": review_funnel["fully_reviewed"],
++            "findings_total": findings_funnel["findings_total"],
++            "reproduced": findings_funnel["reproduced"],
++            "likely": findings_funnel["likely"],
++            "inconclusive": findings_funnel["inconclusive"],
++        },
++        "stage_decisions": stage_decisions,
+         "precision_by_bug_class": by_bug_class,
+         "precision_by_label": by_label,
+         "per_harness": per_harness,
+diff --git a/tests/dashboard/test_prsec_dashboard_routes.py b/tests/dashboard/test_prsec_dashboard_routes.py
+index 7ba8acb..ef0041d 100644
+--- a/tests/dashboard/test_prsec_dashboard_routes.py
++++ b/tests/dashboard/test_prsec_dashboard_routes.py
+@@ -66,6 +66,51 @@ def test_scan_detail_agent_observability(client, seeded):
+     assert "Turns" in r.text  # per-agent effort column
+ 
+ 
++def test_scan_detail_review_decision_path(client, seeded, pg_pool):
++    s1, _ = seeded["scans"]
++    with pg_pool.connection() as c:
++        c.execute("UPDATE stage_runs SET transcript_uri = 'file:///tmp/t1.txt' WHERE task_id = 't1'")
++        c.execute(
++            """INSERT INTO stage_runs (scan_id, task_id, stage, harness, harness_version, model, status, usage, output, errors, duration_s)
++               VALUES (%s, 't-rules', 'rules', 'codex', '0.50.0', 'agent-large', 'ok', %s, %s, %s, 5),
++                      (%s, 't-triage', 'triage', 'codex', '0.50.0', 'agent-large', 'ok', %s, %s, %s, 12),
++                      (%s, 't2b', 'static_verify', 'claude-code', '2.1.0', 'agent-large', 'ok', %s, %s, %s, 19),
++                      (%s, 't-env-bad', 'env', 'claude-code', '2.1.0', 'agent-large', 'ok', %s, %s, %s, 4)""",
++            (
++                s1,
++                Jsonb({"usd": 0.1, "tokens_in": 20, "tokens_out": 5, "turns": 1}),
++                Jsonb({"decision": "scan", "reason": "security relevant"}),
++                Jsonb([]),
++                s1,
++                Jsonb({"usd": 0.2, "tokens_in": 40, "tokens_out": 10, "turns": 1}),
++                Jsonb({"decision": "full", "rationale": "authz touched"}),
++                Jsonb([]),
++                s1,
++                Jsonb({"usd": 0.3, "tokens_in": 70, "tokens_out": 30, "turns": 2}),
++                Jsonb({"verdict": "plausible", "severity": "high", "reachable": "yes"}),
++                Jsonb([]),
++                s1,
++                Jsonb({"usd": 0.05, "tokens_in": 10, "tokens_out": 1, "turns": 1}),
++                Jsonb("bad-output"),
++                Jsonb([]),
++            ),
++        )
++
++    r = client.get(f"/scans/{s1}")
++    assert r.status_code == 200
++    assert "Review decision path" in r.text
++    assert "Review intake" in r.text
++    assert "Static review" in r.text
++    assert "Rules gate" in r.text
++    assert "Static verify" in r.text
++    assert "2 hypothesis(es): H1, H2" in r.text
++    assert "output_invalid" in r.text
++    assert "plausible" in r.text
++    assert "unknown" in r.text
++    assert f'href="/stage-runs/' in r.text
++    assert f'href="/sarif/{s1}"' in r.text
++
++
+ def test_metrics_per_agent_rollup(client, seeded):
+     r = client.get("/metrics")
+     assert r.status_code == 200
+@@ -75,6 +120,63 @@ def test_metrics_per_agent_rollup(client, seeded):
+     assert "static_verify" in r.text
+ 
+ 
++def test_metrics_review_funnel_and_stage_decisions(client, seeded, pg_pool):
++    s1, _ = seeded["scans"]
++    with pg_pool.connection() as c:
++        c.execute(
++            """INSERT INTO scans (repo, pr, head_sha, skills_version, status, triage)
++               VALUES ('acme/shop', 8, %s, 'dev', 'running', %s),
++                      ('acme/shop', 9, %s, 'dev', 'failed', %s),
++                      ('acme/shop', 10, %s, 'dev', 'queued', %s)""",
++            (
++                "d" * 40,
++                Jsonb({"decision": "full", "rationale": "still scanning"}),
++                "e" * 40,
++                Jsonb({"decision": "full", "rationale": "runner failed"}),
++                "f" * 40,
++                Jsonb({"decision": "scan", "rationale": "waiting"}),
++            ),
++        )
++        c.execute(
++            """INSERT INTO stage_runs (scan_id, task_id, stage, harness, harness_version, model, status, usage, output, errors, duration_s)
++               VALUES (%s, 't-rules', 'rules', 'codex', '0.50.0', 'agent-large', 'ok', %s, %s, %s, 7),
++                      (%s, 't-triage', 'triage', 'codex', '0.50.0', 'agent-large', 'ok', %s, %s, %s, 15),
++                      (%s, 't-dynamic', 'dynamic', 'claude-code', '2.1.0', 'agent-large', 'ok', %s, %s, %s, 33),
++                      (%s, 't-env-bad', 'env', 'claude-code', '2.1.0', 'agent-large', 'ok', %s, %s, %s, 8)""",
++            (
++                s1,
++                Jsonb({"usd": 0.1, "tokens_in": 50, "tokens_out": 10, "turns": 1}),
++                Jsonb({"decision": "scan", "reason": "security relevant"}),
++                Jsonb([]),
++                s1,
++                Jsonb({"usd": 0.2, "tokens_in": 60, "tokens_out": 20, "turns": 2}),
++                Jsonb({"decision": "full", "rationale": "changed authz"}),
++                Jsonb([]),
++                s1,
++                Jsonb({"usd": 0.3, "tokens_in": 80, "tokens_out": 30, "turns": 2}),
++                Jsonb({"outcome": "reproduced", "reasoning": "replay_confirmed"}),
++                Jsonb([]),
++                s1,
++                Jsonb({"usd": 0.05, "tokens_in": 10, "tokens_out": 3, "turns": 1}),
++                Jsonb(["malformed"]),
++                Jsonb([]),
++            ),
++        )
++
++    r = client.get("/metrics")
++    assert r.status_code == 200
++    assert "PR review funnel (30 days)" in r.text
++    assert "Triggered scans" in r.text
++    assert "Active scans" in r.text
++    assert "Fully reviewed scans" in r.text
++    assert "Findings produced" in r.text
++    assert "Decision outcomes by stage (30 days)" in r.text
++    for needle in ("scan", "full", "reproduced", "output_invalid", "unknown"):
++        assert needle in r.text
++    for needle in ("Precision by label", "By agent", "Harness comparison"):
++        assert needle in r.text
++
++
+ def test_findings_filters(client, seeded):
+     r = client.get("/findings")
+     assert r.status_code == 200
+@@ -248,19 +350,33 @@ def test_dashboard_restyle_escapes_untrusted_finding_and_scan_content(client, se
+             "INSERT INTO scan_events (scan_id, kind, level, stage, message, data) VALUES (%s, 'triage', 'warning', 'triage', %s, %s)",
+             (s1, hostile, Jsonb({"note": note})),
+         )
++        c.execute(
++            """INSERT INTO stage_runs (scan_id, task_id, stage, harness, harness_version, model, status, usage, output, errors, duration_s)
++               VALUES (%s, 't-hostile', 'rules', 'codex', '0.50.0', 'agent-large', 'ok', %s, %s, %s, 9)""",
++            (
++                s1,
++                Jsonb({"usd": 0.1, "tokens_in": 20, "tokens_out": 4, "turns": 1}),
++                Jsonb({"decision": hostile, "reason": note}),
++                Jsonb([hostile]),
++            ),
++        )
+     db.set_triage(fid, "accepted", note)
+ 
+     finding_page = client.get(f"/findings/{fid}", headers={"X-Forwarded-User": forwarded})
++    metrics_page = client.get("/metrics", headers={"X-Forwarded-User": forwarded})
+     scan_page = client.get(f"/scans/{s1}", headers={"X-Forwarded-User": forwarded})
+-    for page in (finding_page, scan_page):
++    for page in (finding_page, metrics_page, scan_page):
+         assert page.status_code == 200
+         assert hostile not in page.text
+         assert forwarded not in page.text
+         assert "<img" not in page.text
+         assert 'href="javascript:' not in page.text
+         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page.text
+-        assert "&lt;img src=x onerror=alert(1)&gt;" in page.text
++        assert 'onclick="alert(2)' not in page.text
++    for page in (finding_page, scan_page):
+         assert "javascript:alert(9)" in page.text
++    for page in (finding_page, scan_page):
++        assert "&lt;img src=x onerror=alert(1)&gt;" in page.text
+ 
+ 
+ def test_finding_detail_handles_missing_optional_sections(client, seeded, pg_pool):
