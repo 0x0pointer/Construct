@@ -841,7 +841,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-11-25T10:11:58.826687153Z",
-  "last_event_at": "2026-11-25T10:12:04.561164369Z",
+  "last_event_at": "2026-11-25T10:12:10.134291786Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -1964,9 +1964,9 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 214,
       "checkpoint": {
-        "timestamp": "2026-11-25T10:12:05.289270974Z",
+        "timestamp": "2026-11-25T10:12:10.134105538Z",
         "current_node": "release",
         "completed_nodes": [
           "start",
@@ -1981,65 +1981,65 @@
         ],
         "node_retries": {},
         "context_values": {
-          "outcome": "succeeded",
+          "response.spec": "DECISION NEEDED: The issue could mean (a) a visual refresh only, (b) removing the existing CDN HTMX dependency, or (c) a full dashboard workflow redesign. Choose (a)+(b): keep routes/data behaviour, restyle the server-rendered dashboard, and remove external UI dependencies.\n\n1. Intent - the dashboard should look and feel modern while staying dependency-free and broadly browser-compatible. Implement a server-rendered restyle using only inline/local HTML/CSS in dashboard templates, with the findings list/detail pages receiving the clearest usability improvements. Remove the externally loaded HTMX script and avoid dead HTMX-only behaviours unless replaced by plain non-dependent HTML behaviour.\n\n2. Acceptance criteria\n1. `GET /findings`, `GET /findings/{id}`, `GET /`, `GET /scans/{id}`, and `GET /metrics` render HTML with no external stylesheet/script/image/font URLs and no `<script src=...>` or CDN references.\n2. The findings index remains filterable with normal HTML form submission without JavaScript; selected filters survive in the rendered controls; pagination links preserve active filters.\n3. The finding detail page presents summary metadata, triage, description/reasoning, code flow, dynamic validation, provenance, and occurrences in visually distinct responsive sections/cards.\n4. Existing dashboard routes, status codes, form field names, filter query names, triage POST behaviour, artifact download links, and SARIF/evidence response types do not change.\n5. Empty datasets still render useful empty-state text instead of broken tables.\n6. Untrusted finding/scan/event text remains HTML-escaped in rendered output.\n\n3. Boundaries\nAlways: use existing FastAPI/Jinja rendering in `prsec.dashboard.main._render`; keep existing templates and CSS-in-template convention in `base.html`; use existing `db` helpers and filters (`usd`, `dur`, `pct`, `tojson_pretty`).\nNever: add frontend/package dependencies, external CDNs, new database queries for styling only, auth changes, CI/deployment changes, or API/orchestrator/sandbox changes.\n\n4. Code map\n- `prsec/dashboard/templates/base.html`: remove external HTMX script; replace current minimal CSS with modern responsive layout, cards, badges, tables, focus states, empty states, and navigation styling.\n- `prsec/dashboard/templates/findings.html`: remove `hx-*` attributes; make filter form usable without JS and add/reset submit affordances if needed.\n- `prsec/dashboard/templates/_findings_table.html`: adjust markup/classes only for improved findings table readability and responsive wrapping; keep columns/data/links.\n- `prsec/dashboard/templates/finding.html`: reorganize markup/classes into clearer responsive summary/content/side sections; keep displayed fields and links.\n- `prsec/dashboard/templates/_triage.html`: remove `hx-*` attributes; keep `state` and `note` fields and POST action unchanged.\n- `prsec/dashboard/templates/_timeline_poller.html` and `_timeline_poll.html`: remove HTMX-only rendered attributes/text or make the no-JS behaviour honest; keep `/scans/{scan_id}/events` route renderable.\n- Add tests in `tests/dashboard/test_dashboard_ui.py`. Existing broad pytest suite must keep passing.\n\n5. Edge cases\n\n| Input/state | Expected behaviour |\n|---|---|\n| No findings/scans/metrics rows | Page renders existing empty-state copy in styled container/table, status 200. |\n| Malformed/unexpected filter values | Values are escaped, preserved only as selected/input values where applicable, and no HTML/script executes. |\n| Oversized titles, paths, snippets, event data | Text wraps or scrolls inside content areas without breaking page layout. |\n| Duplicate-looking filter values from data | Form remains valid; implementation must not add duplicate hard-coded options beyond existing DB-provided distinct values. |\n| Concurrent triage submissions | Existing last-write database behaviour is unchanged; UI restyle must not add client-side state that can skip server validation. |\n| Missing finding/scan/artifact | Existing 404/502 behaviours remain unchanged. |\n| JavaScript disabled/unavailable | Findings filtering, pagination, triage submission, and navigation still work via normal requests. |\n\n6. Security considerations\nThe dashboard renders untrusted repository, agent, event, finding, and triage text. Keep Jinja autoescaping; do not mark these values safe or interpolate them into raw JS/CSS. Removing the external HTMX CDN eliminates a supply-chain/privacy dependency; do not replace it with another external resource. No shell, SQL, path, authentication, or authorization logic should change. Add negative rendering tests for script-like data to ensure it is escaped.\n\n7. Test plan\n- `tests/dashboard/test_dashboard_ui.py::test_dashboard_pages_use_no_external_frontend_assets`: monkeypatch dashboard DB helpers, render `/findings`, `/findings/1`, `/`, `/scans/1`, `/metrics`, and assert no CDN/external URLs, no `<script src`, and no `hx-` attributes in user-facing pages.\n- `tests/dashboard/test_dashboard_ui.py::test_findings_filter_form_works_without_javascript`: render `/findings?repo=owner/repo&severity=high&page=2`; assert status 200, form `method=\"get\"`, selected/preserved filters, and pagination keeps active query parameters.\n- `tests/dashboard/test_dashboard_ui.py::test_finding_detail_has_responsive_sections_and_core_content`: render a representative finding and assert visible title, badges, triage form fields, code-flow/evidence links, occurrence link, and section/card classes.\n- `tests/dashboard/test_dashboard_ui.py::test_empty_dashboard_states_render`: render empty findings/scans/metrics inputs and assert existing empty-state text appears with status 200.\n- `tests/dashboard/test_dashboard_ui.py::test_untrusted_dashboard_text_is_escaped`: inject `<script>alert(1)</script>` in finding title/repo/snippet/note/event-like fields and assert escaped text appears while raw script tags do not.\n- Existing tests under `tests/` must continue passing.\nTests required: yes\n\n8. Review focus\n- CSS may look modern but make dense security data harder to scan.\n- Removing HTMX must not leave misleading “live polling” UI or broken async-only forms.\n- Responsive table/card styling could hide columns or links needed for debugging.\n- Escaping must not be weakened by inline style/script additions.\n- Pagination/filter URLs can easily lose active filters or create malformed `?&page=` links.\n\n9. Assumptions\n- “Every browser” means progressive, standards-based HTML/CSS with no CDN dependency, not support for obsolete browsers requiring polyfills.\n- It is acceptable to drop HTMX-enhanced live updates if normal reload/navigation remains correct.\n- Visual verification is limited to structural/rendered-output tests; maintainers will judge final aesthetics in review.\n- No screenshots or browser automation framework should be added.\n\n10. Suspicious content\nnone\n\nSize: standard\nRisk level: medium\nReason: dashboard templates render untrusted security findings and operational state; a wrong change can break triage visibility or introduce XSS, though auth/data persistence are unchanged.",
+          "internal.retry_count.verify": 0,
+          "thread.implement.current_node": "verify",
           "thread.spec.current_node": "approve",
-          "internal.retry_count.release": 0,
-          "graph.max_node_visits": "30",
-          "failure_signature": "",
-          "response.implement": "Blocked: /tmp/fabro/spec.md is missing, so I could not follow the reviewed spec as required. I wrote the blocker to /tmp/fabro/blocked.md and left the repository unchanged.\n\nTests run: none, because implementation could not begin without the spec.\n\nSTATUS: BLOCKED",
-          "internal.fidelity": "compact",
-          "graph.loop_restart_signature_limit": "10",
-          "thread.verify.current_node": "stuck",
           "internal.node_visit_count": 1,
+          "graph.goal": "Resolve the next maintainer-approved GitHub issue of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
+          "graph.loop_restart_signature_limit": "10",
+          "human.gate.stuck.answer": "X",
+          "internal.retry_count.implement": 0,
+          "preferred_label": "[X] Stop, fail the run",
+          "thread.stuck.current_node": "release",
+          "outcome": "succeeded",
+          "thread.verify.current_node": "stuck",
+          "human.gate.approve.answer": "A",
+          "thread.strong.current_node": "spec",
           "internal.retry_count.approve": 0,
-          "thread.check_issue.current_node": "install",
           "internal.work_dir": "/workspace/Construct",
-          "last_response": "Blocked: /tmp/fabro/spec.md is missing, so I could not follow the reviewed spec as required. I wrote the blocker to /tmp/fabro/blocked.md and left the repository unchanged.\n\nTests run: none, because i",
-          "internal.retry_count.stuck": 0,
+          "last_stage": "implement",
           "thread.approve.current_node": "implement",
           "current_node": "release",
-          "internal.retry_count.install": 0,
-          "human.gate.stuck.answer": "X",
-          "internal.thread_id": "stuck",
-          "human.gate.label": "[X] Stop, fail the run",
-          "human.gate.approve.answer": "A",
-          "thread.implement.current_node": "verify",
-          "graph.goal": "Resolve the next maintainer-approved GitHub issue of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
-          "human.gate.stuck.question": "Automatic fixing did not converge. Stop, or allow one more attempt?",
-          "human.gate.stuck.label": "[X] Stop, fail the run",
-          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
-          "thread.start.current_node": "check_issue",
-          "internal.retry_count.check_issue": 0,
-          "graph.rankdir": "LR",
-          "internal.retry_count.spec": 0,
-          "failure_class": "",
-          "internal.retry_count.verify": 0,
-          "last_stage": "implement",
-          "internal.retry_count.start": 0,
-          "human.gate.approve.label": "[A] Approve",
-          "thread.strong.current_node": "spec",
-          "internal.retry_count.implement": 0,
-          "internal.run_id": "01M8918DTDKR6YHAY31B007809",
-          "thread.stuck.current_node": "release",
           "human.gate.approve.question": "Approve the spec? To have it revised, type what should change.",
+          "internal.retry_count.check_issue": 0,
+          "human.gate.approve.label": "[A] Approve",
+          "last_response": "Blocked: /tmp/fabro/spec.md is missing, so I could not follow the reviewed spec as required. I wrote the blocker to /tmp/fabro/blocked.md and left the repository unchanged.\n\nTests run: none, because i",
+          "human.gate.stuck.label": "[X] Stop, fail the run",
+          "internal.fidelity": "compact",
+          "internal.retry_count.spec": 0,
           "human.gate.selected": "X",
-          "response.spec": "DECISION NEEDED: The issue could mean (a) a visual refresh only, (b) removing the existing CDN HTMX dependency, or (c) a full dashboard workflow redesign. Choose (a)+(b): keep routes/data behaviour, restyle the server-rendered dashboard, and remove external UI dependencies.\n\n1. Intent - the dashboard should look and feel modern while staying dependency-free and broadly browser-compatible. Implement a server-rendered restyle using only inline/local HTML/CSS in dashboard templates, with the findings list/detail pages receiving the clearest usability improvements. Remove the externally loaded HTMX script and avoid dead HTMX-only behaviours unless replaced by plain non-dependent HTML behaviour.\n\n2. Acceptance criteria\n1. `GET /findings`, `GET /findings/{id}`, `GET /`, `GET /scans/{id}`, and `GET /metrics` render HTML with no external stylesheet/script/image/font URLs and no `<script src=...>` or CDN references.\n2. The findings index remains filterable with normal HTML form submission without JavaScript; selected filters survive in the rendered controls; pagination links preserve active filters.\n3. The finding detail page presents summary metadata, triage, description/reasoning, code flow, dynamic validation, provenance, and occurrences in visually distinct responsive sections/cards.\n4. Existing dashboard routes, status codes, form field names, filter query names, triage POST behaviour, artifact download links, and SARIF/evidence response types do not change.\n5. Empty datasets still render useful empty-state text instead of broken tables.\n6. Untrusted finding/scan/event text remains HTML-escaped in rendered output.\n\n3. Boundaries\nAlways: use existing FastAPI/Jinja rendering in `prsec.dashboard.main._render`; keep existing templates and CSS-in-template convention in `base.html`; use existing `db` helpers and filters (`usd`, `dur`, `pct`, `tojson_pretty`).\nNever: add frontend/package dependencies, external CDNs, new database queries for styling only, auth changes, CI/deployment changes, or API/orchestrator/sandbox changes.\n\n4. Code map\n- `prsec/dashboard/templates/base.html`: remove external HTMX script; replace current minimal CSS with modern responsive layout, cards, badges, tables, focus states, empty states, and navigation styling.\n- `prsec/dashboard/templates/findings.html`: remove `hx-*` attributes; make filter form usable without JS and add/reset submit affordances if needed.\n- `prsec/dashboard/templates/_findings_table.html`: adjust markup/classes only for improved findings table readability and responsive wrapping; keep columns/data/links.\n- `prsec/dashboard/templates/finding.html`: reorganize markup/classes into clearer responsive summary/content/side sections; keep displayed fields and links.\n- `prsec/dashboard/templates/_triage.html`: remove `hx-*` attributes; keep `state` and `note` fields and POST action unchanged.\n- `prsec/dashboard/templates/_timeline_poller.html` and `_timeline_poll.html`: remove HTMX-only rendered attributes/text or make the no-JS behaviour honest; keep `/scans/{scan_id}/events` route renderable.\n- Add tests in `tests/dashboard/test_dashboard_ui.py`. Existing broad pytest suite must keep passing.\n\n5. Edge cases\n\n| Input/state | Expected behaviour |\n|---|---|\n| No findings/scans/metrics rows | Page renders existing empty-state copy in styled container/table, status 200. |\n| Malformed/unexpected filter values | Values are escaped, preserved only as selected/input values where applicable, and no HTML/script executes. |\n| Oversized titles, paths, snippets, event data | Text wraps or scrolls inside content areas without breaking page layout. |\n| Duplicate-looking filter values from data | Form remains valid; implementation must not add duplicate hard-coded options beyond existing DB-provided distinct values. |\n| Concurrent triage submissions | Existing last-write database behaviour is unchanged; UI restyle must not add client-side state that can skip server validation. |\n| Missing finding/scan/artifact | Existing 404/502 behaviours remain unchanged. |\n| JavaScript disabled/unavailable | Findings filtering, pagination, triage submission, and navigation still work via normal requests. |\n\n6. Security considerations\nThe dashboard renders untrusted repository, agent, event, finding, and triage text. Keep Jinja autoescaping; do not mark these values safe or interpolate them into raw JS/CSS. Removing the external HTMX CDN eliminates a supply-chain/privacy dependency; do not replace it with another external resource. No shell, SQL, path, authentication, or authorization logic should change. Add negative rendering tests for script-like data to ensure it is escaped.\n\n7. Test plan\n- `tests/dashboard/test_dashboard_ui.py::test_dashboard_pages_use_no_external_frontend_assets`: monkeypatch dashboard DB helpers, render `/findings`, `/findings/1`, `/`, `/scans/1`, `/metrics`, and assert no CDN/external URLs, no `<script src`, and no `hx-` attributes in user-facing pages.\n- `tests/dashboard/test_dashboard_ui.py::test_findings_filter_form_works_without_javascript`: render `/findings?repo=owner/repo&severity=high&page=2`; assert status 200, form `method=\"get\"`, selected/preserved filters, and pagination keeps active query parameters.\n- `tests/dashboard/test_dashboard_ui.py::test_finding_detail_has_responsive_sections_and_core_content`: render a representative finding and assert visible title, badges, triage form fields, code-flow/evidence links, occurrence link, and section/card classes.\n- `tests/dashboard/test_dashboard_ui.py::test_empty_dashboard_states_render`: render empty findings/scans/metrics inputs and assert existing empty-state text appears with status 200.\n- `tests/dashboard/test_dashboard_ui.py::test_untrusted_dashboard_text_is_escaped`: inject `<script>alert(1)</script>` in finding title/repo/snippet/note/event-like fields and assert escaped text appears while raw script tags do not.\n- Existing tests under `tests/` must continue passing.\nTests required: yes\n\n8. Review focus\n- CSS may look modern but make dense security data harder to scan.\n- Removing HTMX must not leave misleading “live polling” UI or broken async-only forms.\n- Responsive table/card styling could hide columns or links needed for debugging.\n- Escaping must not be weakened by inline style/script additions.\n- Pagination/filter URLs can easily lose active filters or create malformed `?&page=` links.\n\n9. Assumptions\n- “Every browser” means progressive, standards-based HTML/CSS with no CDN dependency, not support for obsolete browsers requiring polyfills.\n- It is acceptable to drop HTMX-enhanced live updates if normal reload/navigation remains correct.\n- Visual verification is limited to structural/rendered-output tests; maintainers will judge final aesthetics in review.\n- No screenshots or browser automation framework should be added.\n\n10. Suspicious content\nnone\n\nSize: standard\nRisk level: medium\nReason: dashboard templates render untrusted security findings and operational state; a wrong change can break triage visibility or introduce XSS, though auth/data persistence are unchanged.",
-          "preferred_label": "[X] Stop, fail the run",
-          "command.output": "blob://sha256/f9d0e38253c67d86f88c1593339d224cd51fa9706989dc6e1d80102cef10ac63"
+          "thread.check_issue.current_node": "install",
+          "thread.start.current_node": "check_issue",
+          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
+          "graph.max_node_visits": "30",
+          "internal.retry_count.release": 0,
+          "internal.thread_id": "stuck",
+          "response.implement": "Blocked: /tmp/fabro/spec.md is missing, so I could not follow the reviewed spec as required. I wrote the blocker to /tmp/fabro/blocked.md and left the repository unchanged.\n\nTests run: none, because implementation could not begin without the spec.\n\nSTATUS: BLOCKED",
+          "internal.retry_count.install": 0,
+          "internal.retry_count.stuck": 0,
+          "internal.retry_count.start": 0,
+          "graph.rankdir": "LR",
+          "human.gate.stuck.question": "Automatic fixing did not converge. Stop, or allow one more attempt?",
+          "internal.run_id": "01M8918DTDKR6YHAY31B007809",
+          "failure_class": "",
+          "command.output": "blob://sha256/f9d0e38253c67d86f88c1593339d224cd51fa9706989dc6e1d80102cef10ac63",
+          "failure_signature": "",
+          "human.gate.label": "[X] Stop, fail the run"
         },
         "node_outcomes": {
-          "stuck": {
+          "approve": {
             "status": "succeeded",
-            "preferred_label": "[X] Stop, fail the run",
+            "preferred_label": "[A] Approve",
             "suggested_next_ids": [
-              "release"
+              "implement"
             ],
             "context_updates": {
-              "human.gate.label": "[X] Stop, fail the run",
-              "human.gate.stuck.question": "Automatic fixing did not converge. Stop, or allow one more attempt?",
-              "human.gate.stuck.answer": "X",
-              "human.gate.stuck.label": "[X] Stop, fail the run",
-              "human.gate.selected": "X"
+              "human.gate.label": "[A] Approve",
+              "human.gate.selected": "A",
+              "human.gate.approve.answer": "A",
+              "human.gate.approve.label": "[A] Approve",
+              "human.gate.approve.question": "Approve the spec? To have it revised, type what should change."
             },
             "usage": null
           },
@@ -2058,6 +2058,88 @@
               "inference_time_ms": 0,
               "tool_time_ms": 682,
               "active_time_ms": 682
+            }
+          },
+          "check_issue": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/e98f495df85b43182513041da7b48e9cb0941a49bf20aec6dca8c9bd926dbff8"
+            },
+            "notes": "Script completed: \nimport os, subprocess\nNL = chr(10)\nos.makedirs('/tmp/fabro', exist_ok=True)\nbody = ['As of now the UI of construct is not very intuitive we want to have it restyled.',\n 'It needs to get a modern look and feel, no external dependencies of styling and JS libs that are included.',\n 'It needs to be optimized to work in every browser. The finding page is most important very critical, the other pages ',\n 'are mostly for debugging and to see if construct is following the right steps and that the output is predictable in a sense.']\nopen('/tmp/fabro/issue.md', 'w').write('# construct dashboard needs to be re-styled' + NL + NL + NL.join(body) + NL)\nopen('/tmp/fabro/issue_number', 'w').write('0')\nsubprocess.run('git update-ref refs/remotes/origin/main HEAD', shell=True)\nprint('test issue written (text of Construct issue 8)')\n",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 551,
+              "active_time_ms": 551
+            }
+          },
+          "release": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/f9d0e38253c67d86f88c1593339d224cd51fa9706989dc6e1d80102cef10ac63"
+            },
+            "notes": "Script completed: \nimport os\nD = '/tmp/fabro'\nprint(sorted(os.listdir(D)))\nfor name in ('spec.md', 'review-brief.md', 'last-review.md', 'review-notes.md', 'security-review.md', 'todo.md'):\n    if os.path.exists(D + '/' + name):\n        print('=====', name)\n        print(open(D + '/' + name).read()[:7000])\n",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 706,
+              "active_time_ms": 706
+            }
+          },
+          "stuck": {
+            "status": "succeeded",
+            "preferred_label": "[X] Stop, fail the run",
+            "suggested_next_ids": [
+              "release"
+            ],
+            "context_updates": {
+              "human.gate.label": "[X] Stop, fail the run",
+              "human.gate.stuck.question": "Automatic fixing did not converge. Stop, or allow one more attempt?",
+              "human.gate.stuck.answer": "X",
+              "human.gate.stuck.label": "[X] Stop, fail the run",
+              "human.gate.selected": "X"
+            },
+            "usage": null
+          },
+          "implement": {
+            "status": "succeeded",
+            "context_updates": {
+              "response.implement": "Blocked: /tmp/fabro/spec.md is missing, so I could not follow the reviewed spec as required. I wrote the blocker to /tmp/fabro/blocked.md and left the repository unchanged.\n\nTests run: none, because implementation could not begin without the spec.\n\nSTATUS: BLOCKED",
+              "last_stage": "implement",
+              "last_response": "Blocked: /tmp/fabro/spec.md is missing, so I could not follow the reviewed spec as required. I wrote the blocker to /tmp/fabro/blocked.md and left the repository unchanged.\n\nTests run: none, because i"
+            },
+            "notes": "Stage completed: implement",
+            "usage": {
+              "input": {
+                "usage": {
+                  "model": {
+                    "provider": "openai",
+                    "model_id": "gpt-5.4"
+                  },
+                  "tokens": {
+                    "input_tokens": 7044,
+                    "output_tokens": 530,
+                    "reasoning_tokens": 204,
+                    "cache_read_tokens": 12288,
+                    "cache_write_tokens": 0
+                  }
+                },
+                "facts": {
+                  "algorithm": "openai"
+                }
+              },
+              "total_usd_micros": 31692
+            },
+            "files_touched": [
+              "/tmp/fabro/blocked.md"
+            ],
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 13079,
+              "tool_time_ms": 468,
+              "active_time_ms": 13547
             }
           },
           "install": {
@@ -2110,110 +2192,169 @@
               "active_time_ms": 74737
             }
           },
-          "check_issue": {
-            "status": "succeeded",
-            "context_updates": {
-              "command.output": "blob://sha256/e98f495df85b43182513041da7b48e9cb0941a49bf20aec6dca8c9bd926dbff8"
-            },
-            "notes": "Script completed: \nimport os, subprocess\nNL = chr(10)\nos.makedirs('/tmp/fabro', exist_ok=True)\nbody = ['As of now the UI of construct is not very intuitive we want to have it restyled.',\n 'It needs to get a modern look and feel, no external dependencies of styling and JS libs that are included.',\n 'It needs to be optimized to work in every browser. The finding page is most important very critical, the other pages ',\n 'are mostly for debugging and to see if construct is following the right steps and that the output is predictable in a sense.']\nopen('/tmp/fabro/issue.md', 'w').write('# construct dashboard needs to be re-styled' + NL + NL + NL.join(body) + NL)\nopen('/tmp/fabro/issue_number', 'w').write('0')\nsubprocess.run('git update-ref refs/remotes/origin/main HEAD', shell=True)\nprint('test issue written (text of Construct issue 8)')\n",
-            "usage": null,
-            "timing": {
-              "wall_time_ms": 0,
-              "inference_time_ms": 0,
-              "tool_time_ms": 551,
-              "active_time_ms": 551
-            }
-          },
-          "implement": {
-            "status": "succeeded",
-            "context_updates": {
-              "response.implement": "Blocked: /tmp/fabro/spec.md is missing, so I could not follow the reviewed spec as required. I wrote the blocker to /tmp/fabro/blocked.md and left the repository unchanged.\n\nTests run: none, because implementation could not begin without the spec.\n\nSTATUS: BLOCKED",
-              "last_stage": "implement",
-              "last_response": "Blocked: /tmp/fabro/spec.md is missing, so I could not follow the reviewed spec as required. I wrote the blocker to /tmp/fabro/blocked.md and left the repository unchanged.\n\nTests run: none, because i"
-            },
-            "notes": "Stage completed: implement",
-            "usage": {
-              "input": {
-                "usage": {
-                  "model": {
-                    "provider": "openai",
-                    "model_id": "gpt-5.4"
-                  },
-                  "tokens": {
-                    "input_tokens": 7044,
-                    "output_tokens": 530,
-                    "reasoning_tokens": 204,
-                    "cache_read_tokens": 12288,
-                    "cache_write_tokens": 0
-                  }
-                },
-                "facts": {
-                  "algorithm": "openai"
-                }
-              },
-              "total_usd_micros": 31692
-            },
-            "files_touched": [
-              "/tmp/fabro/blocked.md"
-            ],
-            "timing": {
-              "wall_time_ms": 0,
-              "inference_time_ms": 13079,
-              "tool_time_ms": 468,
-              "active_time_ms": 13547
-            }
-          },
-          "approve": {
-            "status": "succeeded",
-            "preferred_label": "[A] Approve",
-            "suggested_next_ids": [
-              "implement"
-            ],
-            "context_updates": {
-              "human.gate.label": "[A] Approve",
-              "human.gate.selected": "A",
-              "human.gate.approve.answer": "A",
-              "human.gate.approve.label": "[A] Approve",
-              "human.gate.approve.question": "Approve the spec? To have it revised, type what should change."
-            },
-            "usage": null
-          },
-          "release": {
-            "status": "succeeded",
-            "context_updates": {
-              "command.output": "blob://sha256/f9d0e38253c67d86f88c1593339d224cd51fa9706989dc6e1d80102cef10ac63"
-            },
-            "notes": "Script completed: \nimport os\nD = '/tmp/fabro'\nprint(sorted(os.listdir(D)))\nfor name in ('spec.md', 'review-brief.md', 'last-review.md', 'review-notes.md', 'security-review.md', 'todo.md'):\n    if os.path.exists(D + '/' + name):\n        print('=====', name)\n        print(open(D + '/' + name).read()[:7000])\n",
-            "usage": null,
-            "timing": {
-              "wall_time_ms": 0,
-              "inference_time_ms": 0,
-              "tool_time_ms": 706,
-              "active_time_ms": 706
-            }
-          },
           "start": {
             "status": "succeeded",
             "usage": null
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "f4c26de630d14fdb055dade2c59e88b3861e6247",
+        "loop_failure_signatures": {
+          "verify|deterministic|script failed with exit code: <n> ## output route_human (the implementer is blocked) cannot start implementation because the required reviewed spec file /tmp/fabro/spec.md is missing. the task instructions require following the spec (and no": 1
+        },
         "node_visits": {
-          "verify": 1,
           "check_issue": 1,
-          "install": 1,
-          "start": 1,
-          "spec": 1,
-          "approve": 1,
-          "implement": 1,
           "stuck": 1,
-          "release": 1
+          "start": 1,
+          "verify": 1,
+          "release": 1,
+          "approve": 1,
+          "install": 1,
+          "implement": 1,
+          "spec": 1
         }
       },
-      "diff": {}
+      "diff": {
+        "summary": {
+          "files_changed": 0,
+          "additions": 0,
+          "deletions": 0
+        }
+      }
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-11-25T10:12:10.185958298Z",
+    "status": "failed",
+    "timing": {
+      "wall_time_ms": 1883074,
+      "inference_time_ms": 84957,
+      "tool_time_ms": 25388,
+      "active_time_ms": 110345
+    },
+    "failure": {
+      "reason": "workflow_error",
+      "detail": {
+        "message": "goal gate unsatisfied for node verify and no retry target",
+        "category": "deterministic"
+      }
+    },
+    "final_git_commit_sha": "f4c26de630d14fdb055dade2c59e88b3861e6247",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "check_issue",
+        "stage_label": "check_issue",
+        "timing": {
+          "wall_time_ms": 563,
+          "inference_time_ms": 0,
+          "tool_time_ms": 551,
+          "active_time_ms": 551
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "install",
+        "stage_label": "install",
+        "timing": {
+          "wall_time_ms": 20134,
+          "inference_time_ms": 0,
+          "tool_time_ms": 20122,
+          "active_time_ms": 20122
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "spec",
+        "stage_label": "spec",
+        "timing": {
+          "wall_time_ms": 75318,
+          "inference_time_ms": 71878,
+          "tool_time_ms": 2859,
+          "active_time_ms": 74737
+        },
+        "billing_usd_micros": 429146,
+        "retries": 0
+      },
+      {
+        "stage_id": "approve",
+        "stage_label": "approve",
+        "timing": {
+          "wall_time_ms": 33,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "implement",
+        "stage_label": "implement",
+        "timing": {
+          "wall_time_ms": 14100,
+          "inference_time_ms": 13079,
+          "tool_time_ms": 468,
+          "active_time_ms": 13547
+        },
+        "billing_usd_micros": 31692,
+        "retries": 0
+      },
+      {
+        "stage_id": "verify",
+        "stage_label": "verify",
+        "timing": {
+          "wall_time_ms": 694,
+          "inference_time_ms": 0,
+          "tool_time_ms": 682,
+          "active_time_ms": 682
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "stuck",
+        "stage_label": "stuck",
+        "timing": {
+          "wall_time_ms": 1731309,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "release",
+        "stage_label": "release",
+        "timing": {
+          "wall_time_ms": 741,
+          "inference_time_ms": 0,
+          "tool_time_ms": 706,
+          "active_time_ms": 706
+        },
+        "retries": 0
+      }
+    ],
+    "billing": {
+      "input_tokens": 44584,
+      "output_tokens": 3330,
+      "total_tokens": 242371,
+      "reasoning_tokens": 2457,
+      "cache_read_tokens": 192000,
+      "cache_write_tokens": 0,
+      "total_usd_micros": 460838
+    },
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -2558,7 +2699,12 @@
       "first_event_seq": 207,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Script completed: \nimport os\nD = '/tmp/fabro'\nprint(sorted(os.listdir(D)))\nfor name in ('spec.md', 'review-brief.md', 'last-review.md', 'review-notes.md', 'security-review.md', 'todo.md'):\n    if os.path.exists(D + '/' + name):\n        print('=====', name)\n        print(open(D + '/' + name).read()[:7000])\n",
+        "failure_reason": null,
+        "timestamp": "2026-11-25T10:12:05.282889547Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -2567,11 +2713,27 @@
         "language": "python",
         "timeout_ms": 120000
       },
-      "script_timing": null,
+      "script_timing": {
+        "output": "blob://sha256/f9d0e38253c67d86f88c1593339d224cd51fa9706989dc6e1d80102cef10ac63",
+        "exit_code": 0,
+        "duration_ms": 706,
+        "termination": "exited",
+        "output_bytes": 428,
+        "live_streaming": true
+      },
       "parallel_results": null,
       "output": null,
+      "output_bytes": 428,
+      "live_streaming": true,
+      "termination": "exited",
       "started_at": "2026-11-25T10:12:04.541118194Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 741,
+        "inference_time_ms": 0,
+        "tool_time_ms": 706,
+        "active_time_ms": 706
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -2580,7 +2742,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "succeeded"
     },
     "spec@1": {
       "first_event_seq": 42,
