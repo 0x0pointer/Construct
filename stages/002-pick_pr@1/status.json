@@ -1,0 +1,6 @@
+{
+  "outcome": "failed",
+  "notes": null,
+  "failure_reason": "Script failed with exit code: 1\n\n## output\nskipped pull request 21 - its branch fabro-stuck-feedback is not a fabro run branch\nskipped pull request 22 - no check failed\nNOTHING TO FIX: no pull request with failed checks is waiting (2 looked at).\n",
+  "timestamp": "2026-11-25T17:15:15.964467129Z"
+}
