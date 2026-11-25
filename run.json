@@ -914,7 +914,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-11-25T16:02:12.772762925Z",
-  "last_event_at": "2026-11-25T16:26:40.193961302Z",
+  "last_event_at": "2026-11-25T16:26:47.806322882Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -4352,9 +4352,9 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 812,
       "checkpoint": {
-        "timestamp": "2026-11-25T16:26:42.909804512Z",
+        "timestamp": "2026-11-25T16:26:47.806131436Z",
         "current_node": "release",
         "completed_nodes": [
           "start",
@@ -4378,67 +4378,89 @@
         ],
         "node_retries": {},
         "context_values": {
-          "response.implement": "What I changed\n- Restored the executable bit on `.fabro/scripts/fabro-run-titles` so it can still be run directly via its shebang.\n- Added a regression test in `tests/fabro/test_run_titles.py` to assert the watcher script remains executable.\n\nCoverage for the reviewer todo item\n- Todo item 1 (`.fabro/scripts/fabro-run-titles` lost mode `100755`): covered by `tests/fabro/test_run_titles.py::test_watcher_script_remains_executable`.\n\nTests I ran\n- `pytest tests/fabro/test_run_titles.py::test_watcher_script_remains_executable -q`\n- `pytest tests/fabro/test_run_titles.py -q`\n- `pytest -m 'not docker and not k8s and not live_harness' -q`\n\nNoticed, not touched\n- Pytest emits an existing `pytest_asyncio` deprecation warning about `asyncio_default_fixture_loop_scope`.\n- Pytest emits an existing Starlette/httpx deprecation warning from `fastapi.testclient`.\n\nSTATUS: DONE",
-          "internal.retry_count.verify": 0,
-          "graph.loop_restart_signature_limit": "10",
-          "last_stage": "security_review",
-          "thread.implement.current_node": "verify",
-          "internal.retry_count.release": 0,
-          "internal.run_id": "01M89N9Q5EWEC07F755ZCYBNX7",
-          "failure_class": "",
-          "internal.retry_count.security_review": 0,
-          "thread.security_review.current_node": "review_gate",
-          "human.gate.approve.label": "[A] Approve",
           "internal.retry_count.review_gate": 0,
-          "human.gate.selected": "A",
-          "human.gate.approve.question": "Approve the spec? To have it revised, type what should change.",
-          "failure_signature": "",
-          "thread.check_issue.current_node": "install",
-          "graph.goal": "Resolve the next maintainer-approved GitHub issue of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
-          "preferred_label": "[A] Approve",
-          "command.output": "blob://sha256/18de4e50070940b3476509590f0ea7c4d02ff9d066582c8940bc3742d9bdc914",
-          "internal.work_dir": "/workspace/Construct",
-          "response.spec": "Implemented the Codespaces testing feature for Fabro PRs.\n\nSummary:\n- Added `.devcontainer/devcontainer.json` using the existing `.fabro/docker/Dockerfile`, automatic `pip install -e '.[dev]'`, and `start-test-db`.\n- Extended `.fabro/scripts/fabro-run-titles` to:\n  - Keep existing run title and no-work cleanup behavior.\n  - Find successful `IssueToPR` PRs by `fabro/run/<run_id>` branch.\n  - Skip Codespaces comments for docs/automation/test-only changes per maintainer feedback.\n  - Build an encoded Codespaces URL using the numeric repo id and PR branch ref.\n  - Post one idempotent PR comment with `<!-- fabro-codespace -->`.\n  - Retry when PR lookup or GitHub API access fails.\n  - Preserve compatibility with old string-valued state entries.\n- Updated `.fabro/README.md` with Codespaces comment behavior and required `GITHUB_TOKEN` service setup.\n- Added tests under `tests/fabro/` for watcher behavior and devcontainer config.\n\nValidation:\n- `python -m py_compile .fabro/scripts/fabro-run-titles`\n- `pytest tests/fabro -q` → `11 passed`\n- `pytest -m 'not docker and not k8s and not live_harness' -q` → `1935 passed, 19 skipped, 18 deselected`",
-          "graph.rankdir": "LR",
-          "internal.fidelity": "compact",
+          "internal.run_id": "01M89N9Q5EWEC07F755ZCYBNX7",
+          "thread.approve.current_node": "implement",
           "outcome": "succeeded",
-          "thread.save_spec.current_node": "approve",
-          "internal.retry_count.install": 0,
-          "internal.retry_count.implement": 0,
-          "thread.review_gate.current_node": "release",
-          "thread.spec.current_node": "save_spec",
-          "thread.strong.current_node": "security_review",
-          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
-          "internal.thread_id": "review_gate",
-          "graph.max_node_visits": "30",
-          "thread.start.current_node": "check_issue",
-          "human.gate.text": "I only need this for changes to the actual application so I can test it, so links or updates of readies or any other files and resources not used by the application will not need that Codespace button for testing the new features",
-          "internal.node_visit_count": 1,
-          "response.security_review": "Verdict: pass\n\nBlocking findings: none\n\n# Security review\n\n## Summary\n- Blocking findings: 0. Non-blocking findings: 0.\n- This is a re-review. The only prior blocking finding was the lost executable bit on `.fabro/scripts/fabro-run-titles`; the since-review diff restores mode `100755` and adds a targeted regression test.\n- No new reachable security issue was found in the since-review changes. The earlier GitHub-token/commenting logic was not re-audited from scratch per the re-review instructions.\n\n## Changed files, risk, and blast radius\n| File | Risk | Blast radius |\n|---|---:|---|\n| `.devcontainer/devcontainer.json` | LOW | Codespaces/devcontainer startup only; no runtime callers. |\n| `.fabro/README.md` | LOW | Operator documentation for the watcher service and token setup. |\n| `.fabro/scripts/fabro-run-titles` | HIGH overall; LOW since-review delta | Overall file has GitHub API writes/token handling. The re-review delta is only the executable mode restoration; affects direct/script-service invocation. Runtime path remains one watcher entrypoint (`main`/loop -> `sweep`). |\n| `tests/fabro/test_devcontainer.py` | LOW | Test-only. |\n| `tests/fabro/test_run_titles.py` | LOW | Test-only; new executable-bit test covers the prior regression. |\n\n## Findings\nNone.\n\n## Acceptance criteria status\n1. PR Codespaces comment after successful `IssueToPR`: met by the diff/tests from the prior review; not re-reviewed beyond the executable fix.\n2. Codespaces URL uses numeric repo id and encoded `fabro/run/<run id>` ref: met by tests from the prior review; not re-reviewed beyond the executable fix.\n3. Idempotence/existing marker prevents duplicates: met by tests from the prior review; not re-reviewed beyond the executable fix.\n4. Existing title/no-work behavior remains: met, and the prior direct-execution regression is now fixed by restoring script mode `100755`.\n5. PR/GitHub failures log and retry without stopping other processing: met by tests from the prior review; not re-reviewed beyond the executable fix.\n6. Codespace environment supports import, `start-test-db`, and tests without manual install: implemented by devcontainer configuration using the Fabro Dockerfile and `pip install -e '.[dev]'`; I did not launch a live Codespace.\n\n## Test coverage gaps\n- I ran only the targeted regression test: `pytest -q tests/fabro/test_run_titles.py::test_watcher_script_remains_executable` (passed).\n- I did not run the whole test suite, per instruction.\n- I did not live-test GitHub API calls or create a real Codespace; those remain environment-dependent.\n\n## What I did not cover\n- I did not re-audit unchanged GitHub comment/token code from the first review round.\n- I did not audit unrelated repository code outside the changed files and their immediate review context.",
-          "current_node": "release",
-          "internal.retry_count.start": 0,
-          "internal.retry_count.check_issue": 0,
-          "last_response": "Verdict: pass\n\nBlocking findings: none\n\n# Security review\n\n## Summary\n- Blocking findings: 0. Non-blocking findings: 0.\n- This is a re-review. The only prior blocking finding was the lost executable b",
-          "internal.retry_count.save_spec": 0,
-          "internal.retry_count.spec": 0,
-          "human.gate.label": "[A] Approve",
           "internal.retry_count.approve": 0,
+          "thread.check_issue.current_node": "install",
+          "graph.max_node_visits": "30",
+          "graph.loop_restart_signature_limit": "10",
+          "response.spec": "Implemented the Codespaces testing feature for Fabro PRs.\n\nSummary:\n- Added `.devcontainer/devcontainer.json` using the existing `.fabro/docker/Dockerfile`, automatic `pip install -e '.[dev]'`, and `start-test-db`.\n- Extended `.fabro/scripts/fabro-run-titles` to:\n  - Keep existing run title and no-work cleanup behavior.\n  - Find successful `IssueToPR` PRs by `fabro/run/<run_id>` branch.\n  - Skip Codespaces comments for docs/automation/test-only changes per maintainer feedback.\n  - Build an encoded Codespaces URL using the numeric repo id and PR branch ref.\n  - Post one idempotent PR comment with `<!-- fabro-codespace -->`.\n  - Retry when PR lookup or GitHub API access fails.\n  - Preserve compatibility with old string-valued state entries.\n- Updated `.fabro/README.md` with Codespaces comment behavior and required `GITHUB_TOKEN` service setup.\n- Added tests under `tests/fabro/` for watcher behavior and devcontainer config.\n\nValidation:\n- `python -m py_compile .fabro/scripts/fabro-run-titles`\n- `pytest tests/fabro -q` → `11 passed`\n- `pytest -m 'not docker and not k8s and not live_harness' -q` → `1935 passed, 19 skipped, 18 deselected`",
+          "internal.retry_count.save_spec": 0,
+          "human.gate.label": "[A] Approve",
+          "thread.implement.current_node": "verify",
+          "thread.save_spec.current_node": "approve",
+          "response.implement": "What I changed\n- Restored the executable bit on `.fabro/scripts/fabro-run-titles` so it can still be run directly via its shebang.\n- Added a regression test in `tests/fabro/test_run_titles.py` to assert the watcher script remains executable.\n\nCoverage for the reviewer todo item\n- Todo item 1 (`.fabro/scripts/fabro-run-titles` lost mode `100755`): covered by `tests/fabro/test_run_titles.py::test_watcher_script_remains_executable`.\n\nTests I ran\n- `pytest tests/fabro/test_run_titles.py::test_watcher_script_remains_executable -q`\n- `pytest tests/fabro/test_run_titles.py -q`\n- `pytest -m 'not docker and not k8s and not live_harness' -q`\n\nNoticed, not touched\n- Pytest emits an existing `pytest_asyncio` deprecation warning about `asyncio_default_fixture_loop_scope`.\n- Pytest emits an existing Starlette/httpx deprecation warning from `fastapi.testclient`.\n\nSTATUS: DONE",
+          "thread.spec.current_node": "save_spec",
+          "last_response": "Verdict: pass\n\nBlocking findings: none\n\n# Security review\n\n## Summary\n- Blocking findings: 0. Non-blocking findings: 0.\n- This is a re-review. The only prior blocking finding was the lost executable b",
+          "human.gate.approve.label": "[A] Approve",
+          "internal.thread_id": "review_gate",
+          "response.security_review": "Verdict: pass\n\nBlocking findings: none\n\n# Security review\n\n## Summary\n- Blocking findings: 0. Non-blocking findings: 0.\n- This is a re-review. The only prior blocking finding was the lost executable bit on `.fabro/scripts/fabro-run-titles`; the since-review diff restores mode `100755` and adds a targeted regression test.\n- No new reachable security issue was found in the since-review changes. The earlier GitHub-token/commenting logic was not re-audited from scratch per the re-review instructions.\n\n## Changed files, risk, and blast radius\n| File | Risk | Blast radius |\n|---|---:|---|\n| `.devcontainer/devcontainer.json` | LOW | Codespaces/devcontainer startup only; no runtime callers. |\n| `.fabro/README.md` | LOW | Operator documentation for the watcher service and token setup. |\n| `.fabro/scripts/fabro-run-titles` | HIGH overall; LOW since-review delta | Overall file has GitHub API writes/token handling. The re-review delta is only the executable mode restoration; affects direct/script-service invocation. Runtime path remains one watcher entrypoint (`main`/loop -> `sweep`). |\n| `tests/fabro/test_devcontainer.py` | LOW | Test-only. |\n| `tests/fabro/test_run_titles.py` | LOW | Test-only; new executable-bit test covers the prior regression. |\n\n## Findings\nNone.\n\n## Acceptance criteria status\n1. PR Codespaces comment after successful `IssueToPR`: met by the diff/tests from the prior review; not re-reviewed beyond the executable fix.\n2. Codespaces URL uses numeric repo id and encoded `fabro/run/<run id>` ref: met by tests from the prior review; not re-reviewed beyond the executable fix.\n3. Idempotence/existing marker prevents duplicates: met by tests from the prior review; not re-reviewed beyond the executable fix.\n4. Existing title/no-work behavior remains: met, and the prior direct-execution regression is now fixed by restoring script mode `100755`.\n5. PR/GitHub failures log and retry without stopping other processing: met by tests from the prior review; not re-reviewed beyond the executable fix.\n6. Codespace environment supports import, `start-test-db`, and tests without manual install: implemented by devcontainer configuration using the Fabro Dockerfile and `pip install -e '.[dev]'`; I did not launch a live Codespace.\n\n## Test coverage gaps\n- I ran only the targeted regression test: `pytest -q tests/fabro/test_run_titles.py::test_watcher_script_remains_executable` (passed).\n- I did not run the whole test suite, per instruction.\n- I did not live-test GitHub API calls or create a real Codespace; those remain environment-dependent.\n\n## What I did not cover\n- I did not re-audit unchanged GitHub comment/token code from the first review round.\n- I did not audit unrelated repository code outside the changed files and their immediate review context.",
+          "human.gate.approve.question": "Approve the spec? To have it revised, type what should change.",
+          "internal.retry_count.security_review": 0,
+          "internal.retry_count.release": 0,
+          "thread.security_review.current_node": "review_gate",
+          "human.gate.text": "I only need this for changes to the actual application so I can test it, so links or updates of readies or any other files and resources not used by the application will not need that Codespace button for testing the new features",
+          "internal.retry_count.start": 0,
+          "internal.retry_count.install": 0,
+          "current_node": "release",
+          "graph.goal": "Resolve the next maintainer-approved GitHub issue of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
+          "human.gate.selected": "A",
+          "internal.retry_count.implement": 0,
+          "failure_signature": "",
+          "internal.work_dir": "/workspace/Construct",
+          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
+          "command.output": "blob://sha256/18de4e50070940b3476509590f0ea7c4d02ff9d066582c8940bc3742d9bdc914",
+          "preferred_label": "[A] Approve",
+          "last_stage": "security_review",
+          "internal.retry_count.spec": 0,
+          "internal.node_visit_count": 1,
+          "thread.review_gate.current_node": "release",
+          "internal.retry_count.verify": 0,
+          "thread.start.current_node": "check_issue",
+          "internal.fidelity": "compact",
+          "thread.strong.current_node": "security_review",
+          "failure_class": "",
+          "graph.rankdir": "LR",
           "human.gate.approve.answer": "A",
-          "thread.approve.current_node": "implement"
+          "internal.retry_count.check_issue": 0
         },
         "node_outcomes": {
-          "install": {
+          "implement": {
             "status": "succeeded",
             "context_updates": {
-              "command.output": "blob://sha256/16ee1a726445e62a8e1f48f90e9021830b921c275144b797755eba318229cb48"
+              "last_stage": "implement",
+              "last_response": "What I changed\n- Restored the executable bit on `.fabro/scripts/fabro-run-titles` so it can still be run directly via its shebang.\n- Added a regression test in `tests/fabro/test_run_titles.py` to asse",
+              "response.implement": "What I changed\n- Restored the executable bit on `.fabro/scripts/fabro-run-titles` so it can still be run directly via its shebang.\n- Added a regression test in `tests/fabro/test_run_titles.py` to assert the watcher script remains executable.\n\nCoverage for the reviewer todo item\n- Todo item 1 (`.fabro/scripts/fabro-run-titles` lost mode `100755`): covered by `tests/fabro/test_run_titles.py::test_watcher_script_remains_executable`.\n\nTests I ran\n- `pytest tests/fabro/test_run_titles.py::test_watcher_script_remains_executable -q`\n- `pytest tests/fabro/test_run_titles.py -q`\n- `pytest -m 'not docker and not k8s and not live_harness' -q`\n\nNoticed, not touched\n- Pytest emits an existing `pytest_asyncio` deprecation warning about `asyncio_default_fixture_loop_scope`.\n- Pytest emits an existing Starlette/httpx deprecation warning from `fastapi.testclient`.\n\nSTATUS: DONE"
             },
-            "notes": "Script completed: (command -v start-test-db >/dev/null && start-test-db) || echo no test database in this sandbox image; pip install -q -e '.[dev]' && python -c 'import prsec' && echo prsec importable",
-            "usage": null,
+            "notes": "Stage completed: implement",
+            "usage": {
+              "input": {
+                "usage": {
+                  "model": {
+                    "provider": "openai",
+                    "model_id": "gpt-5.4"
+                  },
+                  "tokens": {
+                    "input_tokens": 36244,
+                    "output_tokens": 1322,
+                    "reasoning_tokens": 628,
+                    "cache_read_tokens": 119296,
+                    "cache_write_tokens": 0
+                  }
+                },
+                "facts": {
+                  "algorithm": "openai"
+                }
+              },
+              "total_usd_micros": 149684
+            },
             "timing": {
               "wall_time_ms": 0,
-              "inference_time_ms": 0,
-              "tool_time_ms": 20534,
-              "active_time_ms": 20534
+              "inference_time_ms": 33251,
+              "tool_time_ms": 259091,
+              "active_time_ms": 292342
             }
           },
           "security_review": {
@@ -4481,56 +4503,6 @@
               "active_time_ms": 84368
             }
           },
-          "save_spec": {
-            "status": "succeeded",
-            "context_updates": {
-              "command.output": "blob://sha256/e6e3f6f5be025d6e9d4860a7bdc0ff22829b1348615222a25d6d3a2c1740f668"
-            },
-            "notes": "Script completed: \nimport os, sys\nD = '/tmp/fabro'\nNL = chr(10)\nNEEDED = ('acceptance criteria', 'risk level:', 'tests required:')\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\ndef missing(text):\n    return [n for n in NEEDED if n not in text.lower()]\nos.makedirs(D, exist_ok=True)\nprinted = sys.stdin.read().strip()\non_disk = read(D + '/spec.md').strip()\nif printed and not missing(printed):\n    spec, source = printed, 'the text the planner printed'\nelif on_disk and not missing(on_disk):\n    spec, source = on_disk, 'the file the planner wrote'\nelse:\n    try:\n        tries = int(read(D + '/spec_tries').strip() or 0) + 1\n    except ValueError:\n        tries = 3\n    write(D + '/spec_tries', str(tries))\n    gaps = missing(printed or on_disk) if (printed or on_disk) else ['the whole spec: nothing was printed and /tmp/fabro/spec.md does not exist']\n    print('ROUTE_spec' if tries < 3 else 'ROUTE_stop')\n    print('The spec is incomplete (attempt ' + str(tries) + ' of 3). Missing: ' + '; '.join(gaps))\n    sys.exit(1)\nwrite(D + '/spec.md', spec + NL)\nwrite(D + '/spec_tries', '0')\nprint('SPEC SAVED from ' + source + ': ' + str(len(spec.split())) + ' words')\nfor line in spec.splitlines():\n    low = line.strip().lstrip('#*- ').lower()\n    if low.startswith(('decision needed', 'behaviour removed', 'behavior removed', 'size:', 'risk level:', 'tests required:')):\n        print(line.strip()[:300].replace('ROUTE_', 'ROUTE-'))\n",
-            "usage": null,
-            "timing": {
-              "wall_time_ms": 0,
-              "inference_time_ms": 0,
-              "tool_time_ms": 210,
-              "active_time_ms": 210
-            }
-          },
-          "implement": {
-            "status": "succeeded",
-            "context_updates": {
-              "last_stage": "implement",
-              "last_response": "What I changed\n- Restored the executable bit on `.fabro/scripts/fabro-run-titles` so it can still be run directly via its shebang.\n- Added a regression test in `tests/fabro/test_run_titles.py` to asse",
-              "response.implement": "What I changed\n- Restored the executable bit on `.fabro/scripts/fabro-run-titles` so it can still be run directly via its shebang.\n- Added a regression test in `tests/fabro/test_run_titles.py` to assert the watcher script remains executable.\n\nCoverage for the reviewer todo item\n- Todo item 1 (`.fabro/scripts/fabro-run-titles` lost mode `100755`): covered by `tests/fabro/test_run_titles.py::test_watcher_script_remains_executable`.\n\nTests I ran\n- `pytest tests/fabro/test_run_titles.py::test_watcher_script_remains_executable -q`\n- `pytest tests/fabro/test_run_titles.py -q`\n- `pytest -m 'not docker and not k8s and not live_harness' -q`\n\nNoticed, not touched\n- Pytest emits an existing `pytest_asyncio` deprecation warning about `asyncio_default_fixture_loop_scope`.\n- Pytest emits an existing Starlette/httpx deprecation warning from `fastapi.testclient`.\n\nSTATUS: DONE"
-            },
-            "notes": "Stage completed: implement",
-            "usage": {
-              "input": {
-                "usage": {
-                  "model": {
-                    "provider": "openai",
-                    "model_id": "gpt-5.4"
-                  },
-                  "tokens": {
-                    "input_tokens": 36244,
-                    "output_tokens": 1322,
-                    "reasoning_tokens": 628,
-                    "cache_read_tokens": 119296,
-                    "cache_write_tokens": 0
-                  }
-                },
-                "facts": {
-                  "algorithm": "openai"
-                }
-              },
-              "total_usd_micros": 149684
-            },
-            "timing": {
-              "wall_time_ms": 0,
-              "inference_time_ms": 33251,
-              "tool_time_ms": 259091,
-              "active_time_ms": 292342
-            }
-          },
           "start": {
             "status": "succeeded",
             "usage": null
@@ -4550,6 +4522,20 @@
             },
             "usage": null
           },
+          "check_issue": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/d2842aa604c016874e413b5850fd0d7246d1733efef833113226b0d2de8f47df"
+            },
+            "notes": "Script completed: \nimport json, os, sys, urllib.parse, urllib.request\nREPO_OWNER, REPO_NAME = '0x0pointer', 'Construct'\nRAW_NUMBER = '19'.strip()\nLABEL = 'fabro-approved'\nCLAIM = 'fabro-in-progress'\nBUILT = 'fabro-built'\nFAILED = 'fabro-failed'\nMAINTAINERS = set(m.strip().lower() for m in 'RiieCco,blabla1337,JorgeCarvalhoPT'.split(',') if m.strip())\nclass Refused(Exception):\n    pass\ndef refuse(msg):\n    print('REFUSED: ' + msg)\n    sys.exit(1)\ntoken = os.environ.get('GITHUB_TOKEN')\nif not token:\n    refuse('no GITHUB_TOKEN in the sandbox, cannot verify approval')\nif not RAW_NUMBER.isdigit():\n    refuse('issue must be a number; 0 picks the oldest approved issue')\nNUMBER = int(RAW_NUMBER)\ndef send(url, body):\n    req = urllib.request.Request(url, data=json.dumps(body).encode(),\n        headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\n    return json.load(urllib.request.urlopen(req, timeout=30))\ndef graphql(query, **variables):\n    reply = send('https://api.github.com/graphql',\n        dict(query=query, variables=dict(variables, o=REPO_OWNER, n=REPO_NAME)))\n    if reply.get('errors'):\n        refuse('GitHub API error: ' + json.dumps(reply['errors'])[:300])\n    return reply['data']['repository']\nISSUE_QUERY = '''\nquery($o: String!, $n: String!, $i: Int!) {\n  repository(owner: $o, name: $n) {\n    issue(number: $i) {\n      title\n      body\n      state\n      lastEditedAt\n      author { login }\n      labels(first: 50) { nodes { name } }\n      timelineItems(itemTypes: [LABELED_EVENT], last: 100) {\n        nodes { ... on LabeledEvent { createdAt actor { login } label { name } } }\n      }\n    }\n  }\n}\n'''\nLIST_QUERY = '''\nquery($o: String!, $n: String!, $l: String!) {\n  repository(owner: $o, name: $n) {\n    issues(first: 100, states: [OPEN], labels: [$l], orderBy: { field: CREATED_AT, direction: ASC }) {\n      nodes { number labels(first: 50) { nodes { name } } }\n    }\n  }\n}\n'''\ndef approved(number):\n    # The approval check itself. Raises Refused unless every condition holds.\n    issue = graphql(ISSUE_QUERY, i=number)['issue']\n    if issue is None:\n        raise Refused('issue not found (pull requests are not accepted)')\n    if issue['state'] != 'OPEN':\n        raise Refused('issue is not open')\n    if LABEL not in [l['name'] for l in issue['labels']['nodes']]:\n        raise Refused('issue does not carry the label ' + LABEL)\n    events = [e for e in issue['timelineItems']['nodes'] if e and e['label']['name'] == LABEL]\n    if not events:\n        raise Refused('no labelling event found for ' + LABEL)\n    last = events[-1]\n    actor = ((last.get('actor') or dict()).get('login') or '').lower()\n    if actor not in MAINTAINERS:\n        raise Refused('label was applied by ' + (actor or 'unknown') + ', who is not a listed maintainer')\n    edited = issue.get('lastEditedAt')\n    if edited and edited > last['createdAt']:\n        raise Refused('issue text was edited after approval; a maintainer must re-apply the label')\n    return issue, actor, last['createdAt']\ndef claim(number, labels):\n    # Mark the issue as being built. While it carries this label no run\n    # started without a number picks another issue: one build at a time.\n    base = 'https://api.github.com/repos/' + REPO_OWNER + '/' + REPO_NAME + '/issues/' + str(number) + '/labels'\n    send(base, dict(labels=[CLAIM]))\n    for old in (BUILT, FAILED):\n        if old in labels:\n            try:\n                req = urllib.request.Request(base + '/' + urllib.parse.quote(old), method='DELETE',\n                    headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\n                urllib.request.urlopen(req, timeout=30).read()\n            except Exception:\n                pass\nif NUMBER > 0:\n    # A specific issue was asked for (-I issue=<number>, or construct-build).\n    try:\n        issue, actor, when = approved(NUMBER)\n    except Refused as exc:\n        refuse(str(exc))\n    try:\n        claim(NUMBER, [l['name'] for l in issue['labels']['nodes']])\n    except Exception as exc:\n        print('warning: could not add the label ' + CLAIM + ' (' + type(exc).__name__ + ')')\nelse:\n    # No issue given (an automation run): take the oldest open, approved issue\n    # that no run has handled yet. Every candidate still has to pass the full\n    # approval check; one that fails is skipped, not built.\n    # One build at a time: nothing is picked while another issue is being built.\n    busy = [n['number'] for n in graphql(LIST_QUERY, l=CLAIM)['issues']['nodes']]\n    if busy:\n        print('WAITING: issue ' + str(busy[0]) + ' is still being built (label ' + CLAIM + '). One issue is built at a time.')\n        print('If no run is working on it any more, remove that label from the issue.')\n        sys.exit(1)\n    issue = None\n    candidates = graphql(LIST_QUERY, l=LABEL)['issues']['nodes']\n    for node in candidates:\n        number = node['number']\n        handled = [l['name'] for l in node['labels']['nodes'] if l['name'] in (BUILT, FAILED)]\n        if handled:\n            print('skipped issue', number, '- already handled (label ' + handled[0] + ')')\n            continue\n        try:\n            issue, actor, when = approved(number)\n        except Refused as exc:\n            print('skipped issue', number, '-', exc)\n            continue\n        NUMBER = number\n        break\n    if issue is None:\n        print('NOTHING TO BUILD: no open issue labelled ' + LABEL + ' is waiting (' + str(len(candidates)) + ' checked).')\n        print('To build an issue again, remove its ' + BUILT + ' or ' + FAILED + ' label.')\n        sys.exit(1)\n    try:\n        claim(NUMBER, [])\n    except Exception as exc:\n        refuse('could not add the label ' + CLAIM + ' to issue ' + str(NUMBER) + ' (' + type(exc).__name__ + '); not building it, because the next run would pick it again')\nos.makedirs('/tmp/fabro', exist_ok=True)\nwith open('/tmp/fabro/issue.md', 'w') as f:\n    f.write('# ' + issue['title'] + chr(10) + chr(10) + (issue['body'] or '') + chr(10))\nwith open('/tmp/fabro/issue_number', 'w') as f:\n    f.write(str(NUMBER))\nprint('APPROVED: issue', NUMBER, 'released by', actor, 'at', when)\nprint('title:', issue['title'])",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 3621,
+              "active_time_ms": 3621
+            }
+          },
           "verify": {
             "status": "succeeded",
             "context_updates": {
@@ -4562,6 +4548,48 @@
               "inference_time_ms": 0,
               "tool_time_ms": 241088,
               "active_time_ms": 241088
+            }
+          },
+          "release": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/18de4e50070940b3476509590f0ea7c4d02ff9d066582c8940bc3742d9bdc914"
+            },
+            "notes": "Script completed: \nimport json, os, urllib.parse, urllib.request\nREPO_OWNER, REPO_NAME = '0x0pointer', 'Construct'\nCLAIM = 'fabro-in-progress'\nBUILT = 'fabro-built'\nFAILED = 'fabro-failed'\nD = '/tmp/fabro'\ntoken = os.environ.get('GITHUB_TOKEN') or ''\ntry:\n    with open(D + '/issue_number') as f:\n        number = int(f.read().strip())\nexcept Exception:\n    number = 0\n# The review gate leaves review-notes.md behind only when the change passed,\n# and todo.md only while something is still to be fixed.\npassed = os.path.exists(D + '/review-notes.md') and not os.path.exists(D + '/todo.md')\noutcome = BUILT if passed else FAILED\ndef call(method, path, body=None):\n    req = urllib.request.Request('https://api.github.com/repos/' + REPO_OWNER + '/' + REPO_NAME + '/issues/' + str(number) + path,\n        data=json.dumps(body).encode() if body is not None else None, method=method,\n        headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\n    urllib.request.urlopen(req, timeout=30).read()\nif number <= 0:\n    print('no issue was picked in this run, nothing to release')\nelse:\n    for step, args in (('add ' + outcome, ('POST', '/labels', dict(labels=[outcome]))),\n                       ('remove ' + CLAIM, ('DELETE', '/labels/' + urllib.parse.quote(CLAIM)))):\n        try:\n            call(*args)\n        except Exception as exc:\n            print('warning: could not ' + step + ' on issue ' + str(number) + ' (' + type(exc).__name__ + ')')\n    print('RELEASED: issue', number, 'is now labelled', outcome)",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 2699,
+              "active_time_ms": 2699
+            }
+          },
+          "review_gate": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/af5aa90f4a84abe017ab5a70bbfd68717412bf34d72b48eac1a350a3649d9ba5"
+            },
+            "notes": "Script completed: \nimport json, os, shutil, subprocess, sys\nD = '/tmp/fabro'\nNL = chr(10)\nMAX_ROUNDS = int('3')\ndef run(cmd, env=None):\n    p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace', env=env)\n    return p.returncode, p.stdout\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\ndef remove(*names):\n    for name in names:\n        if os.path.exists(D + '/' + name):\n            os.remove(D + '/' + name)\ndef snapshot():\n    # Same as in the verify step: the working tree as a git tree object.\n    index = D + '/index'\n    rc, source = run('git rev-parse --git-path index')\n    try:\n        shutil.copyfile(source.strip(), index)\n    except OSError:\n        if os.path.exists(index):\n            os.remove(index)\n    rc, out = run('git add -A . && git write-tree', dict(os.environ, GIT_INDEX_FILE=index))\n    last = (out.strip().splitlines() or [''])[-1].strip()\n    return last if rc == 0 else ''\ndef stop(route, message):\n    print(route)\n    print(message.replace('ROUTE_', 'ROUTE-')[:3000])\n    sys.exit(1)\ndef render(items):\n    rows = []\n    for i, f in enumerate(items, 1):\n        rows.append(str(i) + '. [' + str(f.get('category', 'general')) + '] ' + str(f.get('file', '?')) + ':' + str(f.get('line', '?'))\n            + NL + '   Problem: ' + str(f.get('problem', '')) + NL + '   Required fix: ' + str(f.get('fix', '')))\n    return NL.join(rows)\ntier = read(D + '/review_tier').strip() or 'security'\nTREE = snapshot()\nif not TREE or TREE != read(D + '/review_tree').strip():\n    stop('ROUTE_reverify', 'The repository changed during review. Reviewers must not edit files. Running verification again.')\nverdict, summary, findings, problem, wants_security = '', '', [], '', False\ntry:\n    with open(D + '/review.json') as f:\n        data = json.load(f)\n    verdict = str(data.get('verdict', '')).strip().lower()\n    summary = str(data.get('summary', ''))\n    findings = [x for x in (data.get('findings') or []) if isinstance(x, dict)]\n    wants_security = str(data.get('needs_security_review', '')).strip().lower() == 'true'\nexcept Exception as exc:\n    problem = 'no readable verdict in /tmp/fabro/review.json (' + type(exc).__name__ + ')'\nremove('review.json')\nblocking = [x for x in findings if str(x.get('severity', '')).strip().lower() == 'blocking']\nnotes = [x for x in findings if x not in blocking]\nif not problem and verdict not in ('pass', 'fail'):\n    problem = 'unknown verdict: ' + verdict[:40]\nif not problem and verdict == 'pass' and blocking:\n    verdict = 'fail'\nif not problem and verdict == 'fail' and not blocking:\n    problem = 'verdict is fail but no blocking finding was given'\nhand_over = tier == 'standard' and (wants_security or bool(problem))\nif hand_over:\n    # From now on this change is reviewed by the security reviewer.\n    write(D + '/force_security', '1')\n    write(D + '/review_tier', 'security')\nif problem:\n    if hand_over:\n        stop('ROUTE_security', 'Handing over to the security reviewer: ' + problem)\n    stop('ROUTE_human', 'The security reviewer did not reach a usable verdict: ' + problem)\nif verdict == 'pass' and hand_over:\n    with open(D + '/review-brief.md', 'a') as f:\n        f.write(NL + 'The standard reviewer found nothing blocking and asked for a security review: ' + summary[:1500] + NL)\n    stop('ROUTE_security', 'The standard reviewer asked for a security review: ' + summary)\nif verdict == 'pass':\n    text = '# Review passed (' + tier + ' reviewer)' + NL + NL + summary + NL\n    if notes:\n        text += NL + '## Non-blocking notes' + NL + render(notes) + NL\n    write(D + '/review-notes.md', text)\n    remove('todo.md', 'last-review.md', 'fix-notes.md')\n    print('REVIEW PASSED (' + tier + ' reviewer), ' + str(len(notes)) + ' non-blocking note(s)')\n    print(summary[:1500])\n    sys.exit(0)\ntry:\n    rounds = int(read(D + '/review_rounds').strip() or 0) + 1\nexcept ValueError:\n    rounds = MAX_ROUNDS\nwrite(D + '/review_rounds', str(rounds))\nbody = summary + NL + NL + '## Blocking findings - every one must be fixed' + NL + render(blocking) + NL\nwrite(D + '/last-review.md', '# Review rejected the change (round ' + str(rounds) + ', ' + tier + ' reviewer)' + NL + NL + body)\nwrite(D + '/todo.md', '# Fix this: an independent reviewer rejected the change (round ' + str(rounds) + ')' + NL + NL + body\n    + NL + 'The spec is /tmp/fabro/spec.md. The complete change as reviewed is /tmp/fabro/change.diff.' + NL)\nwrite(D + '/reviewed_tree', TREE)\nremove('fix-notes.md')\nspec_fault = any(str(x.get('category', '')).strip().lower() == 'spec' for x in blocking)\nif rounds >= MAX_ROUNDS:\n    route = 'ROUTE_human'\nelif spec_fault:\n    route = 'ROUTE_human (a finding says the spec itself is wrong)'\nelif rounds == 1:\n    route = 'ROUTE_implement'\nelse:\n    route = 'ROUTE_deep'\nstop(route, 'REVIEW REJECTED, round ' + str(rounds) + ' of ' + str(MAX_ROUNDS) + ', ' + str(len(blocking)) + ' blocking finding(s):' + NL + render(blocking))",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 186,
+              "active_time_ms": 186
+            }
+          },
+          "save_spec": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/e6e3f6f5be025d6e9d4860a7bdc0ff22829b1348615222a25d6d3a2c1740f668"
+            },
+            "notes": "Script completed: \nimport os, sys\nD = '/tmp/fabro'\nNL = chr(10)\nNEEDED = ('acceptance criteria', 'risk level:', 'tests required:')\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\ndef missing(text):\n    return [n for n in NEEDED if n not in text.lower()]\nos.makedirs(D, exist_ok=True)\nprinted = sys.stdin.read().strip()\non_disk = read(D + '/spec.md').strip()\nif printed and not missing(printed):\n    spec, source = printed, 'the text the planner printed'\nelif on_disk and not missing(on_disk):\n    spec, source = on_disk, 'the file the planner wrote'\nelse:\n    try:\n        tries = int(read(D + '/spec_tries').strip() or 0) + 1\n    except ValueError:\n        tries = 3\n    write(D + '/spec_tries', str(tries))\n    gaps = missing(printed or on_disk) if (printed or on_disk) else ['the whole spec: nothing was printed and /tmp/fabro/spec.md does not exist']\n    print('ROUTE_spec' if tries < 3 else 'ROUTE_stop')\n    print('The spec is incomplete (attempt ' + str(tries) + ' of 3). Missing: ' + '; '.join(gaps))\n    sys.exit(1)\nwrite(D + '/spec.md', spec + NL)\nwrite(D + '/spec_tries', '0')\nprint('SPEC SAVED from ' + source + ': ' + str(len(spec.split())) + ' words')\nfor line in spec.splitlines():\n    low = line.strip().lstrip('#*- ').lower()\n    if low.startswith(('decision needed', 'behaviour removed', 'behavior removed', 'size:', 'risk level:', 'tests required:')):\n        print(line.strip()[:300].replace('ROUTE_', 'ROUTE-'))\n",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 210,
+              "active_time_ms": 210
             }
           },
           "spec": {
@@ -4605,68 +4633,197 @@
               "active_time_ms": 1097844
             }
           },
-          "check_issue": {
+          "install": {
             "status": "succeeded",
             "context_updates": {
-              "command.output": "blob://sha256/d2842aa604c016874e413b5850fd0d7246d1733efef833113226b0d2de8f47df"
+              "command.output": "blob://sha256/16ee1a726445e62a8e1f48f90e9021830b921c275144b797755eba318229cb48"
             },
-            "notes": "Script completed: \nimport json, os, sys, urllib.parse, urllib.request\nREPO_OWNER, REPO_NAME = '0x0pointer', 'Construct'\nRAW_NUMBER = '19'.strip()\nLABEL = 'fabro-approved'\nCLAIM = 'fabro-in-progress'\nBUILT = 'fabro-built'\nFAILED = 'fabro-failed'\nMAINTAINERS = set(m.strip().lower() for m in 'RiieCco,blabla1337,JorgeCarvalhoPT'.split(',') if m.strip())\nclass Refused(Exception):\n    pass\ndef refuse(msg):\n    print('REFUSED: ' + msg)\n    sys.exit(1)\ntoken = os.environ.get('GITHUB_TOKEN')\nif not token:\n    refuse('no GITHUB_TOKEN in the sandbox, cannot verify approval')\nif not RAW_NUMBER.isdigit():\n    refuse('issue must be a number; 0 picks the oldest approved issue')\nNUMBER = int(RAW_NUMBER)\ndef send(url, body):\n    req = urllib.request.Request(url, data=json.dumps(body).encode(),\n        headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\n    return json.load(urllib.request.urlopen(req, timeout=30))\ndef graphql(query, **variables):\n    reply = send('https://api.github.com/graphql',\n        dict(query=query, variables=dict(variables, o=REPO_OWNER, n=REPO_NAME)))\n    if reply.get('errors'):\n        refuse('GitHub API error: ' + json.dumps(reply['errors'])[:300])\n    return reply['data']['repository']\nISSUE_QUERY = '''\nquery($o: String!, $n: String!, $i: Int!) {\n  repository(owner: $o, name: $n) {\n    issue(number: $i) {\n      title\n      body\n      state\n      lastEditedAt\n      author { login }\n      labels(first: 50) { nodes { name } }\n      timelineItems(itemTypes: [LABELED_EVENT], last: 100) {\n        nodes { ... on LabeledEvent { createdAt actor { login } label { name } } }\n      }\n    }\n  }\n}\n'''\nLIST_QUERY = '''\nquery($o: String!, $n: String!, $l: String!) {\n  repository(owner: $o, name: $n) {\n    issues(first: 100, states: [OPEN], labels: [$l], orderBy: { field: CREATED_AT, direction: ASC }) {\n      nodes { number labels(first: 50) { nodes { name } } }\n    }\n  }\n}\n'''\ndef approved(number):\n    # The approval check itself. Raises Refused unless every condition holds.\n    issue = graphql(ISSUE_QUERY, i=number)['issue']\n    if issue is None:\n        raise Refused('issue not found (pull requests are not accepted)')\n    if issue['state'] != 'OPEN':\n        raise Refused('issue is not open')\n    if LABEL not in [l['name'] for l in issue['labels']['nodes']]:\n        raise Refused('issue does not carry the label ' + LABEL)\n    events = [e for e in issue['timelineItems']['nodes'] if e and e['label']['name'] == LABEL]\n    if not events:\n        raise Refused('no labelling event found for ' + LABEL)\n    last = events[-1]\n    actor = ((last.get('actor') or dict()).get('login') or '').lower()\n    if actor not in MAINTAINERS:\n        raise Refused('label was applied by ' + (actor or 'unknown') + ', who is not a listed maintainer')\n    edited = issue.get('lastEditedAt')\n    if edited and edited > last['createdAt']:\n        raise Refused('issue text was edited after approval; a maintainer must re-apply the label')\n    return issue, actor, last['createdAt']\ndef claim(number, labels):\n    # Mark the issue as being built. While it carries this label no run\n    # started without a number picks another issue: one build at a time.\n    base = 'https://api.github.com/repos/' + REPO_OWNER + '/' + REPO_NAME + '/issues/' + str(number) + '/labels'\n    send(base, dict(labels=[CLAIM]))\n    for old in (BUILT, FAILED):\n        if old in labels:\n            try:\n                req = urllib.request.Request(base + '/' + urllib.parse.quote(old), method='DELETE',\n                    headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\n                urllib.request.urlopen(req, timeout=30).read()\n            except Exception:\n                pass\nif NUMBER > 0:\n    # A specific issue was asked for (-I issue=<number>, or construct-build).\n    try:\n        issue, actor, when = approved(NUMBER)\n    except Refused as exc:\n        refuse(str(exc))\n    try:\n        claim(NUMBER, [l['name'] for l in issue['labels']['nodes']])\n    except Exception as exc:\n        print('warning: could not add the label ' + CLAIM + ' (' + type(exc).__name__ + ')')\nelse:\n    # No issue given (an automation run): take the oldest open, approved issue\n    # that no run has handled yet. Every candidate still has to pass the full\n    # approval check; one that fails is skipped, not built.\n    # One build at a time: nothing is picked while another issue is being built.\n    busy = [n['number'] for n in graphql(LIST_QUERY, l=CLAIM)['issues']['nodes']]\n    if busy:\n        print('WAITING: issue ' + str(busy[0]) + ' is still being built (label ' + CLAIM + '). One issue is built at a time.')\n        print('If no run is working on it any more, remove that label from the issue.')\n        sys.exit(1)\n    issue = None\n    candidates = graphql(LIST_QUERY, l=LABEL)['issues']['nodes']\n    for node in candidates:\n        number = node['number']\n        handled = [l['name'] for l in node['labels']['nodes'] if l['name'] in (BUILT, FAILED)]\n        if handled:\n            print('skipped issue', number, '- already handled (label ' + handled[0] + ')')\n            continue\n        try:\n            issue, actor, when = approved(number)\n        except Refused as exc:\n            print('skipped issue', number, '-', exc)\n            continue\n        NUMBER = number\n        break\n    if issue is None:\n        print('NOTHING TO BUILD: no open issue labelled ' + LABEL + ' is waiting (' + str(len(candidates)) + ' checked).')\n        print('To build an issue again, remove its ' + BUILT + ' or ' + FAILED + ' label.')\n        sys.exit(1)\n    try:\n        claim(NUMBER, [])\n    except Exception as exc:\n        refuse('could not add the label ' + CLAIM + ' to issue ' + str(NUMBER) + ' (' + type(exc).__name__ + '); not building it, because the next run would pick it again')\nos.makedirs('/tmp/fabro', exist_ok=True)\nwith open('/tmp/fabro/issue.md', 'w') as f:\n    f.write('# ' + issue['title'] + chr(10) + chr(10) + (issue['body'] or '') + chr(10))\nwith open('/tmp/fabro/issue_number', 'w') as f:\n    f.write(str(NUMBER))\nprint('APPROVED: issue', NUMBER, 'released by', actor, 'at', when)\nprint('title:', issue['title'])",
+            "notes": "Script completed: (command -v start-test-db >/dev/null && start-test-db) || echo no test database in this sandbox image; pip install -q -e '.[dev]' && python -c 'import prsec' && echo prsec importable",
             "usage": null,
             "timing": {
               "wall_time_ms": 0,
               "inference_time_ms": 0,
-              "tool_time_ms": 3621,
-              "active_time_ms": 3621
-            }
-          },
-          "review_gate": {
-            "status": "succeeded",
-            "context_updates": {
-              "command.output": "blob://sha256/af5aa90f4a84abe017ab5a70bbfd68717412bf34d72b48eac1a350a3649d9ba5"
-            },
-            "notes": "Script completed: \nimport json, os, shutil, subprocess, sys\nD = '/tmp/fabro'\nNL = chr(10)\nMAX_ROUNDS = int('3')\ndef run(cmd, env=None):\n    p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace', env=env)\n    return p.returncode, p.stdout\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\ndef remove(*names):\n    for name in names:\n        if os.path.exists(D + '/' + name):\n            os.remove(D + '/' + name)\ndef snapshot():\n    # Same as in the verify step: the working tree as a git tree object.\n    index = D + '/index'\n    rc, source = run('git rev-parse --git-path index')\n    try:\n        shutil.copyfile(source.strip(), index)\n    except OSError:\n        if os.path.exists(index):\n            os.remove(index)\n    rc, out = run('git add -A . && git write-tree', dict(os.environ, GIT_INDEX_FILE=index))\n    last = (out.strip().splitlines() or [''])[-1].strip()\n    return last if rc == 0 else ''\ndef stop(route, message):\n    print(route)\n    print(message.replace('ROUTE_', 'ROUTE-')[:3000])\n    sys.exit(1)\ndef render(items):\n    rows = []\n    for i, f in enumerate(items, 1):\n        rows.append(str(i) + '. [' + str(f.get('category', 'general')) + '] ' + str(f.get('file', '?')) + ':' + str(f.get('line', '?'))\n            + NL + '   Problem: ' + str(f.get('problem', '')) + NL + '   Required fix: ' + str(f.get('fix', '')))\n    return NL.join(rows)\ntier = read(D + '/review_tier').strip() or 'security'\nTREE = snapshot()\nif not TREE or TREE != read(D + '/review_tree').strip():\n    stop('ROUTE_reverify', 'The repository changed during review. Reviewers must not edit files. Running verification again.')\nverdict, summary, findings, problem, wants_security = '', '', [], '', False\ntry:\n    with open(D + '/review.json') as f:\n        data = json.load(f)\n    verdict = str(data.get('verdict', '')).strip().lower()\n    summary = str(data.get('summary', ''))\n    findings = [x for x in (data.get('findings') or []) if isinstance(x, dict)]\n    wants_security = str(data.get('needs_security_review', '')).strip().lower() == 'true'\nexcept Exception as exc:\n    problem = 'no readable verdict in /tmp/fabro/review.json (' + type(exc).__name__ + ')'\nremove('review.json')\nblocking = [x for x in findings if str(x.get('severity', '')).strip().lower() == 'blocking']\nnotes = [x for x in findings if x not in blocking]\nif not problem and verdict not in ('pass', 'fail'):\n    problem = 'unknown verdict: ' + verdict[:40]\nif not problem and verdict == 'pass' and blocking:\n    verdict = 'fail'\nif not problem and verdict == 'fail' and not blocking:\n    problem = 'verdict is fail but no blocking finding was given'\nhand_over = tier == 'standard' and (wants_security or bool(problem))\nif hand_over:\n    # From now on this change is reviewed by the security reviewer.\n    write(D + '/force_security', '1')\n    write(D + '/review_tier', 'security')\nif problem:\n    if hand_over:\n        stop('ROUTE_security', 'Handing over to the security reviewer: ' + problem)\n    stop('ROUTE_human', 'The security reviewer did not reach a usable verdict: ' + problem)\nif verdict == 'pass' and hand_over:\n    with open(D + '/review-brief.md', 'a') as f:\n        f.write(NL + 'The standard reviewer found nothing blocking and asked for a security review: ' + summary[:1500] + NL)\n    stop('ROUTE_security', 'The standard reviewer asked for a security review: ' + summary)\nif verdict == 'pass':\n    text = '# Review passed (' + tier + ' reviewer)' + NL + NL + summary + NL\n    if notes:\n        text += NL + '## Non-blocking notes' + NL + render(notes) + NL\n    write(D + '/review-notes.md', text)\n    remove('todo.md', 'last-review.md', 'fix-notes.md')\n    print('REVIEW PASSED (' + tier + ' reviewer), ' + str(len(notes)) + ' non-blocking note(s)')\n    print(summary[:1500])\n    sys.exit(0)\ntry:\n    rounds = int(read(D + '/review_rounds').strip() or 0) + 1\nexcept ValueError:\n    rounds = MAX_ROUNDS\nwrite(D + '/review_rounds', str(rounds))\nbody = summary + NL + NL + '## Blocking findings - every one must be fixed' + NL + render(blocking) + NL\nwrite(D + '/last-review.md', '# Review rejected the change (round ' + str(rounds) + ', ' + tier + ' reviewer)' + NL + NL + body)\nwrite(D + '/todo.md', '# Fix this: an independent reviewer rejected the change (round ' + str(rounds) + ')' + NL + NL + body\n    + NL + 'The spec is /tmp/fabro/spec.md. The complete change as reviewed is /tmp/fabro/change.diff.' + NL)\nwrite(D + '/reviewed_tree', TREE)\nremove('fix-notes.md')\nspec_fault = any(str(x.get('category', '')).strip().lower() == 'spec' for x in blocking)\nif rounds >= MAX_ROUNDS:\n    route = 'ROUTE_human'\nelif spec_fault:\n    route = 'ROUTE_human (a finding says the spec itself is wrong)'\nelif rounds == 1:\n    route = 'ROUTE_implement'\nelse:\n    route = 'ROUTE_deep'\nstop(route, 'REVIEW REJECTED, round ' + str(rounds) + ' of ' + str(MAX_ROUNDS) + ', ' + str(len(blocking)) + ' blocking finding(s):' + NL + render(blocking))",
-            "usage": null,
-            "timing": {
-              "wall_time_ms": 0,
-              "inference_time_ms": 0,
-              "tool_time_ms": 186,
-              "active_time_ms": 186
-            }
-          },
-          "release": {
-            "status": "succeeded",
-            "context_updates": {
-              "command.output": "blob://sha256/18de4e50070940b3476509590f0ea7c4d02ff9d066582c8940bc3742d9bdc914"
-            },
-            "notes": "Script completed: \nimport json, os, urllib.parse, urllib.request\nREPO_OWNER, REPO_NAME = '0x0pointer', 'Construct'\nCLAIM = 'fabro-in-progress'\nBUILT = 'fabro-built'\nFAILED = 'fabro-failed'\nD = '/tmp/fabro'\ntoken = os.environ.get('GITHUB_TOKEN') or ''\ntry:\n    with open(D + '/issue_number') as f:\n        number = int(f.read().strip())\nexcept Exception:\n    number = 0\n# The review gate leaves review-notes.md behind only when the change passed,\n# and todo.md only while something is still to be fixed.\npassed = os.path.exists(D + '/review-notes.md') and not os.path.exists(D + '/todo.md')\noutcome = BUILT if passed else FAILED\ndef call(method, path, body=None):\n    req = urllib.request.Request('https://api.github.com/repos/' + REPO_OWNER + '/' + REPO_NAME + '/issues/' + str(number) + path,\n        data=json.dumps(body).encode() if body is not None else None, method=method,\n        headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\n    urllib.request.urlopen(req, timeout=30).read()\nif number <= 0:\n    print('no issue was picked in this run, nothing to release')\nelse:\n    for step, args in (('add ' + outcome, ('POST', '/labels', dict(labels=[outcome]))),\n                       ('remove ' + CLAIM, ('DELETE', '/labels/' + urllib.parse.quote(CLAIM)))):\n        try:\n            call(*args)\n        except Exception as exc:\n            print('warning: could not ' + step + ' on issue ' + str(number) + ' (' + type(exc).__name__ + ')')\n    print('RELEASED: issue', number, 'is now labelled', outcome)",
-            "usage": null,
-            "timing": {
-              "wall_time_ms": 0,
-              "inference_time_ms": 0,
-              "tool_time_ms": 2699,
-              "active_time_ms": 2699
+              "tool_time_ms": 20534,
+              "active_time_ms": 20534
             }
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "2048b3b9e9f4911a10b7c9b167308435e2034ec1",
+        "loop_failure_signatures": {
+          "review_gate|deterministic|script failed with exit code: <n> ## output route_implement review rejected,round <n> of <n>,<n> blocking finding(s): <n>. [regression] .fabro/scripts/fabro-run-titles:<n> problem: the diff changes this script's mode from <n> to <n>. users ": 1
+        },
         "node_visits": {
           "release": 1,
-          "verify": 2,
+          "check_issue": 1,
+          "approve": 2,
+          "install": 1,
           "review_gate": 2,
           "save_spec": 2,
           "implement": 2,
-          "spec": 2,
-          "approve": 2,
-          "start": 1,
-          "check_issue": 1,
           "security_review": 2,
-          "install": 1
+          "spec": 2,
+          "start": 1,
+          "verify": 2
         }
       },
-      "diff": {}
+      "diff": {
+        "summary": {
+          "files_changed": 5,
+          "additions": 473,
+          "deletions": 22
+        }
+      }
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-11-25T16:26:47.911467442Z",
+    "status": "succeeded",
+    "timing": {
+      "wall_time_ms": 3346300,
+      "inference_time_ms": 871334,
+      "tool_time_ms": 1879187,
+      "active_time_ms": 2750521
+    },
+    "final_git_commit_sha": "2048b3b9e9f4911a10b7c9b167308435e2034ec1",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "check_issue",
+        "stage_label": "check_issue",
+        "timing": {
+          "wall_time_ms": 3634,
+          "inference_time_ms": 0,
+          "tool_time_ms": 3621,
+          "active_time_ms": 3621
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "install",
+        "stage_label": "install",
+        "timing": {
+          "wall_time_ms": 20545,
+          "inference_time_ms": 0,
+          "tool_time_ms": 20534,
+          "active_time_ms": 20534
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "spec",
+        "stage_label": "spec",
+        "timing": {
+          "wall_time_ms": 1306805,
+          "inference_time_ms": 502614,
+          "tool_time_ms": 802905,
+          "active_time_ms": 1305519
+        },
+        "billing_usd_micros": 3691860,
+        "retries": 0
+      },
+      {
+        "stage_id": "save_spec",
+        "stage_label": "save_spec",
+        "timing": {
+          "wall_time_ms": 501,
+          "inference_time_ms": 0,
+          "tool_time_ms": 480,
+          "active_time_ms": 480
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "approve",
+        "stage_label": "approve",
+        "timing": {
+          "wall_time_ms": 487119,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "implement",
+        "stage_label": "implement",
+        "timing": {
+          "wall_time_ms": 756311,
+          "inference_time_ms": 132114,
+          "tool_time_ms": 623005,
+          "active_time_ms": 755119
+        },
+        "billing_usd_micros": 450622,
+        "retries": 0
+      },
+      {
+        "stage_id": "verify",
+        "stage_label": "verify",
+        "timing": {
+          "wall_time_ms": 416586,
+          "inference_time_ms": 0,
+          "tool_time_ms": 416554,
+          "active_time_ms": 416554
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "security_review",
+        "stage_label": "security_review",
+        "timing": {
+          "wall_time_ms": 247587,
+          "inference_time_ms": 236606,
+          "tool_time_ms": 8866,
+          "active_time_ms": 245472
+        },
+        "billing_usd_micros": 1515894,
+        "retries": 0
+      },
+      {
+        "stage_id": "review_gate",
+        "stage_label": "review_gate",
+        "timing": {
+          "wall_time_ms": 558,
+          "inference_time_ms": 0,
+          "tool_time_ms": 523,
+          "active_time_ms": 523
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "release",
+        "stage_label": "release",
+        "timing": {
+          "wall_time_ms": 2819,
+          "inference_time_ms": 0,
+          "tool_time_ms": 2699,
+          "active_time_ms": 2699
+        },
+        "retries": 0
+      }
+    ],
+    "billing": {
+      "input_tokens": 389552,
+      "output_tokens": 29012,
+      "total_tokens": 4726165,
+      "reasoning_tokens": 38545,
+      "cache_read_tokens": 4269056,
+      "cache_write_tokens": 0,
+      "total_usd_micros": 5658376
+    },
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -4780,7 +4937,12 @@
       "first_event_seq": 805,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Script completed: \nimport json, os, urllib.parse, urllib.request\nREPO_OWNER, REPO_NAME = '0x0pointer', 'Construct'\nCLAIM = 'fabro-in-progress'\nBUILT = 'fabro-built'\nFAILED = 'fabro-failed'\nD = '/tmp/fabro'\ntoken = os.environ.get('GITHUB_TOKEN') or ''\ntry:\n    with open(D + '/issue_number') as f:\n        number = int(f.read().strip())\nexcept Exception:\n    number = 0\n# The review gate leaves review-notes.md behind only when the change passed,\n# and todo.md only while something is still to be fixed.\npassed = os.path.exists(D + '/review-notes.md') and not os.path.exists(D + '/todo.md')\noutcome = BUILT if passed else FAILED\ndef call(method, path, body=None):\n    req = urllib.request.Request('https://api.github.com/repos/' + REPO_OWNER + '/' + REPO_NAME + '/issues/' + str(number) + path,\n        data=json.dumps(body).encode() if body is not None else None, method=method,\n        headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\n    urllib.request.urlopen(req, timeout=30).read()\nif number <= 0:\n    print('no issue was picked in this run, nothing to release')\nelse:\n    for step, args in (('add ' + outcome, ('POST', '/labels', dict(labels=[outcome]))),\n                       ('remove ' + CLAIM, ('DELETE', '/labels/' + urllib.parse.quote(CLAIM)))):\n        try:\n            call(*args)\n        except Exception as exc:\n            print('warning: could not ' + step + ' on issue ' + str(number) + ' (' + type(exc).__name__ + ')')\n    print('RELEASED: issue', number, 'is now labelled', outcome)",
+        "failure_reason": null,
+        "timestamp": "2026-11-25T16:26:42.908172606Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -4789,11 +4951,27 @@
         "language": "python",
         "timeout_ms": 120000
       },
-      "script_timing": null,
+      "script_timing": {
+        "output": "blob://sha256/18de4e50070940b3476509590f0ea7c4d02ff9d066582c8940bc3742d9bdc914",
+        "exit_code": 0,
+        "duration_ms": 2699,
+        "termination": "exited",
+        "output_bytes": 47,
+        "live_streaming": true
+      },
       "parallel_results": null,
       "output": null,
+      "output_bytes": 47,
+      "live_streaming": true,
+      "termination": "exited",
       "started_at": "2026-11-25T16:26:40.088946500Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 2819,
+        "inference_time_ms": 0,
+        "tool_time_ms": 2699,
+        "active_time_ms": 2699
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -4802,7 +4980,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "succeeded"
     },
     "start@1": {
       "first_event_seq": 17,
@@ -6294,6 +6472,40 @@
           }
         ],
         "warnings": []
+      },
+      "state": "succeeded"
+    },
+    "exit@1": {
+      "first_event_seq": 815,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-11-25T16:26:47.806322882Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-11-25T16:26:47.806308642Z",
+      "handler": "exit",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
       },
       "state": "succeeded"
     },
