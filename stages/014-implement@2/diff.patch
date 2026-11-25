@@ -1,0 +1,18 @@
+diff --git a/.fabro/scripts/fabro-run-titles b/.fabro/scripts/fabro-run-titles
+old mode 100644
+new mode 100755
+diff --git a/tests/fabro/test_run_titles.py b/tests/fabro/test_run_titles.py
+index 6d06d45..8fb5aa3 100644
+--- a/tests/fabro/test_run_titles.py
++++ b/tests/fabro/test_run_titles.py
+@@ -125,6 +125,10 @@ def test_existing_title_cases_still_match(run_titles):
+     )
+ 
+ 
++def test_watcher_script_remains_executable():
++    assert SCRIPT.stat().st_mode & 0o111
++
++
+ def test_sweep_still_tidies_nothing_to_do_runs(monkeypatch, run_titles):
+     fake = FakeApis()
+     monkeypatch.setattr(run_titles, "api", fake.fabro)
