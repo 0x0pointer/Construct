@@ -1,0 +1,289 @@
+diff --git a/.fabro/scripts/comment-codespace b/.fabro/scripts/comment-codespace
+deleted file mode 100755
+index 0e6df96..0000000
+--- a/.fabro/scripts/comment-codespace
++++ /dev/null
+@@ -1,112 +0,0 @@
+-#!/usr/bin/env python3
+-import json
+-import os
+-import sys
+-import urllib.parse
+-import urllib.request
+-
+-
+-MARKER = "<!-- fabro:codespace-comment -->"
+-PAGE_SIZE = 100
+-
+-
+-def warning(message):
+-    print(f"warning: {message}", file=sys.stderr)
+-
+-
+-def valid_name(value):
+-    return bool(value) and all(character.isalnum() or character in "-._" for character in value)
+-
+-
+-def valid_ref(ref):
+-    if not ref or not ref.startswith("fabro/run/"):
+-        return False
+-    suffix = ref.removeprefix("fabro/run/")
+-    return bool(suffix) and not any(character.isspace() for character in suffix)
+-
+-
+-def codespace_url(owner, repo, ref):
+-    encoded_ref = urllib.parse.quote(ref, safe="")
+-    return f"https://codespaces.new/{owner}/{repo}?quickstart=1&ref={encoded_ref}"
+-
+-
+-def comment_body(owner, repo, ref):
+-    url = codespace_url(owner, repo, ref)
+-    return (
+-        f"[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)]({url})\n\n"
+-        f"{MARKER}"
+-    )
+-
+-
+-def request_json(url, token, method="GET", body=None):
+-    data = None if body is None else json.dumps(body).encode("utf-8")
+-    request = urllib.request.Request(
+-        url,
+-        data=data,
+-        method=method,
+-        headers={
+-            "Accept": "application/vnd.github+json",
+-            "Authorization": f"Bearer {token}",
+-            "Content-Type": "application/json",
+-            "User-Agent": "fabro-comment-codespace",
+-        },
+-    )
+-    with urllib.request.urlopen(request) as response:
+-        return json.loads(response.read().decode("utf-8"))
+-
+-
+-def matching_pull_request(owner, repo, ref, token):
+-    pulls_url = f"https://api.github.com/repos/{owner}/{repo}/pulls?state=open&per_page={PAGE_SIZE}"
+-    for pull_request in request_json(pulls_url, token):
+-        head = pull_request.get("head") or {}
+-        head_repo = head.get("repo") or {}
+-        if pull_request.get("state") == "open" and head.get("ref") == ref and head_repo.get("full_name") == f"{owner}/{repo}":
+-            return pull_request
+-    return None
+-
+-
+-def has_existing_comment(owner, repo, number, token):
+-    page = 1
+-    while True:
+-        url = f"https://api.github.com/repos/{owner}/{repo}/issues/{number}/comments?per_page={PAGE_SIZE}&page={page}"
+-        comments = request_json(url, token)
+-        if any(MARKER in (comment.get("body") or "") for comment in comments):
+-            return True
+-        if len(comments) < PAGE_SIZE:
+-            return False
+-        page += 1
+-
+-
+-def main(argv=None):
+-    args = sys.argv[1:] if argv is None else argv
+-    if len(args) != 3:
+-        warning("expected owner, repo, and ref")
+-        return 0
+-    owner, repo, ref = args
+-    if not valid_name(owner) or not valid_name(repo) or not valid_ref(ref):
+-        warning("refusing to post Codespaces comment for invalid owner, repo, or ref")
+-        return 0
+-    token = os.environ.get("GITHUB_TOKEN")
+-    if not token:
+-        warning("GITHUB_TOKEN is missing; skipping Codespaces comment")
+-        return 0
+-    try:
+-        pull_request = matching_pull_request(owner, repo, ref, token)
+-        if pull_request is None:
+-            warning("no open same-repo pull request found for Codespaces comment")
+-            return 0
+-        if has_existing_comment(owner, repo, pull_request["number"], token):
+-            return 0
+-        request_json(
+-            f"https://api.github.com/repos/{owner}/{repo}/issues/{pull_request['number']}/comments",
+-            token,
+-            method="POST",
+-            body={"body": comment_body(owner, repo, ref)},
+-        )
+-    except Exception as error:
+-        warning(f"could not add Codespaces comment ({type(error).__name__})")
+-    return 0
+-
+-
+-if __name__ == "__main__":
+-    raise SystemExit(main())
+diff --git a/.fabro/workflows/issue-to-pr/workflow.toml b/.fabro/workflows/issue-to-pr/workflow.toml
+index f3b5123..8295269 100644
+--- a/.fabro/workflows/issue-to-pr/workflow.toml
++++ b/.fabro/workflows/issue-to-pr/workflow.toml
+@@ -97,13 +97,6 @@ memory = "1500MB"
+ enabled = true
+ draft = true
+ 
+-[[run.hooks]]
+-id = "codespace-comment"
+-event = "run_complete"
+-blocking = false
+-sandbox = true
+-script = ".fabro/scripts/comment-codespace 0x0pointer Construct fabro/run/$FABRO_RUN_ID"
+-
+ [run.integrations.github.permissions]
+ issues = "write"
+ contents = "write"
+diff --git a/tests/fabro/test_comment_codespace.py b/tests/fabro/test_comment_codespace.py
+deleted file mode 100644
+index 8ea66af..0000000
+--- a/tests/fabro/test_comment_codespace.py
++++ /dev/null
+@@ -1,147 +0,0 @@
+-import importlib.util
+-import tomllib
+-import urllib.parse
+-from importlib.machinery import SourceFileLoader
+-from pathlib import Path
+-
+-
+-SCRIPT = Path(__file__).resolve().parents[2] / ".fabro" / "scripts" / "comment-codespace"
+-WORKFLOW = Path(__file__).resolve().parents[2] / ".fabro" / "workflows" / "issue-to-pr" / "workflow.toml"
+-
+-
+-def load_module():
+-    loader = SourceFileLoader("comment_codespace", str(SCRIPT))
+-    spec = importlib.util.spec_from_loader(loader.name, loader)
+-    module = importlib.util.module_from_spec(spec)
+-    assert spec.loader is not None
+-    spec.loader.exec_module(module)
+-    return module
+-
+-
+-def install_fake_api(module, monkeypatch, handler):
+-    calls = []
+-
+-    def fake(url, token, method="GET", body=None):
+-        calls.append({"url": url, "token": token, "method": method, "body": body})
+-        return handler(url, token, method, body)
+-
+-    monkeypatch.setattr(module, "request_json", fake)
+-    return calls
+-
+-
+-def test_codespace_url_encodes_run_branch():
+-    module = load_module()
+-
+-    ref = "fabro/run/01M89HT34WNSPBX0B7B7ZF945W"
+-    body = module.comment_body("0x0pointer", "Construct", ref)
+-
+-    assert module.MARKER in body
+-    assert "Open in GitHub Codespaces" in body
+-    assert "https://github.com/codespaces/badge.svg" in body
+-    assert (
+-        "https://codespaces.new/0x0pointer/Construct?quickstart=1"
+-        "&ref=fabro%2Frun%2F01M89HT34WNSPBX0B7B7ZF945W"
+-    ) in body
+-
+-
+-def test_main_posts_comment_for_matching_open_pr(monkeypatch):
+-    module = load_module()
+-    ref = "fabro/run/01M89HT34WNSPBX0B7B7ZF945W"
+-
+-    def handler(url, _token, method, body):
+-        if "/pulls?" in url:
+-            return [{"number": 17, "state": "open", "head": {"ref": ref, "repo": {"full_name": "0x0pointer/Construct"}}}]
+-        if "/issues/17/comments?" in url:
+-            return []
+-        if url.endswith("/issues/17/comments") and method == "POST":
+-            return {"body": body["body"]}
+-        raise AssertionError(f"unexpected request: {method} {url}")
+-
+-    calls = install_fake_api(module, monkeypatch, handler)
+-    monkeypatch.setenv("GITHUB_TOKEN", "secret-token")
+-
+-    assert module.main(["0x0pointer", "Construct", ref]) == 0
+-
+-    post_calls = [call for call in calls if call["method"] == "POST"]
+-    assert len(post_calls) == 1
+-    assert post_calls[0]["url"].endswith("/issues/17/comments")
+-    assert module.MARKER in post_calls[0]["body"]["body"]
+-    assert "Open in GitHub Codespaces" in post_calls[0]["body"]["body"]
+-
+-
+-def test_main_skips_existing_marker_on_later_comment_page(monkeypatch):
+-    module = load_module()
+-    ref = "fabro/run/01M89HT34WNSPBX0B7B7ZF945W"
+-    first_page = [{"body": "no marker here"} for _ in range(module.PAGE_SIZE)]
+-
+-    def handler(url, _token, method, _body):
+-        if "/pulls?" in url:
+-            return [{"number": 17, "state": "open", "head": {"ref": ref, "repo": {"full_name": "0x0pointer/Construct"}}}]
+-        if "/issues/17/comments?" in url:
+-            page = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["page"][0]
+-            if page == "1":
+-                return first_page
+-            if page == "2":
+-                return [{"body": f"already posted\n{module.MARKER}"}]
+-            raise AssertionError(f"unexpected page: {url}")
+-        if method == "POST":
+-            raise AssertionError("comment should not be posted twice")
+-        raise AssertionError(f"unexpected request: {method} {url}")
+-
+-    calls = install_fake_api(module, monkeypatch, handler)
+-    monkeypatch.setenv("GITHUB_TOKEN", "secret-token")
+-
+-    assert module.main(["0x0pointer", "Construct", ref]) == 0
+-    assert any("page=2" in call["url"] for call in calls)
+-    assert not [call for call in calls if call["method"] == "POST"]
+-
+-
+-def test_main_ignores_fork_and_wrong_branch_prs(monkeypatch, capsys):
+-    module = load_module()
+-    ref = "fabro/run/01M89HT34WNSPBX0B7B7ZF945W"
+-
+-    def handler(_url, _token, method, _body):
+-        assert method == "GET"
+-        return [
+-            {"number": 17, "state": "open", "head": {"ref": ref, "repo": {"full_name": "someone-else/Construct"}}},
+-            {"number": 18, "state": "open", "head": {"ref": "feature/not-this-run", "repo": {"full_name": "0x0pointer/Construct"}}},
+-        ]
+-
+-    calls = install_fake_api(module, monkeypatch, handler)
+-    monkeypatch.setenv("GITHUB_TOKEN", "secret-token")
+-
+-    assert module.main(["0x0pointer", "Construct", ref]) == 0
+-
+-    assert not [call for call in calls if call["method"] == "POST"]
+-    assert "no open same-repo pull request found" in capsys.readouterr().err
+-
+-
+-def test_main_fails_open_without_token_or_on_api_error(monkeypatch, capsys):
+-    module = load_module()
+-    ref = "fabro/run/01M89HT34WNSPBX0B7B7ZF945W"
+-
+-    assert module.main(["0x0pointer", "Construct", ref]) == 0
+-    missing_err = capsys.readouterr().err
+-    assert "warning:" in missing_err
+-
+-    token = "secret-token"
+-    monkeypatch.setenv("GITHUB_TOKEN", token)
+-    install_fake_api(module, monkeypatch, lambda _u, seen_token, _m, _b: (_ for _ in ()).throw(RuntimeError(f"boom {seen_token}")))
+-
+-    assert module.main(["0x0pointer", "Construct", ref]) == 0
+-    error_err = capsys.readouterr().err
+-    assert "could not add Codespaces comment" in error_err
+-    assert token not in error_err
+-
+-
+-def test_issue_to_pr_workflow_has_nonblocking_codespace_hook():
+-    data = tomllib.loads(WORKFLOW.read_text())
+-    hooks = data["run"]["hooks"]
+-    hook = next(item for item in hooks if item["id"] == "codespace-comment")
+-
+-    assert hook["event"] == "run_complete"
+-    assert hook["script"] == ".fabro/scripts/comment-codespace 0x0pointer Construct fabro/run/$FABRO_RUN_ID"
+-    assert hook["blocking"] is False
+-    assert hook["sandbox"] is True
+-    assert data["run"]["pull_request"]["enabled"] is True
+-    assert data["run"]["pull_request"]["draft"] is True
