@@ -952,7 +952,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-11-25T19:45:08.194157070Z",
-  "last_event_at": "2026-11-25T19:47:31.960174856Z",
+  "last_event_at": "2026-11-25T19:47:36.768879536Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -1143,9 +1143,9 @@
       }
     },
     {
-      "seq": 0,
+      "seq": 121,
       "checkpoint": {
-        "timestamp": "2026-11-25T19:47:31.994629032Z",
+        "timestamp": "2026-11-25T19:47:36.217030740Z",
         "current_node": "spec",
         "completed_nodes": [
           "start",
@@ -1155,31 +1155,163 @@
         ],
         "node_retries": {},
         "context_values": {
-          "command.output": "blob://sha256/16ee1a726445e62a8e1f48f90e9021830b921c275144b797755eba318229cb48",
-          "thread.check_issue.current_node": "install",
-          "internal.fidelity": "compact",
-          "thread.start.current_node": "check_issue",
-          "internal.thread_id": "strong",
-          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
-          "graph.rankdir": "LR",
-          "internal.retry_count.check_issue": 0,
-          "internal.retry_count.install": 0,
+          "last_stage": "spec",
           "failure_signature": "",
+          "internal.thread_id": "strong",
+          "thread.start.current_node": "check_issue",
+          "command.output": "blob://sha256/16ee1a726445e62a8e1f48f90e9021830b921c275144b797755eba318229cb48",
+          "current_node": "spec",
+          "internal.retry_count.install": 0,
+          "internal.retry_count.spec": 0,
+          "graph.loop_restart_signature_limit": "10",
+          "graph.max_node_visits": "30",
+          "internal.retry_count.start": 0,
+          "internal.run_id": "01M8A3TW9X5SQ8PZMZYPVTYNRW",
+          "graph.rankdir": "LR",
+          "internal.fidelity": "compact",
+          "internal.work_dir": "/workspace/Construct",
           "last_response": "DECISION NEEDED: The issue could mean changing Construct’s PR-review decision rules or improving the dashboard’s explanation of current decisions; choose dashboard observability only, so users get",
           "response.spec": "DECISION NEEDED: The issue could mean changing Construct’s PR-review decision rules or improving the dashboard’s explanation of current decisions; choose dashboard observability only, so users get clearer per-scan and aggregate decision breakdowns but scan outcomes/rules do not change.\n\n1. Intent - Make the non-finding dashboard pages explain why Construct reviewed, skipped, escalated, verified, or reproduced a PR. Add a coherent “review funnel” and per-stage decision breakdown to `/metrics`, and add a concise ordered “review decision path” to `/scans/{scan_id}` using existing scan, stage_run, finding, and occurrence data. No pipeline, rule, or stored schema behaviour changes.\n\n2. Acceptance criteria\n1. `/metrics` renders a top-level “PR review funnel (30 days)” showing triggered scans, active scans, skipped scans, failed scans, fully reviewed scans, and findings produced with reproduced/likely/inconclusive counts.\n2. `/metrics` renders “Decision outcomes by stage (30 days)” with one row per observed stage+decision, ordered by the `Stage` enum, including stage role, decision key, run count, OK rate, failed count, average duration, average cost, average tokens, and average turns.\n3. `/metrics` still renders the existing precision-by-label, precision-by-bug-class, per-agent execution health, harness comparison, and by-stage/harness/model tables with their current meanings.\n4. `/scans/{scan_id}` renders “Review decision path” in pipeline order, with human phase names and concise decision details from stage outputs; fan-out stages show each observed decision rather than hiding them.\n5. Existing dashboard shell behaviour remains: `/`, `/findings`, `/metrics`, and `/scans/{scan_id}` use the local styled shell, do not load remote assets, and all plain GET filters/pagination still work.\n6. Missing, failed, or malformed stage outputs render as explicit non-crashing decisions (`output_invalid`, other non-ok status, or `unknown`) instead of blank cells or server errors.\n7. Untrusted PR, finding, triage, stage output, error, and forwarded-user content remains HTML-escaped on `/metrics` and `/scans/{scan_id}`.\n\n3. Boundaries\nAlways: use `prsec.models.Stage` for canonical stage ordering; use existing `STAGE_ROLES`, `_stage_summary`, `_turns`, `_fmt_usd`, `_fmt_dur`, `_fmt_pct`, `_render`, `db._conn()`, and dashboard template components (`card`, `section-heading`, `table-wrap`, `badge`, `muted`, `wrap-anywhere`). Keep SQL parameterized or limited to fixed internal CASE expressions.\nNever: do not change orchestrator decisions, prompt text, stage output schemas, database schema, queue behaviour, auth/SSO assumptions, CI/deploy files, dependencies, or the findings detail page beyond incidental shared styling.\n\n4. Code map\n- `prsec/dashboard/main.py`: add `STAGE_PHASES: dict[str, str]`; add `_stage_decision_key(stage: str | None, status: str | None, output: Any) -> str`; add `_review_decision_rows(stage_runs: list[dict[str, Any]]) -> list[dict[str, Any]]` returning rows with `stage`, `role`, `phase`, `status`, `decision`, `summary`, `errors`, `task_id`, `health`; update `_agent_pipeline` rows with `phase`; update `scan_detail()` to pass `decision_path`. Existing tests: `tests/dashboard/test_prsec_dashboard_routes.py::test_scan_detail_agent_observability`.\n- `prsec/db/findings.py`: extend `metrics()` to return `review_funnel` and `stage_decisions`; derive stage decisions with the same stage-specific keys as `_stage_decision_key` using fixed SQL CASE logic, excluding shadow task ids where existing per-stage rollup excludes them. Existing tests: `tests/dashboard/test_prsec_dashboard_routes.py::test_metrics_per_agent_rollup`.\n- `prsec/dashboard/templates/scan.html`: add the “Review decision path” card before “Agents”, rendering `decision_path` and empty state.\n- `prsec/dashboard/templates/metrics.html`: reorganize headings into funnel, decision outcomes, review quality/findings, agent execution health, and harness comparison; retain existing tables and labels where acceptance criteria require them.\n- `tests/dashboard/test_prsec_dashboard_routes.py`: add/update route assertions for the new rendered content and escaping.\n\n5. Edge cases\n| Input or state | Expected behaviour |\n|---|---|\n| No scans/stage runs/findings in 30 days | `/metrics` returns 200 with zero/empty-state rows, no divide-by-zero, percentages as `-`. |\n| Stage output is `NULL`, scalar, list, or missing expected keys | Decision key is non-ok `status` when applicable, otherwise `unknown`; page returns 200. |\n| Stage run status is non-ok with partial output | Decision table shows the extracted decision if available and non-zero failed count/OK rate; no crash. |\n| Fan-out duplicate decisions for a scan/stage | Scan detail shows each run’s decision row; metrics aggregates duplicates into one stage+decision count. |\n| Very long summary/reasoning/error text | Render escaped and wrapped/truncated only by existing layout; no raw JSON dump added to overview tables. |\n| Concurrent scans still running | Counted as active in the funnel; scan detail continues existing timeline polling behaviour. |\n| DB query returns null averages | Render as `-` or `0` consistently with existing filters; no exception. |\n\n6. Security considerations\nDashboard data is untrusted because it includes PR text, agent output, timeline data, errors, model names, and forwarded identity headers. Templates must rely on Jinja autoescape and must not introduce `|safe`, inline event handlers, remote scripts, or `javascript:` URLs. New SQL must not include request-controlled identifiers; aggregate CASE expressions are fixed constants. No shell, filesystem path, prompt, authentication, authorization, or state-transition surfaces are changed. Main abuse risk is misleading operational/business metrics, so failed/malformed outputs must be visible rather than silently omitted.\n\n7. Test plan\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_metrics_review_funnel_and_stage_decisions`: with seeded data plus representative `rules`, `triage`, `dynamic`, and failed/malformed stage runs, assert `/metrics` contains “PR review funnel (30 days)”, “Decision outcomes by stage (30 days)”, expected counts/decision keys (`scan`, `full`, `reproduced`, `output_invalid`), and existing “Precision by label”, “By agent”, and “Harness comparison”.\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_scan_detail_review_decision_path`: assert `/scans/{scan_id}` shows “Review decision path”, stage phase/role labels, `2 hypothesis(es): H1, H2`, failed static-verify status, and existing transcript/SARIF links.\n- Add or extend `tests/dashboard/test_prsec_dashboard_routes.py::test_dashboard_restyle_escapes_untrusted_finding_and_scan_content`: insert hostile stage output decision/reasoning and verify `/metrics` and `/scans/{scan_id}` do not contain raw HTML, event handlers, or `javascript:` links but do contain escaped text.\n- Update existing `test_metrics_per_agent_rollup` only if assertions need the new section names; keep `test_scans_list`, findings filter tests, shell tests, timeline tests, and template-safety tests passing.\nTests required: yes\n\n8. Review focus\n- Stage decision extraction in Python and SQL can drift; ensure the visible keys match for equivalent inputs.\n- Funnel counts must not double-count findings or confuse active, skipped, failed, superseded, and done scans.\n- Shadow stage runs must remain excluded from per-agent/stage metrics where existing behaviour excludes them.\n- The page should explain decisions without dumping large or sensitive transcripts into aggregate views.\n- New template text must not regress escaping or introduce unsafe rendering hooks.\n\n9. Assumptions\n- “Other pages” means `/metrics` and per-scan detail; `/findings` is already satisfactory and scan list only needs existing behaviour preserved.\n- A 30-day window matches current metrics and should be used for all new aggregate sections.\n- Stage output fields in `prsec.stages.outputs` are the source of decision semantics; no new data capture is required.\n- Superseded scans count in triggered totals but are not “fully reviewed”.\n- `accepted` findings remain excluded from precision, as today.\n\n10. Suspicious content - none\n\nSize: standard\nRisk level: medium\nReason: The change renders and aggregates untrusted PR/agent data in review decision surfaces; wrong escaping or misleading metrics could affect security review decisions, although no auth or pipeline state is changed.",
-          "outcome": "succeeded",
-          "graph.loop_restart_signature_limit": "10",
+          "thread.strong.current_node": "spec",
+          "thread.check_issue.current_node": "install",
+          "internal.node_visit_count": 1,
+          "failure_class": "",
           "graph.goal": "Resolve the next maintainer-approved GitHub issue of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
-          "graph.max_node_visits": "30",
-          "last_stage": "spec",
+          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
+          "internal.retry_count.check_issue": 0,
+          "outcome": "succeeded"
+        },
+        "node_outcomes": {
+          "start": {
+            "status": "succeeded",
+            "usage": null
+          },
+          "install": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/16ee1a726445e62a8e1f48f90e9021830b921c275144b797755eba318229cb48"
+            },
+            "notes": "Script completed: (command -v start-test-db >/dev/null && start-test-db) || echo no test database in this sandbox image; pip install -q -e '.[dev]' && python -c 'import prsec' && echo prsec importable",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 15931,
+              "active_time_ms": 15931
+            }
+          },
+          "check_issue": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/06f6699f081b63794bf1af2b07139a99af7467be9fe4c79d6ecc1fd98d2c6a76"
+            },
+            "notes": "Script completed: \nimport json, os, sys, urllib.parse, urllib.request\nREPO_OWNER, REPO_NAME = '0x0pointer', 'Construct'\nRAW_NUMBER = '0'.strip()\nLABEL = 'fabro-approved'\nCLAIM = 'fabro-in-progress'\nBUILT = 'fabro-built'\nFAILED = 'fabro-failed'\nMAINTAINERS = set(m.strip().lower() for m in 'RiieCco,blabla1337,JorgeCarvalhoPT'.split(',') if m.strip())\nclass Refused(Exception):\n    pass\ndef refuse(msg):\n    print('REFUSED: ' + msg)\n    sys.exit(1)\ntoken = os.environ.get('GITHUB_TOKEN')\nif not token:\n    refuse('no GITHUB_TOKEN in the sandbox, cannot verify approval')\nif not RAW_NUMBER.isdigit():\n    refuse('issue must be a number; 0 picks the oldest approved issue')\nNUMBER = int(RAW_NUMBER)\ndef send(url, body):\n    req = urllib.request.Request(url, data=json.dumps(body).encode(),\n        headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\n    return json.load(urllib.request.urlopen(req, timeout=30))\ndef graphql(query, **variables):\n    reply = send('https://api.github.com/graphql',\n        dict(query=query, variables=dict(variables, o=REPO_OWNER, n=REPO_NAME)))\n    if reply.get('errors'):\n        refuse('GitHub API error: ' + json.dumps(reply['errors'])[:300])\n    return reply['data']['repository']\nISSUE_QUERY = '''\nquery($o: String!, $n: String!, $i: Int!) {\n  repository(owner: $o, name: $n) {\n    issue(number: $i) {\n      title\n      body\n      state\n      lastEditedAt\n      author { login }\n      labels(first: 50) { nodes { name } }\n      timelineItems(itemTypes: [LABELED_EVENT], last: 100) {\n        nodes { ... on LabeledEvent { createdAt actor { login } label { name } } }\n      }\n    }\n  }\n}\n'''\nLIST_QUERY = '''\nquery($o: String!, $n: String!, $l: String!) {\n  repository(owner: $o, name: $n) {\n    issues(first: 100, states: [OPEN], labels: [$l], orderBy: { field: CREATED_AT, direction: ASC }) {\n      nodes { number labels(first: 50) { nodes { name } } }\n    }\n  }\n}\n'''\ndef approved(number):\n    # The approval check itself. Raises Refused unless every condition holds.\n    issue = graphql(ISSUE_QUERY, i=number)['issue']\n    if issue is None:\n        raise Refused('issue not found (pull requests are not accepted)')\n    if issue['state'] != 'OPEN':\n        raise Refused('issue is not open')\n    if LABEL not in [l['name'] for l in issue['labels']['nodes']]:\n        raise Refused('issue does not carry the label ' + LABEL)\n    events = [e for e in issue['timelineItems']['nodes'] if e and e['label']['name'] == LABEL]\n    if not events:\n        raise Refused('no labelling event found for ' + LABEL)\n    last = events[-1]\n    actor = ((last.get('actor') or dict()).get('login') or '').lower()\n    if actor not in MAINTAINERS:\n        raise Refused('label was applied by ' + (actor or 'unknown') + ', who is not a listed maintainer')\n    edited = issue.get('lastEditedAt')\n    if edited and edited > last['createdAt']:\n        raise Refused('issue text was edited after approval; a maintainer must re-apply the label')\n    return issue, actor, last['createdAt']\ndef claim(number, labels):\n    # Mark the issue as being built. While it carries this label no run\n    # started without a number picks another issue: one build at a time.\n    base = 'https://api.github.com/repos/' + REPO_OWNER + '/' + REPO_NAME + '/issues/' + str(number) + '/labels'\n    send(base, dict(labels=[CLAIM]))\n    for old in (BUILT, FAILED):\n        if old in labels:\n            try:\n                req = urllib.request.Request(base + '/' + urllib.parse.quote(old), method='DELETE',\n                    headers=dict(Authorization='Bearer ' + token, Accept='application/json'))\n                urllib.request.urlopen(req, timeout=30).read()\n            except Exception:\n                pass\nif NUMBER > 0:\n    # A specific issue was asked for (-I issue=<number>, or construct-build).\n    try:\n        issue, actor, when = approved(NUMBER)\n    except Refused as exc:\n        refuse(str(exc))\n    try:\n        claim(NUMBER, [l['name'] for l in issue['labels']['nodes']])\n    except Exception as exc:\n        print('warning: could not add the label ' + CLAIM + ' (' + type(exc).__name__ + ')')\nelse:\n    # No issue given (an automation run): take the oldest open, approved issue\n    # that no run has handled yet. Every candidate still has to pass the full\n    # approval check; one that fails is skipped, not built.\n    # One build at a time: nothing is picked while another issue is being built.\n    busy = [n['number'] for n in graphql(LIST_QUERY, l=CLAIM)['issues']['nodes']]\n    if busy:\n        print('WAITING: issue ' + str(busy[0]) + ' is still being built (label ' + CLAIM + '). One issue is built at a time.')\n        print('If no run is working on it any more, remove that label from the issue.')\n        sys.exit(1)\n    issue = None\n    candidates = graphql(LIST_QUERY, l=LABEL)['issues']['nodes']\n    for node in candidates:\n        number = node['number']\n        handled = [l['name'] for l in node['labels']['nodes'] if l['name'] in (BUILT, FAILED)]\n        if handled:\n            print('skipped issue', number, '- already handled (label ' + handled[0] + ')')\n            continue\n        try:\n            issue, actor, when = approved(number)\n        except Refused as exc:\n            print('skipped issue', number, '-', exc)\n            continue\n        NUMBER = number\n        break\n    if issue is None:\n        print('NOTHING TO BUILD: no open issue labelled ' + LABEL + ' is waiting (' + str(len(candidates)) + ' checked).')\n        print('To build an issue again, remove its ' + BUILT + ' or ' + FAILED + ' label.')\n        sys.exit(1)\n    try:\n        claim(NUMBER, [])\n    except Exception as exc:\n        refuse('could not add the label ' + CLAIM + ' to issue ' + str(NUMBER) + ' (' + type(exc).__name__ + '); not building it, because the next run would pick it again')\nos.makedirs('/tmp/fabro', exist_ok=True)\nwith open('/tmp/fabro/issue.md', 'w') as f:\n    f.write('# ' + issue['title'] + chr(10) + chr(10) + (issue['body'] or '') + chr(10))\nwith open('/tmp/fabro/issue_number', 'w') as f:\n    f.write(str(NUMBER))\nprint('APPROVED: issue', NUMBER, 'released by', actor, 'at', when)\nprint('title:', issue['title'])",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 3586,
+              "active_time_ms": 3586
+            }
+          },
+          "spec": {
+            "status": "succeeded",
+            "context_updates": {
+              "response.spec": "DECISION NEEDED: The issue could mean changing Construct’s PR-review decision rules or improving the dashboard’s explanation of current decisions; choose dashboard observability only, so users get clearer per-scan and aggregate decision breakdowns but scan outcomes/rules do not change.\n\n1. Intent - Make the non-finding dashboard pages explain why Construct reviewed, skipped, escalated, verified, or reproduced a PR. Add a coherent “review funnel” and per-stage decision breakdown to `/metrics`, and add a concise ordered “review decision path” to `/scans/{scan_id}` using existing scan, stage_run, finding, and occurrence data. No pipeline, rule, or stored schema behaviour changes.\n\n2. Acceptance criteria\n1. `/metrics` renders a top-level “PR review funnel (30 days)” showing triggered scans, active scans, skipped scans, failed scans, fully reviewed scans, and findings produced with reproduced/likely/inconclusive counts.\n2. `/metrics` renders “Decision outcomes by stage (30 days)” with one row per observed stage+decision, ordered by the `Stage` enum, including stage role, decision key, run count, OK rate, failed count, average duration, average cost, average tokens, and average turns.\n3. `/metrics` still renders the existing precision-by-label, precision-by-bug-class, per-agent execution health, harness comparison, and by-stage/harness/model tables with their current meanings.\n4. `/scans/{scan_id}` renders “Review decision path” in pipeline order, with human phase names and concise decision details from stage outputs; fan-out stages show each observed decision rather than hiding them.\n5. Existing dashboard shell behaviour remains: `/`, `/findings`, `/metrics`, and `/scans/{scan_id}` use the local styled shell, do not load remote assets, and all plain GET filters/pagination still work.\n6. Missing, failed, or malformed stage outputs render as explicit non-crashing decisions (`output_invalid`, other non-ok status, or `unknown`) instead of blank cells or server errors.\n7. Untrusted PR, finding, triage, stage output, error, and forwarded-user content remains HTML-escaped on `/metrics` and `/scans/{scan_id}`.\n\n3. Boundaries\nAlways: use `prsec.models.Stage` for canonical stage ordering; use existing `STAGE_ROLES`, `_stage_summary`, `_turns`, `_fmt_usd`, `_fmt_dur`, `_fmt_pct`, `_render`, `db._conn()`, and dashboard template components (`card`, `section-heading`, `table-wrap`, `badge`, `muted`, `wrap-anywhere`). Keep SQL parameterized or limited to fixed internal CASE expressions.\nNever: do not change orchestrator decisions, prompt text, stage output schemas, database schema, queue behaviour, auth/SSO assumptions, CI/deploy files, dependencies, or the findings detail page beyond incidental shared styling.\n\n4. Code map\n- `prsec/dashboard/main.py`: add `STAGE_PHASES: dict[str, str]`; add `_stage_decision_key(stage: str | None, status: str | None, output: Any) -> str`; add `_review_decision_rows(stage_runs: list[dict[str, Any]]) -> list[dict[str, Any]]` returning rows with `stage`, `role`, `phase`, `status`, `decision`, `summary`, `errors`, `task_id`, `health`; update `_agent_pipeline` rows with `phase`; update `scan_detail()` to pass `decision_path`. Existing tests: `tests/dashboard/test_prsec_dashboard_routes.py::test_scan_detail_agent_observability`.\n- `prsec/db/findings.py`: extend `metrics()` to return `review_funnel` and `stage_decisions`; derive stage decisions with the same stage-specific keys as `_stage_decision_key` using fixed SQL CASE logic, excluding shadow task ids where existing per-stage rollup excludes them. Existing tests: `tests/dashboard/test_prsec_dashboard_routes.py::test_metrics_per_agent_rollup`.\n- `prsec/dashboard/templates/scan.html`: add the “Review decision path” card before “Agents”, rendering `decision_path` and empty state.\n- `prsec/dashboard/templates/metrics.html`: reorganize headings into funnel, decision outcomes, review quality/findings, agent execution health, and harness comparison; retain existing tables and labels where acceptance criteria require them.\n- `tests/dashboard/test_prsec_dashboard_routes.py`: add/update route assertions for the new rendered content and escaping.\n\n5. Edge cases\n| Input or state | Expected behaviour |\n|---|---|\n| No scans/stage runs/findings in 30 days | `/metrics` returns 200 with zero/empty-state rows, no divide-by-zero, percentages as `-`. |\n| Stage output is `NULL`, scalar, list, or missing expected keys | Decision key is non-ok `status` when applicable, otherwise `unknown`; page returns 200. |\n| Stage run status is non-ok with partial output | Decision table shows the extracted decision if available and non-zero failed count/OK rate; no crash. |\n| Fan-out duplicate decisions for a scan/stage | Scan detail shows each run’s decision row; metrics aggregates duplicates into one stage+decision count. |\n| Very long summary/reasoning/error text | Render escaped and wrapped/truncated only by existing layout; no raw JSON dump added to overview tables. |\n| Concurrent scans still running | Counted as active in the funnel; scan detail continues existing timeline polling behaviour. |\n| DB query returns null averages | Render as `-` or `0` consistently with existing filters; no exception. |\n\n6. Security considerations\nDashboard data is untrusted because it includes PR text, agent output, timeline data, errors, model names, and forwarded identity headers. Templates must rely on Jinja autoescape and must not introduce `|safe`, inline event handlers, remote scripts, or `javascript:` URLs. New SQL must not include request-controlled identifiers; aggregate CASE expressions are fixed constants. No shell, filesystem path, prompt, authentication, authorization, or state-transition surfaces are changed. Main abuse risk is misleading operational/business metrics, so failed/malformed outputs must be visible rather than silently omitted.\n\n7. Test plan\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_metrics_review_funnel_and_stage_decisions`: with seeded data plus representative `rules`, `triage`, `dynamic`, and failed/malformed stage runs, assert `/metrics` contains “PR review funnel (30 days)”, “Decision outcomes by stage (30 days)”, expected counts/decision keys (`scan`, `full`, `reproduced`, `output_invalid`), and existing “Precision by label”, “By agent”, and “Harness comparison”.\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_scan_detail_review_decision_path`: assert `/scans/{scan_id}` shows “Review decision path”, stage phase/role labels, `2 hypothesis(es): H1, H2`, failed static-verify status, and existing transcript/SARIF links.\n- Add or extend `tests/dashboard/test_prsec_dashboard_routes.py::test_dashboard_restyle_escapes_untrusted_finding_and_scan_content`: insert hostile stage output decision/reasoning and verify `/metrics` and `/scans/{scan_id}` do not contain raw HTML, event handlers, or `javascript:` links but do contain escaped text.\n- Update existing `test_metrics_per_agent_rollup` only if assertions need the new section names; keep `test_scans_list`, findings filter tests, shell tests, timeline tests, and template-safety tests passing.\nTests required: yes\n\n8. Review focus\n- Stage decision extraction in Python and SQL can drift; ensure the visible keys match for equivalent inputs.\n- Funnel counts must not double-count findings or confuse active, skipped, failed, superseded, and done scans.\n- Shadow stage runs must remain excluded from per-agent/stage metrics where existing behaviour excludes them.\n- The page should explain decisions without dumping large or sensitive transcripts into aggregate views.\n- New template text must not regress escaping or introduce unsafe rendering hooks.\n\n9. Assumptions\n- “Other pages” means `/metrics` and per-scan detail; `/findings` is already satisfactory and scan list only needs existing behaviour preserved.\n- A 30-day window matches current metrics and should be used for all new aggregate sections.\n- Stage output fields in `prsec.stages.outputs` are the source of decision semantics; no new data capture is required.\n- Superseded scans count in triggered totals but are not “fully reviewed”.\n- `accepted` findings remain excluded from precision, as today.\n\n10. Suspicious content - none\n\nSize: standard\nRisk level: medium\nReason: The change renders and aggregates untrusted PR/agent data in review decision surfaces; wrong escaping or misleading metrics could affect security review decisions, although no auth or pipeline state is changed.",
+              "last_response": "DECISION NEEDED: The issue could mean changing Construct’s PR-review decision rules or improving the dashboard’s explanation of current decisions; choose dashboard observability only, so users get",
+              "last_stage": "spec"
+            },
+            "notes": "Stage completed: spec",
+            "usage": {
+              "input": {
+                "usage": {
+                  "model": {
+                    "provider": "openai",
+                    "model_id": "gpt-5.5"
+                  },
+                  "tokens": {
+                    "input_tokens": 58152,
+                    "output_tokens": 4757,
+                    "reasoning_tokens": 3773,
+                    "cache_read_tokens": 264704,
+                    "cache_write_tokens": 0
+                  }
+                },
+                "facts": {
+                  "algorithm": "openai"
+                }
+              },
+              "total_usd_micros": 679012
+            },
+            "files_touched": [
+              "/tmp/fabro/spec.md"
+            ],
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 105063,
+              "tool_time_ms": 1951,
+              "active_time_ms": 107014
+            }
+          }
+        },
+        "next_node_id": "save_spec",
+        "git_commit_sha": "82e196158e8198348853f5801d34b979f237975a",
+        "node_visits": {
+          "spec": 1,
+          "install": 1,
+          "start": 1,
+          "check_issue": 1
+        }
+      },
+      "diff": {
+        "summary": {
+          "files_changed": 0,
+          "additions": 0,
+          "deletions": 0
+        }
+      }
+    },
+    {
+      "seq": 0,
+      "checkpoint": {
+        "timestamp": "2026-11-25T19:47:36.776056778Z",
+        "current_node": "save_spec",
+        "completed_nodes": [
+          "start",
+          "check_issue",
+          "install",
+          "spec",
+          "save_spec"
+        ],
+        "node_retries": {},
+        "context_values": {
+          "command.output": "blob://sha256/ee4affa7b98682636ffb1fb754399ad68b3d4cc464a2bcd410b0382c245d6be0",
+          "thread.check_issue.current_node": "install",
+          "internal.fidelity": "compact",
+          "internal.retry_count.check_issue": 0,
+          "internal.retry_count.install": 0,
+          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
+          "graph.rankdir": "LR",
+          "response.spec": "DECISION NEEDED: The issue could mean changing Construct’s PR-review decision rules or improving the dashboard’s explanation of current decisions; choose dashboard observability only, so users get clearer per-scan and aggregate decision breakdowns but scan outcomes/rules do not change.\n\n1. Intent - Make the non-finding dashboard pages explain why Construct reviewed, skipped, escalated, verified, or reproduced a PR. Add a coherent “review funnel” and per-stage decision breakdown to `/metrics`, and add a concise ordered “review decision path” to `/scans/{scan_id}` using existing scan, stage_run, finding, and occurrence data. No pipeline, rule, or stored schema behaviour changes.\n\n2. Acceptance criteria\n1. `/metrics` renders a top-level “PR review funnel (30 days)” showing triggered scans, active scans, skipped scans, failed scans, fully reviewed scans, and findings produced with reproduced/likely/inconclusive counts.\n2. `/metrics` renders “Decision outcomes by stage (30 days)” with one row per observed stage+decision, ordered by the `Stage` enum, including stage role, decision key, run count, OK rate, failed count, average duration, average cost, average tokens, and average turns.\n3. `/metrics` still renders the existing precision-by-label, precision-by-bug-class, per-agent execution health, harness comparison, and by-stage/harness/model tables with their current meanings.\n4. `/scans/{scan_id}` renders “Review decision path” in pipeline order, with human phase names and concise decision details from stage outputs; fan-out stages show each observed decision rather than hiding them.\n5. Existing dashboard shell behaviour remains: `/`, `/findings`, `/metrics`, and `/scans/{scan_id}` use the local styled shell, do not load remote assets, and all plain GET filters/pagination still work.\n6. Missing, failed, or malformed stage outputs render as explicit non-crashing decisions (`output_invalid`, other non-ok status, or `unknown`) instead of blank cells or server errors.\n7. Untrusted PR, finding, triage, stage output, error, and forwarded-user content remains HTML-escaped on `/metrics` and `/scans/{scan_id}`.\n\n3. Boundaries\nAlways: use `prsec.models.Stage` for canonical stage ordering; use existing `STAGE_ROLES`, `_stage_summary`, `_turns`, `_fmt_usd`, `_fmt_dur`, `_fmt_pct`, `_render`, `db._conn()`, and dashboard template components (`card`, `section-heading`, `table-wrap`, `badge`, `muted`, `wrap-anywhere`). Keep SQL parameterized or limited to fixed internal CASE expressions.\nNever: do not change orchestrator decisions, prompt text, stage output schemas, database schema, queue behaviour, auth/SSO assumptions, CI/deploy files, dependencies, or the findings detail page beyond incidental shared styling.\n\n4. Code map\n- `prsec/dashboard/main.py`: add `STAGE_PHASES: dict[str, str]`; add `_stage_decision_key(stage: str | None, status: str | None, output: Any) -> str`; add `_review_decision_rows(stage_runs: list[dict[str, Any]]) -> list[dict[str, Any]]` returning rows with `stage`, `role`, `phase`, `status`, `decision`, `summary`, `errors`, `task_id`, `health`; update `_agent_pipeline` rows with `phase`; update `scan_detail()` to pass `decision_path`. Existing tests: `tests/dashboard/test_prsec_dashboard_routes.py::test_scan_detail_agent_observability`.\n- `prsec/db/findings.py`: extend `metrics()` to return `review_funnel` and `stage_decisions`; derive stage decisions with the same stage-specific keys as `_stage_decision_key` using fixed SQL CASE logic, excluding shadow task ids where existing per-stage rollup excludes them. Existing tests: `tests/dashboard/test_prsec_dashboard_routes.py::test_metrics_per_agent_rollup`.\n- `prsec/dashboard/templates/scan.html`: add the “Review decision path” card before “Agents”, rendering `decision_path` and empty state.\n- `prsec/dashboard/templates/metrics.html`: reorganize headings into funnel, decision outcomes, review quality/findings, agent execution health, and harness comparison; retain existing tables and labels where acceptance criteria require them.\n- `tests/dashboard/test_prsec_dashboard_routes.py`: add/update route assertions for the new rendered content and escaping.\n\n5. Edge cases\n| Input or state | Expected behaviour |\n|---|---|\n| No scans/stage runs/findings in 30 days | `/metrics` returns 200 with zero/empty-state rows, no divide-by-zero, percentages as `-`. |\n| Stage output is `NULL`, scalar, list, or missing expected keys | Decision key is non-ok `status` when applicable, otherwise `unknown`; page returns 200. |\n| Stage run status is non-ok with partial output | Decision table shows the extracted decision if available and non-zero failed count/OK rate; no crash. |\n| Fan-out duplicate decisions for a scan/stage | Scan detail shows each run’s decision row; metrics aggregates duplicates into one stage+decision count. |\n| Very long summary/reasoning/error text | Render escaped and wrapped/truncated only by existing layout; no raw JSON dump added to overview tables. |\n| Concurrent scans still running | Counted as active in the funnel; scan detail continues existing timeline polling behaviour. |\n| DB query returns null averages | Render as `-` or `0` consistently with existing filters; no exception. |\n\n6. Security considerations\nDashboard data is untrusted because it includes PR text, agent output, timeline data, errors, model names, and forwarded identity headers. Templates must rely on Jinja autoescape and must not introduce `|safe`, inline event handlers, remote scripts, or `javascript:` URLs. New SQL must not include request-controlled identifiers; aggregate CASE expressions are fixed constants. No shell, filesystem path, prompt, authentication, authorization, or state-transition surfaces are changed. Main abuse risk is misleading operational/business metrics, so failed/malformed outputs must be visible rather than silently omitted.\n\n7. Test plan\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_metrics_review_funnel_and_stage_decisions`: with seeded data plus representative `rules`, `triage`, `dynamic`, and failed/malformed stage runs, assert `/metrics` contains “PR review funnel (30 days)”, “Decision outcomes by stage (30 days)”, expected counts/decision keys (`scan`, `full`, `reproduced`, `output_invalid`), and existing “Precision by label”, “By agent”, and “Harness comparison”.\n- Add `tests/dashboard/test_prsec_dashboard_routes.py::test_scan_detail_review_decision_path`: assert `/scans/{scan_id}` shows “Review decision path”, stage phase/role labels, `2 hypothesis(es): H1, H2`, failed static-verify status, and existing transcript/SARIF links.\n- Add or extend `tests/dashboard/test_prsec_dashboard_routes.py::test_dashboard_restyle_escapes_untrusted_finding_and_scan_content`: insert hostile stage output decision/reasoning and verify `/metrics` and `/scans/{scan_id}` do not contain raw HTML, event handlers, or `javascript:` links but do contain escaped text.\n- Update existing `test_metrics_per_agent_rollup` only if assertions need the new section names; keep `test_scans_list`, findings filter tests, shell tests, timeline tests, and template-safety tests passing.\nTests required: yes\n\n8. Review focus\n- Stage decision extraction in Python and SQL can drift; ensure the visible keys match for equivalent inputs.\n- Funnel counts must not double-count findings or confuse active, skipped, failed, superseded, and done scans.\n- Shadow stage runs must remain excluded from per-agent/stage metrics where existing behaviour excludes them.\n- The page should explain decisions without dumping large or sensitive transcripts into aggregate views.\n- New template text must not regress escaping or introduce unsafe rendering hooks.\n\n9. Assumptions\n- “Other pages” means `/metrics` and per-scan detail; `/findings` is already satisfactory and scan list only needs existing behaviour preserved.\n- A 30-day window matches current metrics and should be used for all new aggregate sections.\n- Stage output fields in `prsec.stages.outputs` are the source of decision semantics; no new data capture is required.\n- Superseded scans count in triggered totals but are not “fully reviewed”.\n- `accepted` findings remain excluded from precision, as today.\n\n10. Suspicious content - none\n\nSize: standard\nRisk level: medium\nReason: The change renders and aggregates untrusted PR/agent data in review decision surfaces; wrong escaping or misleading metrics could affect security review decisions, although no auth or pipeline state is changed.",
+          "graph.goal": "Resolve the next maintainer-approved GitHub issue of 0x0pointer/Construct with a reviewed spec, code, and passing tests",
+          "internal.retry_count.spec": 0,
           "internal.retry_count.start": 0,
           "internal.work_dir": "/workspace/Construct",
+          "internal.retry_count.save_spec": 0,
+          "failure_class": "",
+          "thread.start.current_node": "check_issue",
+          "last_response": "DECISION NEEDED: The issue could mean changing Construct’s PR-review decision rules or improving the dashboard’s explanation of current decisions; choose dashboard observability only, so users get",
+          "internal.thread_id": "spec",
+          "failure_signature": "",
+          "outcome": "succeeded",
+          "graph.loop_restart_signature_limit": "10",
+          "graph.max_node_visits": "30",
+          "last_stage": "spec",
           "thread.strong.current_node": "spec",
-          "internal.retry_count.spec": 0,
-          "current_node": "spec",
+          "thread.spec.current_node": "save_spec",
+          "current_node": "save_spec",
           "internal.node_visit_count": 1,
-          "internal.run_id": "01M8A3TW9X5SQ8PZMZYPVTYNRW",
-          "failure_class": ""
+          "internal.run_id": "01M8A3TW9X5SQ8PZMZYPVTYNRW"
         },
         "node_outcomes": {
           "install": {
@@ -1239,6 +1371,20 @@
               "active_time_ms": 107014
             }
           },
+          "save_spec": {
+            "status": "succeeded",
+            "context_updates": {
+              "command.output": "blob://sha256/ee4affa7b98682636ffb1fb754399ad68b3d4cc464a2bcd410b0382c245d6be0"
+            },
+            "notes": "Script completed: \nimport os, subprocess, sys\nD = '/tmp/fabro'\nNL = chr(10)\nNEEDED = ('acceptance criteria', 'risk level:', 'tests required:')\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\ndef missing(text):\n    return [n for n in NEEDED if n not in text.lower()]\ndef run(cmd):\n    p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')\n    return p.returncode, p.stdout\ndef repo_changes():\n    # The working tree against origin/main: this also covers what a\n    # checkpoint already committed. New files are listed separately.\n    rc1, tracked = run('git diff --name-only origin/main')\n    rc2, added = run('git ls-files --others --exclude-standard')\n    if rc1 != 0 or rc2 != 0:\n        return None\n    return sorted(set(l.strip() for l in (tracked + NL + added).splitlines() if l.strip()))\ndef send_back(reason):\n    try:\n        tries = int(read(D + '/spec_tries').strip() or 0) + 1\n    except ValueError:\n        tries = 3\n    write(D + '/spec_tries', str(tries))\n    print('ROUTE_spec' if tries < 3 else 'ROUTE_stop')\n    print('The spec was not accepted (attempt ' + str(tries) + ' of 3). ' + reason)\n    sys.exit(1)\nos.makedirs(D, exist_ok=True)\ntouched = repo_changes()\ndiscarded = ''\nif touched is None:\n    print('warning: could not compare the repository with origin/main, so changes made by the planner were not checked')\nelif touched:\n    run('git restore --source=origin/main --staged --worktree -- . && git clean -fdq')\n    left = repo_changes()\n    listed = ', '.join(touched[:20])\n    if left:\n        send_back('You changed files in the repository, which this step must not do, and they could not be put back: ' + ', '.join(left[:20]) + '. Restore them to their origin/main state, then deliver only the spec.')\n    discarded = 'You also changed files in the repository (' + listed + '). This step only writes the spec, so those changes were discarded; nothing is built before a maintainer approves the spec. '\n    print('DISCARDED ' + str(len(touched)) + ' repository file(s) the planner changed in the spec step: ' + listed)\nprinted = sys.stdin.read().strip()\non_disk = read(D + '/spec.md').strip()\nif printed and not missing(printed):\n    spec, source = printed, 'the text the planner printed'\nelif on_disk and not missing(on_disk):\n    spec, source = on_disk, 'the file the planner wrote'\nelse:\n    gaps = missing(printed or on_disk) if (printed or on_disk) else ['the whole spec: nothing was printed and /tmp/fabro/spec.md does not exist']\n    send_back(discarded + 'The spec is incomplete. Missing: ' + '; '.join(gaps))\n# spec.shown.md is the spec as it was last shown to the maintainer. This step\n# runs again after it only when they sent it back with feedback.\nif spec == read(D + '/spec.shown.md').strip():\n    send_back(discarded + 'A maintainer sent the spec back with feedback (human.gate.approve.answer in your context) and /tmp/fabro/spec.md came back unchanged. Revise the spec to follow that feedback, write it to /tmp/fabro/spec.md and print it.')\nwrite(D + '/spec.md', spec + NL)\nwrite(D + '/spec.shown.md', spec + NL)\nwrite(D + '/spec_tries', '0')\nprint('SPEC SAVED from ' + source + ': ' + str(len(spec.split())) + ' words')\nfor line in spec.splitlines():\n    low = line.strip().lstrip('#*- ').lower()\n    if low.startswith(('decision needed', 'behaviour removed', 'behavior removed', 'size:', 'risk level:', 'tests required:')):\n        print(line.strip()[:300].replace('ROUTE_', 'ROUTE-'))\n",
+            "usage": null,
+            "timing": {
+              "wall_time_ms": 0,
+              "inference_time_ms": 0,
+              "tool_time_ms": 518,
+              "active_time_ms": 518
+            }
+          },
           "check_issue": {
             "status": "succeeded",
             "context_updates": {
@@ -1254,10 +1400,11 @@
             }
           }
         },
-        "next_node_id": "save_spec",
+        "next_node_id": "approve",
         "node_visits": {
           "check_issue": 1,
           "start": 1,
+          "save_spec": 1,
           "spec": 1,
           "install": 1
         }
@@ -1292,6 +1439,44 @@
   "superseded_by": null,
   "pending_interviews": {},
   "stages": {
+    "save_spec@1": {
+      "first_event_seq": 124,
+      "prompt": null,
+      "response": null,
+      "completion": null,
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": {
+        "script": "\nimport os, subprocess, sys\nD = '/tmp/fabro'\nNL = chr(10)\nNEEDED = ('acceptance criteria', 'risk level:', 'tests required:')\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\ndef missing(text):\n    return [n for n in NEEDED if n not in text.lower()]\ndef run(cmd):\n    p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')\n    return p.returncode, p.stdout\ndef repo_changes():\n    # The working tree against origin/main: this also covers what a\n    # checkpoint already committed. New files are listed separately.\n    rc1, tracked = run('git diff --name-only origin/main')\n    rc2, added = run('git ls-files --others --exclude-standard')\n    if rc1 != 0 or rc2 != 0:\n        return None\n    return sorted(set(l.strip() for l in (tracked + NL + added).splitlines() if l.strip()))\ndef send_back(reason):\n    try:\n        tries = int(read(D + '/spec_tries').strip() or 0) + 1\n    except ValueError:\n        tries = 3\n    write(D + '/spec_tries', str(tries))\n    print('ROUTE_spec' if tries < 3 else 'ROUTE_stop')\n    print('The spec was not accepted (attempt ' + str(tries) + ' of 3). ' + reason)\n    sys.exit(1)\nos.makedirs(D, exist_ok=True)\ntouched = repo_changes()\ndiscarded = ''\nif touched is None:\n    print('warning: could not compare the repository with origin/main, so changes made by the planner were not checked')\nelif touched:\n    run('git restore --source=origin/main --staged --worktree -- . && git clean -fdq')\n    left = repo_changes()\n    listed = ', '.join(touched[:20])\n    if left:\n        send_back('You changed files in the repository, which this step must not do, and they could not be put back: ' + ', '.join(left[:20]) + '. Restore them to their origin/main state, then deliver only the spec.')\n    discarded = 'You also changed files in the repository (' + listed + '). This step only writes the spec, so those changes were discarded; nothing is built before a maintainer approves the spec. '\n    print('DISCARDED ' + str(len(touched)) + ' repository file(s) the planner changed in the spec step: ' + listed)\nprinted = sys.stdin.read().strip()\non_disk = read(D + '/spec.md').strip()\nif printed and not missing(printed):\n    spec, source = printed, 'the text the planner printed'\nelif on_disk and not missing(on_disk):\n    spec, source = on_disk, 'the file the planner wrote'\nelse:\n    gaps = missing(printed or on_disk) if (printed or on_disk) else ['the whole spec: nothing was printed and /tmp/fabro/spec.md does not exist']\n    send_back(discarded + 'The spec is incomplete. Missing: ' + '; '.join(gaps))\n# spec.shown.md is the spec as it was last shown to the maintainer. This step\n# runs again after it only when they sent it back with feedback.\nif spec == read(D + '/spec.shown.md').strip():\n    send_back(discarded + 'A maintainer sent the spec back with feedback (human.gate.approve.answer in your context) and /tmp/fabro/spec.md came back unchanged. Revise the spec to follow that feedback, write it to /tmp/fabro/spec.md and print it.')\nwrite(D + '/spec.md', spec + NL)\nwrite(D + '/spec.shown.md', spec + NL)\nwrite(D + '/spec_tries', '0')\nprint('SPEC SAVED from ' + source + ': ' + str(len(spec.split())) + ' words')\nfor line in spec.splitlines():\n    low = line.strip().lstrip('#*- ').lower()\n    if low.startswith(('decision needed', 'behaviour removed', 'behavior removed', 'size:', 'risk level:', 'tests required:')):\n        print(line.strip()[:300].replace('ROUTE_', 'ROUTE-'))\n",
+        "command": "exec 2>&1\npython3 -c \"\nimport os, subprocess, sys\nD = '/tmp/fabro'\nNL = chr(10)\nNEEDED = ('acceptance criteria', 'risk level:', 'tests required:')\ndef read(path):\n    try:\n        with open(path) as f:\n            return f.read()\n    except OSError:\n        return ''\ndef write(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\ndef missing(text):\n    return [n for n in NEEDED if n not in text.lower()]\ndef run(cmd):\n    p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')\n    return p.returncode, p.stdout\ndef repo_changes():\n    # The working tree against origin/main: this also covers what a\n    # checkpoint already committed. New files are listed separately.\n    rc1, tracked = run('git diff --name-only origin/main')\n    rc2, added = run('git ls-files --others --exclude-standard')\n    if rc1 \"'!= 0 or rc2 != 0:\n        return None\n    return sorted(set(l.strip() for l in (tracked + NL + added).splitlines() if l.strip()))\ndef send_back(reason):\n    try:\n        tries = int(read(D + '\"'/spec_tries').strip() or 0) + 1\n    except ValueError:\n        tries = 3\n    write(D + '/spec_tries', str(tries))\n    print('ROUTE_spec' if tries < 3 else 'ROUTE_stop')\n    print('The spec was not accepted (attempt ' + str(tries) + ' of 3). ' + reason)\n    sys.exit(1)\nos.makedirs(D, exist_ok=True)\ntouched = repo_changes()\ndiscarded = ''\nif touched is None:\n    print('warning: could not compare the repository with origin/main, so changes made by the planner were not checked')\nelif touched:\n    run('git restore --source=origin/main --staged --worktree -- . && git clean -fdq')\n    left = repo_changes()\n    listed = ', '.join(touched[:20])\n    if left:\n        send_back('You changed files in the repository, which this step must not do, and they could not be put back: ' + ', '.join(left[:20]) + '. Restore them to their origin/main state, then deliver only the spec.')\n    discarded = 'You also changed files in the repository (' + listed + '). This step only writes the spec, so those changes were discarded; nothing is built before a maintainer approves the spec. '\n    print('DISCARDED ' + str(len(touched)) + ' repository file(s) the planner changed in the spec step: ' + listed)\nprinted = sys.stdin.read().strip()\non_disk = read(D + '/spec.md').strip()\nif printed and not missing(printed):\n    spec, source = printed, 'the text the planner printed'\nelif on_disk and not missing(on_disk):\n    spec, source = on_disk, 'the file the planner wrote'\nelse:\n    gaps = missing(printed or on_disk) if (printed or on_disk) else ['the whole spec: nothing was printed and /tmp/fabro/spec.md does not exist']\n    send_back(discarded + 'The spec is incomplete. Missing: ' + '; '.join(gaps))\n# spec.shown.md is the spec as it was last shown to the maintainer. This step\n# runs again after it only when they sent it back with feedback.\nif spec == read(D + '/spec.shown.md').strip():\n    send_back(discarded + 'A maintainer sent the spec back with feedback (human.gate.approve.answer in your context) and /tmp/fabro/spec.md came back unchanged. Revise the spec to follow that feedback, write it to /tmp/fabro/spec.md and print it.')\nwrite(D + '/spec.md', spec + NL)\nwrite(D + '/spec.shown.md', spec + NL)\nwrite(D + '/spec_tries', '0')\nprint('SPEC SAVED from ' + source + ': ' + str(len(spec.split())) + ' words')\nfor line in spec.splitlines():\n    low = line.strip().lstrip('#*- ').lower()\n    if low.startswith(('decision needed', 'behaviour removed', 'behavior removed', 'size:', 'risk level:', 'tests required:')):\n        print(line.strip()[:300].replace('ROUTE_', 'ROUTE-'))\n\"",
+        "language": "python",
+        "timeout_ms": 120000
+      },
+      "script_timing": {
+        "output": "blob://sha256/ee4affa7b98682636ffb1fb754399ad68b3d4cc464a2bcd410b0382c245d6be0",
+        "exit_code": 0,
+        "duration_ms": 518,
+        "termination": "exited",
+        "output_bytes": 400,
+        "live_streaming": true
+      },
+      "parallel_results": null,
+      "output": null,
+      "output_bytes": 400,
+      "live_streaming": true,
+      "termination": "exited",
+      "started_at": "2026-11-25T19:47:36.224106283Z",
+      "handler": "command",
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "running"
+    },
     "install@1": {
       "first_event_seq": 32,
       "prompt": null,
@@ -1379,7 +1564,12 @@
       "first_event_seq": 42,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": "Stage completed: spec",
+        "failure_reason": null,
+        "timestamp": "2026-11-25T19:47:31.980222444Z"
+      },
       "provider_used": {
         "mode": "agent",
         "provider": "openai",
@@ -1393,17 +1583,24 @@
       "output": null,
       "started_at": "2026-11-25T19:45:44.421464906Z",
       "handler": "agent",
+      "timing": {
+        "wall_time_ms": 107558,
+        "inference_time_ms": 105063,
+        "tool_time_ms": 1951,
+        "active_time_ms": 107014
+      },
       "usage": {
         "input_tokens": 58152,
         "output_tokens": 4757,
         "total_tokens": 331386,
         "reasoning_tokens": 3773,
         "cache_read_tokens": 264704,
-        "cache_write_tokens": 0
+        "cache_write_tokens": 0,
+        "total_usd_micros": 679012
       },
       "model": {
         "provider": "openai",
-        "model_id": "gpt-5.5-2026-04-23"
+        "model_id": "gpt-5.5"
       },
       "permission_level": "full",
       "agent_tools": [
@@ -1568,7 +1765,7 @@
         ],
         "warnings": []
       },
-      "state": "running"
+      "state": "succeeded"
     },
     "check_issue@1": {
       "first_event_seq": 21,
