@@ -1,0 +1,8 @@
+{
+  "output": "blob://sha256/b5fcd25abd303a164449f875cdc3b06ada11fd75401b5b0e0b6780d3ed1ed7ae",
+  "exit_code": 0,
+  "duration_ms": 2120,
+  "termination": "exited",
+  "output_bytes": 47,
+  "live_streaming": true
+}
