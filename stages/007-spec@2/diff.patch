@@ -1,0 +1,631 @@
+diff --git a/.devcontainer/devcontainer.json b/.devcontainer/devcontainer.json
+new file mode 100644
+index 0000000..1fdbaa9
+--- /dev/null
++++ b/.devcontainer/devcontainer.json
+@@ -0,0 +1,9 @@
++{
++  "name": "Construct Fabro test environment",
++  "build": {
++    "dockerfile": "../.fabro/docker/Dockerfile",
++    "context": ".."
++  },
++  "postCreateCommand": "pip install -e '.[dev]'",
++  "postStartCommand": "start-test-db"
++}
+diff --git a/.fabro/README.md b/.fabro/README.md
+index b19bae9..5963853 100644
+--- a/.fabro/README.md
++++ b/.fabro/README.md
+@@ -18,7 +18,7 @@ on a machine where Fabro is installed and logged in.
+ | `workflows/fix-ci/` | Second workflow: repairs a Fabro pull request whose CI checks failed. |
+ | `scripts/sync-pipeline` | Copies the shared pipeline files to the other repositories, or checks that they match. |
+ | `scripts/construct-build` | Convenience command that builds every approved issue. |
+-| `scripts/fabro-run-titles` | Watcher that titles runs after the issue or pull request they picked. |
++| `scripts/fabro-run-titles` | Watcher that titles runs after the issue or pull request they picked, tidies empty runs, and posts Codespaces links on successful application PRs. |
+ 
+ ## How an issue gets built
+ 
+@@ -76,7 +76,9 @@ on a machine where Fabro is installed and logged in.
+       what changed since the first, not at everything again. Nothing reaches
+       the exit without passing both.
+ 4. On success Fabro pushes the branch `fabro/run/<run id>` and opens a draft PR
+-   into `main`. A maintainer reviews and merges as usual.
++   into `main`. For PRs with application changes, `fabro-run-titles` adds one
++   **Open in GitHub Codespaces** comment that opens that exact branch with this
++   repository's devcontainer. A maintainer reviews and merges as usual.
+ 
+ ## Starting a build from the web UI
+ 
+@@ -268,8 +270,15 @@ A run started from the web UI picks its issue or pull request in its first
+ step, after Fabro has titled the run, so its title cannot name it. The watcher
+ `scripts/fabro-run-titles` reads the first step's output through the server's
+ local API and sets the title, for example `Construct #8: <issue title>` or
+-`Fix CI: PR #11 (test)`. It only changes titles. Run it on the machine that
+-hosts the Fabro server, as a service:
++`Fix CI: PR #11 (test)`. It also archives empty runs, prunes their branches,
++and, after a successful issue-to-PR run with application changes, posts one PR
++comment with an **Open in GitHub Codespaces** button for the run branch.
++
++Run it on the machine that hosts the Fabro server, as a service. The service
++needs `GITHUB_TOKEN` in its environment for the Codespaces comment; a
++fine-grained token should have `metadata:read`, `pull_requests:read`, and
++`issues:write` on the repositories it watches. Without that token, titles and
++empty-run cleanup still work, and comment attempts are retried on later sweeps.
+ 
+ ```ini
+ # /etc/systemd/system/fabro-run-titles.service
+@@ -278,6 +287,7 @@ Description=Title Fabro runs after the issue or pull request they picked
+ After=network.target
+ 
+ [Service]
++EnvironmentFile=/root/.fabro/run-titles.env
+ ExecStart=/usr/bin/python3 /root/.fabro/bin/fabro-run-titles
+ Restart=always
+ RestartSec=10
+@@ -289,6 +299,8 @@ WantedBy=multi-user.target
+ ```bash
+ # A copy, not a symlink: the service must keep working whatever branch is checked out.
+ install -m 755 .fabro/scripts/fabro-run-titles ~/.fabro/bin/fabro-run-titles
++touch ~/.fabro/run-titles.env && chmod 600 ~/.fabro/run-titles.env
++$EDITOR ~/.fabro/run-titles.env  # add: GITHUB_TOKEN=<fine-grained token>
+ systemctl daemon-reload && systemctl enable --now fabro-run-titles
+ ```
+ 
+diff --git a/.fabro/scripts/fabro-run-titles b/.fabro/scripts/fabro-run-titles
+index 8ea3912..d6126ee 100755
+--- a/.fabro/scripts/fabro-run-titles
++++ b/.fabro/scripts/fabro-run-titles
+@@ -30,12 +30,14 @@ import re
+ import subprocess
+ import sys
+ import time
++import urllib.parse
+ import urllib.request
+ from datetime import datetime, timedelta, timezone
+ 
+ SERVER = os.environ.get("FABRO_SERVER", "http://127.0.0.1:32276").rstrip("/") + "/api/v1"
+ TOKEN_FILE = os.path.expanduser("~/.fabro/storage/server.dev-token")
+ STATE = os.path.expanduser("~/.fabro/run-titles.json")
++GITHUB = os.environ.get("GITHUB_API", "https://api.github.com").rstrip("/")
+ # Workflow graph name -> the node whose output names what the run works on.
+ FIRST_STEP = {"IssueToPR": "check_issue", "FixCI": "pick_pr"}
+ MAX_TITLE = 100
+@@ -44,6 +46,10 @@ NOTHING_TO_DO = (": no approved issue is waiting", ": no pull request with faile
+ TERMINAL = ("succeeded", "failed", "cancelled", "canceled", "dead")
+ SCRATCH_REPO = os.path.expanduser("~/.fabro/run-titles.git")
+ MAX_AGE = timedelta(days=2)
++CODESPACE_MARKER = "<!-- fabro-codespace -->"
++DONE_CODESPACE = {"commented", "existing", "not application", "skipped old", "skipped malformed repo", "skipped malformed branch"}
++NON_APPLICATION_PREFIXES = (".devcontainer/", ".fabro/", ".github/", "docs/", "tests/")
++NON_APPLICATION_FILES = {".env.example", ".gitignore", "LICENSE", "README.md", "sonar-project.properties"}
+ 
+ 
+ def api(path, body=None, method=None):
+@@ -57,6 +63,22 @@ def api(path, body=None, method=None):
+     return json.loads(content) if content else None
+ 
+ 
++def github_api(path, body=None, method=None):
++    token = os.environ.get("GITHUB_TOKEN")
++    if not token:
++        raise RuntimeError("GITHUB_TOKEN is not set")
++    data = json.dumps(body).encode() if body is not None else None
++    headers = {
++        "Authorization": "Bearer " + token,
++        "Accept": "application/vnd.github+json",
++        "Content-Type": "application/json",
++    }
++    req = urllib.request.Request(GITHUB + path, data=data, headers=headers, method=method)
++    with urllib.request.urlopen(req, timeout=30) as resp:
++        content = resp.read()
++    return json.loads(content) if content else None
++
++
+ def items(reply):
+     return reply.get("data", []) if isinstance(reply, dict) else (reply or [])
+ 
+@@ -105,6 +127,133 @@ def title_for(graph, output, repo):
+     return None
+ 
+ 
++def state_title(entry):
++    if isinstance(entry, dict):
++        return str(entry.get("title") or "")
++    return str(entry or "")
++
++
++def state_codespace(entry):
++    if isinstance(entry, dict):
++        return str(entry.get("codespace") or "")
++    return ""
++
++
++def set_codespace_state(state, run_id, status):
++    state[run_id] = {"title": state_title(state.get(run_id)), "codespace": status}
++
++
++def picked_issue_title(entry):
++    return bool(re.match(r"^[^:]+ #\d+: ", state_title(entry)))
++
++
++def repo_parts(run):
++    slug = str((run.get("repository") or {}).get("name") or "")
++    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", slug):
++        return None
++    return slug.split("/", 1)
++
++
++def quote_path(value):
++    return urllib.parse.quote(value, safe="")
++
++
++def codespace_url(repo_id, branch):
++    repo_id = str(repo_id)
++    if not repo_id.isdigit():
++        raise ValueError("repository id is not numeric")
++    return "https://github.com/codespaces/new?" + urllib.parse.urlencode({"repo": repo_id, "ref": branch})
++
++
++def codespace_comment_body(repo_id, branch):
++    url = codespace_url(repo_id, branch)
++    return (
++        CODESPACE_MARKER
++        + "\n"
++        + f"[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)]({url})\n\n"
++        + "Open this PR branch in GitHub Codespaces to test the application changes before review."
++    )
++
++
++def application_path(filename):
++    path = str(filename or "").lstrip("/")
++    if not path or path in NON_APPLICATION_FILES:
++        return False
++    if path.startswith(NON_APPLICATION_PREFIXES):
++        return False
++    return True
++
++
++def pull_request_has_application_changes(owner, repo, number):
++    base = f"/repos/{quote_path(owner)}/{quote_path(repo)}/pulls/{number}/files?per_page=100"
++    page = 1
++    while True:
++        path = base if page == 1 else base + f"&page={page}"
++        files = items(github_api(path))
++        if any(application_path(f.get("filename")) for f in files):
++            return True
++        if len(files) < 100:
++            return False
++        page += 1
++
++
++def find_open_pr(owner, repo, branch):
++    head = quote_path(f"{owner}:{branch}")
++    path = f"/repos/{quote_path(owner)}/{quote_path(repo)}/pulls?state=open&head={head}&per_page=10"
++    prs = items(github_api(path))
++    return prs[0] if prs else None
++
++
++def existing_codespace_comment(owner, repo, number):
++    base = f"/repos/{quote_path(owner)}/{quote_path(repo)}/issues/{number}/comments?per_page=100"
++    page = 1
++    while True:
++        path = base if page == 1 else base + f"&page={page}"
++        comments = items(github_api(path))
++        if any(CODESPACE_MARKER in str(c.get("body") or "") for c in comments):
++            return True
++        if len(comments) < 100:
++            return False
++        page += 1
++
++
++def add_codespace_comment(run):
++    """Add the Codespaces PR comment for a successful IssueToPR run, if ready.
++
++    Returns a done status string, or None when a later sweep should retry.
++    """
++    run_id = str(run.get("id") or "")
++    parts = repo_parts(run)
++    if not parts:
++        print(f"{run_id}: cannot add codespace comment for malformed repository name", file=sys.stderr, flush=True)
++        return "skipped malformed repo"
++    if not re.fullmatch(r"[A-Za-z0-9_.-]+", run_id):
++        print(f"{run_id}: cannot add codespace comment for malformed run id", file=sys.stderr, flush=True)
++        return "skipped malformed branch"
++    owner, repo = parts
++    branch = f"fabro/run/{run_id}"
++    pr = find_open_pr(owner, repo, branch)
++    if not pr:
++        print(f"{run_id}: pull request for {branch} is not visible yet", file=sys.stderr, flush=True)
++        return None
++    number = pr.get("number")
++    if not number:
++        print(f"{run_id}: pull request for {branch} has no number", file=sys.stderr, flush=True)
++        return None
++    if not pull_request_has_application_changes(owner, repo, number):
++        print(f"{run_id}: no application changes in PR #{number}; no codespace comment needed", flush=True)
++        return "not application"
++    if existing_codespace_comment(owner, repo, number):
++        print(f"{run_id}: codespace comment already exists on PR #{number}", flush=True)
++        return "existing"
++    repo_info = github_api(f"/repos/{quote_path(owner)}/{quote_path(repo)}")
++    body = codespace_comment_body((repo_info or {}).get("id"), branch)
++    path = f"/repos/{quote_path(owner)}/{quote_path(repo)}/issues/{number}/comments"
++    github_api(path, body={"body": body}, method="POST")
++    print(f"{run_id}: added codespace comment to PR #{number}", flush=True)
++    return "commented"
++
++
+ def tidy(run):
+     """Archive a finished run that had nothing to do and delete its empty branch."""
+     run_id = run["id"]
+@@ -145,7 +294,7 @@ def sweep(state):
+         run_id = run.get("id")
+         graph = (run.get("workflow") or {}).get("graph_name")
+         status = ((run.get("lifecycle") or {}).get("status") or {}).get("kind")
+-        if run_id and str(state.get(run_id, "")).endswith(NOTHING_TO_DO) and status in TERMINAL:
++        if run_id and state_title(state.get(run_id)).endswith(NOTHING_TO_DO) and status in TERMINAL:
+             try:
+                 state[run_id] = tidy(run)
+                 print(f"{run_id}: {state[run_id]}", flush=True)
+@@ -153,28 +302,50 @@ def sweep(state):
+                 print(f"{run_id}: could not tidy up: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+                 state[run_id] = "tidy failed"
+             continue
+-        if not run_id or run_id in state or graph not in FIRST_STEP:
++        if not run_id or graph not in FIRST_STEP:
+             continue
+         created = str((run.get("timestamps") or {}).get("created_at") or "")
++        old = False
+         try:
+-            if datetime.fromisoformat(created.replace("Z", "+00:00")) < cutoff:
+-                state[run_id] = "old"
+-                continue
++            old = datetime.fromisoformat(created.replace("Z", "+00:00")) < cutoff
+         except ValueError:
+             pass
+-        output = first_step_output(run_id, FIRST_STEP[graph])
+-        if output is None:
+-            if status in TERMINAL:
+-                state[run_id] = "no first step"
+-            continue
+-        repo = str((run.get("repository") or {}).get("name") or "").rsplit("/", 1)[-1] or "run"
+-        title = title_for(graph, output, clean(repo))
+-        if title:
+-            title = title[:MAX_TITLE].strip()
+-            api(f"/runs/{run_id}", body={"title": title}, method="PATCH")
+-            print(f"{run_id}: {title}", flush=True)
+-            changed += 1
+-        state[run_id] = title or "unrecognised output"
++        if not state_title(state.get(run_id)):
++            if old:
++                state[run_id] = "old"
++                continue
++            output = first_step_output(run_id, FIRST_STEP[graph])
++            if output is None:
++                if status in TERMINAL:
++                    state[run_id] = "no first step"
++                continue
++            repo = str((run.get("repository") or {}).get("name") or "").rsplit("/", 1)[-1] or "run"
++            title = title_for(graph, output, clean(repo))
++            if title:
++                title = title[:MAX_TITLE].strip()
++                api(f"/runs/{run_id}", body={"title": title}, method="PATCH")
++                print(f"{run_id}: {title}", flush=True)
++                changed += 1
++            state[run_id] = title or "unrecognised output"
++        if (
++            graph == "IssueToPR"
++            and status == "succeeded"
++            and picked_issue_title(state.get(run_id))
++            and state_codespace(state.get(run_id)) not in DONE_CODESPACE
++        ):
++            if old:
++                set_codespace_state(state, run_id, "skipped old")
++                print(f"{run_id}: skipped codespace comment for old run", file=sys.stderr, flush=True)
++                changed += 1
++                continue
++            try:
++                comment_status = add_codespace_comment(run)
++            except Exception as exc:
++                print(f"{run_id}: could not add codespace comment: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
++                comment_status = None
++            if comment_status:
++                set_codespace_state(state, run_id, comment_status)
++                changed += 1
+     # Forget runs the server no longer lists among its recent ones.
+     for run_id in sorted(state)[:-500]:
+         del state[run_id]
+diff --git a/tests/fabro/test_devcontainer.py b/tests/fabro/test_devcontainer.py
+new file mode 100644
+index 0000000..684f360
+--- /dev/null
++++ b/tests/fabro/test_devcontainer.py
+@@ -0,0 +1,14 @@
++import json
++from pathlib import Path
++
++
++ROOT = Path(__file__).resolve().parents[2]
++
++
++def test_devcontainer_uses_fabro_image_and_starts_test_db():
++    config = json.loads((ROOT / ".devcontainer" / "devcontainer.json").read_text())
++
++    assert config["build"]["dockerfile"] == "../.fabro/docker/Dockerfile"
++    assert config["build"]["context"] == ".."
++    assert "pip install -e '.[dev]'" in config["postCreateCommand"]
++    assert config["postStartCommand"] == "start-test-db"
+diff --git a/tests/fabro/test_run_titles.py b/tests/fabro/test_run_titles.py
+new file mode 100644
+index 0000000..6e8bb05
+--- /dev/null
++++ b/tests/fabro/test_run_titles.py
+@@ -0,0 +1,267 @@
++import importlib.machinery
++import importlib.util
++from datetime import datetime, timezone
++from pathlib import Path
++
++import pytest
++
++
++ROOT = Path(__file__).resolve().parents[2]
++SCRIPT = ROOT / ".fabro" / "scripts" / "fabro-run-titles"
++RUN_ID = "01ABCDEF"
++
++
++def load_script():
++    loader = importlib.machinery.SourceFileLoader("fabro_run_titles", str(SCRIPT))
++    spec = importlib.util.spec_from_loader(loader.name, loader)
++    module = importlib.util.module_from_spec(spec)
++    loader.exec_module(module)
++    return module
++
++
++@pytest.fixture()
++def run_titles():
++    return load_script()
++
++
++def now_iso():
++    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
++
++
++def issue_run(status="succeeded"):
++    return {
++        "id": RUN_ID,
++        "workflow": {"graph_name": "IssueToPR"},
++        "lifecycle": {"status": {"kind": status}},
++        "timestamps": {"created_at": now_iso()},
++        "repository": {"name": "0x0pointer/Construct"},
++    }
++
++
++def fixci_run(status="succeeded"):
++    run = issue_run(status)
++    run["workflow"] = {"graph_name": "FixCI"}
++    return run
++
++
++class FakeApis:
++    def __init__(self, run=None, output=None, files=None, comments=None):
++        self.run = run or issue_run()
++        self.output = output or "APPROVED: issue 19\ntitle: Useful app feature\n"
++        self.files = files if files is not None else [{"filename": "prsec/api/main.py"}]
++        self.comments = list(comments or [])
++        self.patches = []
++        self.posts = []
++        self.pr_visible = True
++        self.fail_github = False
++        self.events_allowed = True
++
++    def fabro(self, path, body=None, method=None):
++        if path == "/runs?page%5Blimit%5D=50":
++            return {"data": [self.run]}
++        if path == f"/runs/{RUN_ID}/events?limit=200":
++            if not self.events_allowed:
++                raise AssertionError("legacy titled runs should not need event output")
++            node_id = (
++                "pick_pr" if self.run["workflow"]["graph_name"] == "FixCI" else "check_issue"
++            )
++            return {
++                "data": [
++                    {
++                        "event": "command.completed",
++                        "node_id": node_id,
++                        "properties": {"output": self.output},
++                    }
++                ]
++            }
++        if path == f"/runs/{RUN_ID}" and method == "PATCH":
++            self.patches.append(body)
++            return {}
++        raise AssertionError(f"unexpected Fabro API call: {method} {path} {body}")
++
++    def github(self, path, body=None, method=None):
++        if self.fail_github:
++            self.fail_github = False
++            raise RuntimeError("temporary GitHub failure")
++        if path.startswith("/repos/0x0pointer/Construct/pulls?state=open&head="):
++            return [{"number": 7}] if self.pr_visible else []
++        if path == "/repos/0x0pointer/Construct/pulls/7/files?per_page=100":
++            return self.files
++        if path == "/repos/0x0pointer/Construct/issues/7/comments?per_page=100":
++            return [{"body": body} for body in self.comments]
++        if path == "/repos/0x0pointer/Construct":
++            return {"id": 42}
++        if path == "/repos/0x0pointer/Construct/issues/7/comments" and method == "POST":
++            self.posts.append(body["body"])
++            self.comments.append(body["body"])
++            return {"id": 100}
++        raise AssertionError(f"unexpected GitHub API call: {method} {path} {body}")
++
++
++def test_existing_title_cases_still_match(run_titles):
++    assert (
++        run_titles.title_for("IssueToPR", "APPROVED: issue 8\ntitle:  a\n  b\n", "Construct")
++        == "Construct #8: a"
++    )
++    assert (
++        run_titles.title_for("IssueToPR", "WAITING: issue 12 is still being built", "Construct")
++        == "Construct: waiting for issue #12 to finish"
++    )
++    assert (
++        run_titles.title_for("IssueToPR", "NOTHING TO BUILD: no open issue", "Construct")
++        == "Construct: no approved issue is waiting"
++    )
++    assert (
++        run_titles.title_for("IssueToPR", "REFUSED: issue text was edited\n", "Construct")
++        == "Construct: refused - issue text was edited"
++    )
++    assert (
++        run_titles.title_for("FixCI", "PICKED: pull request 11\nfailed checks: pytest, lint\n", "Construct")
++        == "Fix CI Construct: PR #11 (pytest, lint)"
++    )
++    assert (
++        run_titles.title_for("FixCI", "NOTHING TO FIX", "Construct")
++        == "Fix CI Construct: no pull request with failed checks"
++    )
++
++
++def test_sweep_still_tidies_nothing_to_do_runs(monkeypatch, run_titles):
++    fake = FakeApis()
++    monkeypatch.setattr(run_titles, "api", fake.fabro)
++    tidied = []
++    monkeypatch.setattr(run_titles, "tidy", lambda run: tidied.append(run["id"]) or "archived, branch deleted")
++    state = {RUN_ID: "Construct: no approved issue is waiting"}
++
++    run_titles.sweep(state)
++
++    assert tidied == [RUN_ID]
++    assert state[RUN_ID] == "archived, branch deleted"
++
++
++def test_codespace_url_uses_repo_id_and_encodes_ref(run_titles):
++    branch = "fabro/run/abc def[md](x)&next=bad"
++    url = run_titles.codespace_url(12345, branch)
++
++    assert url.startswith("https://github.com/codespaces/new?")
++    assert "repo=12345" in url
++    assert "ref=fabro%2Frun%2Fabc+def%5Bmd%5D%28x%29%26next%3Dbad" in url
++    assert branch not in url
++    with pytest.raises(ValueError):
++        run_titles.codespace_url("owner/repo", branch)
++
++
++def test_codespace_comment_body_has_marker_and_badge(run_titles):
++    branch = "fabro/run/abc def[md](x)&next=bad"
++    body = run_titles.codespace_comment_body(12345, branch)
++
++    assert run_titles.CODESPACE_MARKER in body
++    assert "Open in GitHub Codespaces" in body
++    assert "https://github.com/codespaces/badge.svg" in body
++    assert "repo=12345" in body
++    assert branch not in body
++
++
++def test_sweep_comments_once_for_successful_issue_run(monkeypatch, run_titles):
++    fake = FakeApis()
++    monkeypatch.setattr(run_titles, "api", fake.fabro)
++    monkeypatch.setattr(run_titles, "github_api", fake.github)
++    state = {}
++
++    assert run_titles.sweep(state) == 2
++    assert fake.patches == [{"title": "Construct #19: Useful app feature"}]
++    assert len(fake.posts) == 1
++    assert "repo=42" in fake.posts[0]
++    assert "ref=fabro%2Frun%2F01ABCDEF" in fake.posts[0]
++    assert state[RUN_ID] == {"title": "Construct #19: Useful app feature", "codespace": "commented"}
++
++    assert run_titles.sweep(state) == 0
++    assert len(fake.posts) == 1
++
++
++def test_sweep_does_not_comment_for_failed_or_fixci_runs(monkeypatch, run_titles):
++    fake = FakeApis(run=issue_run(status="failed"))
++    monkeypatch.setattr(run_titles, "api", fake.fabro)
++    monkeypatch.setattr(
++        run_titles,
++        "github_api",
++        lambda *args, **kwargs: pytest.fail("failed IssueToPR run should not call GitHub"),
++    )
++
++    run_titles.sweep({})
++
++    fake = FakeApis(run=fixci_run(), output="PICKED: pull request 12\nfailed checks: pytest\n")
++    monkeypatch.setattr(run_titles, "api", fake.fabro)
++    monkeypatch.setattr(
++        run_titles,
++        "github_api",
++        lambda *args, **kwargs: pytest.fail("FixCI run should not call GitHub"),
++    )
++
++    run_titles.sweep({})
++
++    assert fake.patches == [{"title": "Fix CI Construct: PR #12 (pytest)"}]
++
++
++def test_sweep_retries_when_pr_missing_or_github_fails(monkeypatch, run_titles):
++    fake = FakeApis()
++    fake.fail_github = True
++    monkeypatch.setattr(run_titles, "api", fake.fabro)
++    monkeypatch.setattr(run_titles, "github_api", fake.github)
++    state = {}
++
++    run_titles.sweep(state)
++    assert fake.posts == []
++    assert state[RUN_ID] == "Construct #19: Useful app feature"
++
++    fake.pr_visible = False
++    run_titles.sweep(state)
++    assert fake.posts == []
++    assert state[RUN_ID] == "Construct #19: Useful app feature"
++
++    fake.pr_visible = True
++    run_titles.sweep(state)
++    assert len(fake.posts) == 1
++    assert state[RUN_ID]["codespace"] == "commented"
++
++
++def test_existing_marker_prevents_duplicate_comment(monkeypatch, run_titles):
++    fake = FakeApis(comments=[run_titles.CODESPACE_MARKER + "\nalready here"])
++    monkeypatch.setattr(run_titles, "api", fake.fabro)
++    monkeypatch.setattr(run_titles, "github_api", fake.github)
++    state = {}
++
++    run_titles.sweep(state)
++
++    assert fake.posts == []
++    assert state[RUN_ID]["codespace"] == "existing"
++
++
++def test_old_string_state_is_backward_compatible(monkeypatch, run_titles):
++    fake = FakeApis()
++    fake.events_allowed = False
++    monkeypatch.setattr(run_titles, "api", fake.fabro)
++    monkeypatch.setattr(run_titles, "github_api", fake.github)
++    state = {RUN_ID: "Construct #19: Useful app feature"}
++
++    run_titles.sweep(state)
++
++    assert len(fake.posts) == 1
++    assert state[RUN_ID] == {"title": "Construct #19: Useful app feature", "codespace": "commented"}
++
++
++def test_sweep_skips_codespace_for_non_application_changes(monkeypatch, run_titles):
++    fake = FakeApis(
++        files=[
++            {"filename": "README.md"},
++            {"filename": "docs/usage.md"},
++            {"filename": ".fabro/README.md"},
++        ]
++    )
++    monkeypatch.setattr(run_titles, "api", fake.fabro)
++    monkeypatch.setattr(run_titles, "github_api", fake.github)
++    state = {}
++
++    run_titles.sweep(state)
++
++    assert fake.posts == []
++    assert state[RUN_ID] == {"title": "Construct #19: Useful app feature", "codespace": "not application"}
