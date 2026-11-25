@@ -181,7 +181,11 @@ Routing is decided by scripts, not by a model:
   one to the strong model. After `max_review_rounds` rejections a human is
   asked, and at once when a finding says the spec itself is wrong.
 - **Human stop.** At that prompt, stopping fails the run and no PR is opened.
-  The other choice grants one more attempt with the strong model.
+  The other choice grants one more attempt with the strong model. You can
+  also type what should be done differently instead of picking an option: the
+  strong model then makes one more attempt that follows your text, and brings
+  the spec in line with it when it changes what is to be built. It does not
+  lift the protected paths. If that attempt fails too, you are asked again.
 
 What a typical run costs is decided by how much each model stage reads, not
 by the number of steps: the fix steps only run when something failed. That is
