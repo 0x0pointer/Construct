@@ -1,0 +1,6 @@
+{
+  "outcome": "failed",
+  "notes": null,
+  "failure_reason": "Script failed with exit code: 1\n\n## output\nROUTE_implement\nREVIEW REJECTED, round 1 of 3, 1 blocking finding(s):\n1. [regression] .fabro/scripts/fabro-run-titles:1\n   Problem: The diff changes this script's mode from 100755 to 100644. Users could previously run the checked-out script directly via its shebang, for example `.fabro/scripts/fabro-run-titles --once`; after this change that fails with `Permission denied`, which removes existing visible behavior outside the spec's requested changes.\n   Required fix: Restore the executable bit on `.fabro/scripts/fabro-run-titles` (for example `chmod +x .fabro/scripts/fabro-run-titles` and commit the mode as 100755).\n",
+  "timestamp": "2026-11-25T16:15:53.359799905Z"
+}
