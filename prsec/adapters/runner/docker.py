@@ -260,6 +260,9 @@ class DockerRunner:
             dirs.append(Path(spec.app_dir))
         for d in dirs:
             d.mkdir(parents=True, exist_ok=True)
+            mode = d.stat().st_mode & 0o777
+            if mode & 0o022:  # a default ACL (e.g. Codespaces /tmp) overrides the umask on mkdir
+                os.chmod(d, mode & ~0o022)
             if nonroot:
                 _give_to_nonroot(d, remapped)
 
