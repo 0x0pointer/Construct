@@ -19,6 +19,7 @@ on a machine where Fabro is installed and logged in.
 | `scripts/sync-pipeline` | Copies the shared pipeline files to the other repositories, or checks that they match. |
 | `scripts/construct-build` | Convenience command that builds every approved issue. |
 | `scripts/fabro-run-titles` | Watcher that titles runs after the issue or pull request they picked, tidies empty runs, and posts Codespaces links on successful IssueToPR draft PRs. |
+| `scripts/fabro-server-recycle` | Cron job that restarts the Fabro server every 4 hours, starts it when it died, and resumes the runs that were in flight. |
 
 ## How an issue gets built
 
@@ -305,6 +306,41 @@ systemctl daemon-reload && systemctl enable --now fabro-run-titles
 ```
 
 After changing the script, copy it again and `systemctl restart fabro-run-titles`.
+
+## Keeping the server alive
+
+The Fabro server (0.254.0) keeps about 5 MB for every run it has started and
+never frees it. The scheduled automations start about 40 runs an hour, most of
+which find nothing to do, so the server grows by roughly 200 MB an hour. On a
+machine with 2 GB the kernel kills it after 8 to 11 hours, and every run in
+flight fails. Only a restart gives the memory back.
+
+`scripts/fabro-server-recycle`, run from cron every 10 minutes:
+
+- restarts the server once it has been up for 4 hours (`--every`), at a moment
+  when no run is working. A run waiting at a human gate does not count as
+  working. While a run keeps working, the restart is put off;
+- restarts it at once when it uses more than 1250 MB (`--hard-limit`);
+- starts it when it is not running, after a crash or a reboot;
+- afterwards resumes (`fabro resume -d`) the runs that were in flight and that
+  the stop left as `failed / terminated`. A run waiting at a gate comes back at
+  that gate with the same sandbox.
+
+It starts the server with `fabro server start --foreground`, detached. The
+daemonizing `fabro server start` waits only 5 seconds for the server, which
+needs longer here, and the server is then gone again.
+
+```bash
+install -m 755 .fabro/scripts/fabro-server-recycle ~/.fabro/bin/fabro-server-recycle
+cat > /etc/cron.d/fabro-server-recycle <<'EOF'
+PATH=/root/.fabro/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+HOME=/root
+*/10 * * * * root /usr/bin/python3 /root/.fabro/bin/fabro-server-recycle --every 4 >>/root/.fabro/logs/server-recycle.log 2>&1
+EOF
+```
+
+`fabro-server-recycle --force` restarts now; `--dry-run` only says what it
+would do. The log is `~/.fabro/logs/server-recycle.log`.
 
 ## Changing the pipeline for every repository
 

@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""Keep the Fabro server from running out of memory.
+
+The Fabro server (0.254.0) keeps a few MB for every run it has started and
+never frees it. With the scheduled automations that is roughly 200 MB an
+hour, and on a small machine the kernel kills the server after some hours,
+which fails every run in flight. Only a restart gives the memory back.
+
+Run from cron every few minutes, this script:
+
+  - starts the server if it is not running (after a crash or a reboot);
+  - restarts it once it has been up for --every hours (default 4), at a moment
+    when no run is working. Runs waiting for a human do not count as working.
+    If a run keeps working, the restart is put off to a later look;
+  - restarts it at once, whatever is running, when it uses more than
+    --hard-limit MB, because the kernel would kill it soon after;
+  - after either, resumes the runs that were in flight and that the stop left
+    as "failed / terminated" (`fabro resume -d`). A run waiting at a human
+    gate comes back at that gate with its sandbox.
+
+  fabro-server-recycle            look once, act if needed
+  fabro-server-recycle --force    restart now if no run is working
+  fabro-server-recycle --dry-run  only say what would be done
+
+Runs on the machine that hosts the Fabro server and talks to its local API
+with the server's dev token. State: ~/.fabro/server-recycle.json (the runs
+that were in flight at the last look).
+"""
+import argparse
+import fcntl
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.request
+
+SERVER = os.environ.get("FABRO_SERVER", "http://127.0.0.1:32276").rstrip("/")
+TOKEN_FILE = os.path.expanduser("~/.fabro/storage/server.dev-token")
+STATE = os.path.expanduser("~/.fabro/server-recycle.json")
+LOCK = os.path.expanduser("~/.fabro/server-recycle.lock")
+SERVER_LOG = os.path.expanduser("~/.fabro/storage/logs/server-foreground.log")
+FABRO = os.environ.get("FABRO_BIN") or os.path.expanduser("~/.fabro/bin/fabro")
+# A run in one of these states is doing something; "blocked" (waiting for a human) is not.
+WORKING = ("submitted", "runnable", "starting", "running", "removing")
+WAITING = ("blocked", "paused", "pending")
+QUIET_FOR = 10       # seconds without a working run before the server is stopped
+WAIT_FOR_QUIET = 240  # seconds to wait for such a moment in one look
+WAIT_FOR_SERVER = 90  # seconds to wait for a started server to answer
+
+
+def log(text):
+    print(time.strftime("%Y-%m-%d %H:%M:%S ") + text, flush=True)
+
+
+def api(path):
+    with open(TOKEN_FILE) as f:
+        token = f.read().strip()
+    req = urllib.request.Request(SERVER + "/api/v1" + path, headers={"Authorization": "Bearer " + token})
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return json.loads(resp.read())
+
+
+def fabro(*args, timeout=120):
+    return subprocess.run([FABRO, *args], capture_output=True, text=True, timeout=timeout)
+
+
+def server_status():
+    """(process id, hours up) of the running server, or (None, 0)."""
+    try:
+        status = json.loads(fabro("server", "status", "--json", timeout=30).stdout)
+    except (ValueError, subprocess.TimeoutExpired):
+        return None, 0
+    if status.get("status") != "running" or not status.get("pid"):
+        return None, 0
+    return status["pid"], float(status.get("uptime_seconds") or 0) / 3600
+
+
+def rss_mb(pid):
+    try:
+        with open(f"/proc/{pid}/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) // 1024
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def run_states():
+    """Status of every run the server lists as not archived: {run id: (kind, reason)}."""
+    states = {}
+    for run in api("/runs?page%5Blimit%5D=100").get("data", []):
+        status = (run.get("lifecycle") or {}).get("status") or {}
+        if run.get("id"):
+            states[run["id"]] = (status.get("kind"), status.get("reason"))
+    return states
+
+
+def in_flight(states):
+    return sorted(i for i, (kind, _) in states.items() if kind in WORKING + WAITING)
+
+
+def working(states):
+    return sorted(i for i, (kind, _) in states.items() if kind in WORKING)
+
+
+def load_state():
+    try:
+        with open(STATE) as f:
+            return list(json.load(f).get("in_flight") or [])
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
+def save_state(run_ids):
+    tmp = STATE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"in_flight": run_ids, "at": time.strftime("%Y-%m-%dT%H:%M:%S%z")}, f)
+    os.replace(tmp, STATE)
+
+
+def wait_until_quiet(deadline):
+    """Wait until no run has been working for QUIET_FOR seconds. Returns the runs in flight, or None."""
+    quiet_since = None
+    while True:
+        states = run_states()
+        if working(states):
+            quiet_since = None
+        else:
+            quiet_since = quiet_since or time.monotonic()
+            if time.monotonic() - quiet_since >= QUIET_FOR:
+                return in_flight(states)
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(3)
+
+
+def start_server():
+    """Start the server and wait until it answers. Returns True when it does."""
+    # Not the daemonizing `fabro server start`: it waits 5 s for the server, which
+    # needs longer to open its database here, and then the server is gone again.
+    with open(SERVER_LOG, "a") as out:
+        subprocess.Popen([FABRO, "server", "start", "--foreground"], stdin=subprocess.DEVNULL,
+                         stdout=out, stderr=out, start_new_session=True, cwd=os.path.expanduser("~"))
+    deadline = time.monotonic() + WAIT_FOR_SERVER
+    while time.monotonic() < deadline:
+        try:
+            run_states()
+            return True
+        except Exception:
+            time.sleep(3)
+    return False
+
+
+def resume(run_ids):
+    """Resume the given runs if the stop left them terminated."""
+    if not run_ids:
+        return
+    time.sleep(5)  # let the server mark the runs it lost
+    states = run_states()
+    for run_id in run_ids:
+        kind, reason = states.get(run_id, (None, None))
+        if kind == "failed" and reason == "terminated":
+            done = fabro("resume", "-d", run_id)
+            log(f"resumed {run_id}" if done.returncode == 0 else f"could not resume {run_id}: {done.stderr.strip()[-300:]}")
+        else:
+            log(f"left {run_id} alone (status {kind}{'/' + reason if reason else ''})")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Restart the Fabro server before it runs out of memory.")
+    parser.add_argument("--every", type=float, default=4, help="restart after this many hours up, when no run is working (default 4)")
+    parser.add_argument("--hard-limit", type=int, default=1250, help="restart above this many MB even if a run is working (default 1250)")
+    parser.add_argument("--force", action="store_true", help="restart now, whatever the memory use, if no run is working")
+    parser.add_argument("--dry-run", action="store_true", help="only say what would be done")
+    args = parser.parse_args()
+
+    lock = open(LOCK, "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return 0  # an earlier look is still waiting for a quiet moment
+
+    pid, hours_up = server_status()
+    if pid is None:
+        lost = load_state()
+        log(f"server is not running; starting it ({len(lost)} run(s) were in flight)")
+        if args.dry_run:
+            return 0
+        if not start_server():
+            log("server did not answer after the start")
+            return 1
+        resume(lost)
+        save_state(in_flight(run_states()))
+        return 0
+
+    used = rss_mb(pid)
+    if used is None:
+        log(f"cannot read the memory use of pid {pid}")
+        return 1
+    hard = used >= args.hard_limit
+    if not args.force and not hard and hours_up < args.every:
+        save_state(in_flight(run_states()))
+        return 0
+
+    flying = wait_until_quiet(time.monotonic() + (0 if hard or args.dry_run else WAIT_FOR_QUIET))
+    if flying is None:
+        if not hard:
+            log(f"server is {hours_up:.1f} h up ({used} MB) but a run is working; restart put off")
+            save_state(in_flight(run_states()))
+            return 0
+        flying = in_flight(run_states())
+        log(f"server uses {used} MB, over the hard limit; restarting although a run is working")
+    log(f"restarting the server after {hours_up:.1f} h at {used} MB; {len(flying)} run(s) in flight: {' '.join(flying) or '-'}")
+    if args.dry_run:
+        return 0
+    save_state(flying)
+    fabro("server", "stop", timeout=120)
+    if not start_server():
+        log("server did not answer after the restart")
+        return 1
+    resume(flying)
+    save_state(in_flight(run_states()))
+    log(f"server restarted; now {rss_mb(server_status()[0] or 0)} MB")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
