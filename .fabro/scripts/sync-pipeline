@@ -5,8 +5,8 @@ The workflow graphs and the skills folder are the same in every repository
 that uses the pipeline; only each repository's workflow.toml differs. This
 repository holds the copy that is edited. After changing a shared file here:
 
-  sync-pipeline ../agent-smith ../skills           copy the shared files there
-  sync-pipeline --check ../agent-smith ../skills   only report differences
+  sync-pipeline ../agent-smith ../skills ../source           copy the shared files there
+  sync-pipeline --check ../agent-smith ../skills ../source   only report differences
 
 It changes files in the given checkouts and nothing else: branch, commit and
 pull request are up to you. Both modes also check that every workflow.toml
