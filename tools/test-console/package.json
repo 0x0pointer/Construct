@@ -1,0 +1,26 @@
+{
+  "name": "construct-test-console",
+  "displayName": "Construct Test Console",
+  "description": "One page to run every Construct test tier and open its results.",
+  "version": "0.1.0",
+  "publisher": "construct",
+  "license": "GPL-3.0-only",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "construct.openTestConsole",
+        "title": "Construct: Open Test Console"
+      }
+    ]
+  }
+}

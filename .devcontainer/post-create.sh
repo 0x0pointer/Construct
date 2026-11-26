@@ -28,6 +28,7 @@ status=PASSED
 { echo "== make test =="; make test; } 2>&1 | tee "$log" || status=FAILED
 for _ in $(seq 1 60); do docker info >/dev/null 2>&1 && break; sleep 2; done  # dockerd may still be coming up
 { echo "== make test-db =="; make test-db; } 2>&1 | tee -a "$log" || status=FAILED
+echo "Startup tests: $status" >> "$log"  # the Test Console panel reads this verdict line
 
 echo
 echo "Startup tests: $status (full log: $log). Next: make test-e2e"

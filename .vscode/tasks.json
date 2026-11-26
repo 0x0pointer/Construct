@@ -1,0 +1,78 @@
+{
+  // Every test tier as a VS Code task (Terminal -> Run Task...). The Construct Test Console
+  // panel (tools/test-console) runs these same tasks from its buttons, so the labels here
+  // are part of its contract.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "construct: unit tests",
+      "detail": "make test — no database or Docker, ~90s",
+      "type": "shell",
+      "command": "make test",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "construct: db tests",
+      "detail": "make test-db — throwaway Postgres in Docker on :55432",
+      "type": "shell",
+      "command": "make test-db",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "construct: e2e tests",
+      "detail": "make test-e2e — the full pipeline with a scripted fake agent",
+      "type": "shell",
+      "command": "make test-e2e",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "construct: conformance",
+      "detail": "make conformance — every harness adapter against stub CLIs",
+      "type": "shell",
+      "command": "make conformance",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "construct: dynamic replays",
+      "detail": "make test-dynamic — builds both images first (slow once), replays the reference PoCs in Docker",
+      "type": "shell",
+      "command": "make test-dynamic",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "construct: kind deploy (OpenAI)",
+      "detail": "make kind-deploy-openai — the whole stack on a local kind cluster; needs OPENAI_API_KEY",
+      "type": "shell",
+      "command": "make kind-deploy-openai",
+      "problemMatcher": []
+    },
+    {
+      "label": "construct: k8s tests",
+      "detail": "make test-k8s — isolation probes + reference replays on the kind cluster",
+      "type": "shell",
+      "command": "make test-k8s",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "construct: kind eval (dynamic)",
+      "detail": "make kind-eval TAG=dynamic — the eval corpus through the in-cluster worker, detached",
+      "type": "shell",
+      "command": "make kind-eval TAG=dynamic",
+      "problemMatcher": []
+    },
+    {
+      "label": "construct: kind dashboard port-forward",
+      "detail": "make kind-dashboard — the cluster dashboard on http://127.0.0.1:8082",
+      "type": "shell",
+      "command": "make kind-dashboard",
+      "isBackground": true,
+      "problemMatcher": []
+    }
+  ]
+}
