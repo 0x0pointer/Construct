@@ -518,7 +518,7 @@
     "kind": "running"
   },
   "status_updated_at": "2026-11-26T17:55:11.005970592Z",
-  "last_event_at": "2026-11-26T17:55:16.983506235Z",
+  "last_event_at": "2026-11-26T17:55:24.750417796Z",
   "pending_control": null,
   "checkpoints": [
     {
@@ -560,9 +560,9 @@
       "diff": {}
     },
     {
-      "seq": 0,
+      "seq": 29,
       "checkpoint": {
-        "timestamp": "2026-11-26T17:55:17.114035562Z",
+        "timestamp": "2026-11-26T17:55:24.740949152Z",
         "current_node": "pick_pr",
         "completed_nodes": [
           "start",
@@ -570,23 +570,23 @@
         ],
         "node_retries": {},
         "context_values": {
-          "graph.rankdir": "LR",
-          "internal.thread_id": "start",
           "failure_signature": "pick_pr|deterministic|script failed with exit code: <n> ## output skipped pull request <n> - no check failed skipped pull request <n> - its branch codespaces-test-console is not a fabro run branch nothing to fix: no pull request with failed checks is waiting (<n",
+          "graph.goal": "Fix the failed CI checks on a Fabro pull request of 0x0pointer/Construct and push the fix to the same branch",
           "thread.start.current_node": "pick_pr",
+          "internal.run_id": "01M8CFY5KVN3V1G2Z0DQXS6SQV",
+          "internal.work_dir": "/workspace/Construct",
           "command.output": "blob://sha256/fbd46af1aa919bb568ccac4ff5361771b4447cf1abe6722ce5ce4eaa223ae6b5",
-          "internal.retry_count.start": 0,
+          "internal.retry_count.pick_pr": 0,
           "current_node": "pick_pr",
           "internal.fidelity": "compact",
-          "graph.goal": "Fix the failed CI checks on a Fabro pull request of 0x0pointer/Construct and push the fix to the same branch",
-          "internal.work_dir": "/workspace/Construct",
-          "internal.run_id": "01M8CFY5KVN3V1G2Z0DQXS6SQV",
           "graph.max_node_visits": "12",
-          "internal.retry_count.pick_pr": 0,
-          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        ",
           "outcome": "failed",
+          "graph.rankdir": "LR",
+          "internal.node_visit_count": 1,
           "failure_class": "deterministic",
-          "internal.node_visit_count": 1
+          "internal.thread_id": "start",
+          "internal.retry_count.start": 0,
+          "graph.model_stylesheet": "\n            *       { model: gpt-5.4; reasoning_effort: medium; }\n            .strong { model: gpt-5.5; reasoning_effort: high; }\n        "
         },
         "node_outcomes": {
           "start": {
@@ -612,15 +612,61 @@
           }
         },
         "next_node_id": "exit",
+        "git_commit_sha": "8b63f5d3208efddf043dfc5250a02bdd6f2107c8",
+        "loop_failure_signatures": {
+          "pick_pr|deterministic|script failed with exit code: <n> ## output skipped pull request <n> - no check failed skipped pull request <n> - its branch codespaces-test-console is not a fabro run branch nothing to fix: no pull request with failed checks is waiting (<n": 1
+        },
         "node_visits": {
-          "pick_pr": 1,
-          "start": 1
+          "start": 1,
+          "pick_pr": 1
         }
       },
-      "diff": {}
+      "diff": {
+        "summary": {
+          "files_changed": 0,
+          "additions": 0,
+          "deletions": 0
+        }
+      }
     }
   ],
-  "conclusion": null,
+  "conclusion": {
+    "timestamp": "2026-11-26T17:55:25.026334451Z",
+    "status": "succeeded",
+    "timing": {
+      "wall_time_ms": 13965,
+      "inference_time_ms": 0,
+      "tool_time_ms": 3259,
+      "active_time_ms": 3259
+    },
+    "final_git_commit_sha": "8b63f5d3208efddf043dfc5250a02bdd6f2107c8",
+    "stages": [
+      {
+        "stage_id": "start",
+        "stage_label": "start",
+        "timing": {
+          "wall_time_ms": 0,
+          "inference_time_ms": 0,
+          "tool_time_ms": 0,
+          "active_time_ms": 0
+        },
+        "retries": 0
+      },
+      {
+        "stage_id": "pick_pr",
+        "stage_label": "pick_pr",
+        "timing": {
+          "wall_time_ms": 3439,
+          "inference_time_ms": 0,
+          "tool_time_ms": 3259,
+          "active_time_ms": 3259
+        },
+        "retries": 0
+      }
+    ],
+    "total_retries": 0,
+    "diff": {}
+  },
   "sandbox": {
     "kind": "ready",
     "plan": {
@@ -647,6 +693,40 @@
   "superseded_by": null,
   "pending_interviews": {},
   "stages": {
+    "exit@1": {
+      "first_event_seq": 32,
+      "prompt": null,
+      "response": null,
+      "completion": {
+        "outcome": "succeeded",
+        "notes": null,
+        "failure_reason": null,
+        "timestamp": "2026-11-26T17:55:24.750417796Z"
+      },
+      "provider_used": null,
+      "diff": null,
+      "script_invocation": null,
+      "script_timing": null,
+      "parallel_results": null,
+      "output": null,
+      "started_at": "2026-11-26T17:55:24.749293073Z",
+      "handler": "exit",
+      "timing": {
+        "wall_time_ms": 0,
+        "inference_time_ms": 0,
+        "tool_time_ms": 0,
+        "active_time_ms": 0
+      },
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "state": "succeeded"
+    },
     "start@1": {
       "first_event_seq": 17,
       "prompt": null,
@@ -685,7 +765,12 @@
       "first_event_seq": 21,
       "prompt": null,
       "response": null,
-      "completion": null,
+      "completion": {
+        "outcome": "failed",
+        "notes": null,
+        "failure_reason": "Script failed with exit code: 1\n\n## output\nskipped pull request 24 - no check failed\nskipped pull request 27 - its branch codespaces-test-console is not a fabro run branch\nNOTHING TO FIX: no pull request with failed checks is waiting (2 looked at).\n",
+        "timestamp": "2026-11-26T17:55:17.057366643Z"
+      },
       "provider_used": null,
       "diff": null,
       "script_invocation": {
@@ -709,6 +794,12 @@
       "termination": "exited",
       "started_at": "2026-11-26T17:55:13.572710341Z",
       "handler": "command",
+      "timing": {
+        "wall_time_ms": 3439,
+        "inference_time_ms": 0,
+        "tool_time_ms": 3259,
+        "active_time_ms": 3259
+      },
       "usage": {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -717,7 +808,7 @@
         "cache_read_tokens": 0,
         "cache_write_tokens": 0
       },
-      "state": "running"
+      "state": "failed"
     }
   }
 }
