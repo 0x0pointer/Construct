@@ -54,7 +54,11 @@ The repo ships a devcontainer, so all of this works without installing anything 
 create a Codespace on the repo (**Code → Codespaces**, a 4-core machine). It comes with
 Python 3.12, Docker, kind, kubectl and helm, and `.venv` already populated. `make test` and
 `make test-db` run automatically during creation — the verdict is in `work/startup-tests.log`
-(also in **Codespaces: View Creation Log**) by the time you attach. The other tiers:
+(also in **Codespaces: View Creation Log**) by the time you attach. On attach a
+**Test Console** page opens ([tools/test-console](tools/test-console)): every tier with a
+short explanation and a ▶ Run button, plus buttons that open the matching output — the
+startup verdict and log, the latest eval report, the dashboards. The buttons run the same
+tasks as **Terminal → Run Task…** (`.vscode/tasks.json`), which are these make targets:
 
 ```bash
 make test-e2e                 # as above
