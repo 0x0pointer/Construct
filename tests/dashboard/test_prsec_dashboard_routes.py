@@ -14,6 +14,10 @@ def _fid(fingerprint):
     return next(r["id"] for r in db.list_findings() if r["fingerprint"] == fingerprint)
 
 
+def _stage_decision(metrics, stage, decision):
+    return next(row for row in metrics["stage_decisions"] if row["stage"] == stage and row["decision"] == decision)
+
+
 def _assert_no_remote_assets(text):
     lowered = text.lower()
     for needle in ("https://", "http://", "unpkg.com", "htmx.org"):
@@ -66,6 +70,51 @@ def test_scan_detail_agent_observability(client, seeded):
     assert "Turns" in r.text  # per-agent effort column
 
 
+def test_scan_detail_review_decision_path(client, seeded, pg_pool):
+    s1, _ = seeded["scans"]
+    with pg_pool.connection() as c:
+        c.execute("UPDATE stage_runs SET transcript_uri = 'file:///tmp/t1.txt' WHERE task_id = 't1'")
+        c.execute(
+            """INSERT INTO stage_runs (scan_id, task_id, stage, harness, harness_version, model, status, usage, output, errors, duration_s)
+               VALUES (%s, 't-rules', 'rules', 'codex', '0.50.0', 'agent-large', 'ok', %s, %s, %s, 5),
+                      (%s, 't-triage', 'triage', 'codex', '0.50.0', 'agent-large', 'ok', %s, %s, %s, 12),
+                      (%s, 't2b', 'static_verify', 'claude-code', '2.1.0', 'agent-large', 'ok', %s, %s, %s, 19),
+                      (%s, 't-env-bad', 'env', 'claude-code', '2.1.0', 'agent-large', 'ok', %s, %s, %s, 4)""",
+            (
+                s1,
+                Jsonb({"usd": 0.1, "tokens_in": 20, "tokens_out": 5, "turns": 1}),
+                Jsonb({"decision": "scan", "reason": "security relevant"}),
+                Jsonb([]),
+                s1,
+                Jsonb({"usd": 0.2, "tokens_in": 40, "tokens_out": 10, "turns": 1}),
+                Jsonb({"decision": "full", "rationale": "authz touched"}),
+                Jsonb([]),
+                s1,
+                Jsonb({"usd": 0.3, "tokens_in": 70, "tokens_out": 30, "turns": 2}),
+                Jsonb({"verdict": "plausible", "severity": "high", "reachable": "yes"}),
+                Jsonb([]),
+                s1,
+                Jsonb({"usd": 0.05, "tokens_in": 10, "tokens_out": 1, "turns": 1}),
+                Jsonb("bad-output"),
+                Jsonb([]),
+            ),
+        )
+
+    r = client.get(f"/scans/{s1}")
+    assert r.status_code == 200
+    assert "Review decision path" in r.text
+    assert "Review intake" in r.text
+    assert "Static review" in r.text
+    assert "Rules gate" in r.text
+    assert "Static verify" in r.text
+    assert "2 hypothesis(es): H1, H2" in r.text
+    assert "output_invalid" in r.text
+    assert "plausible" in r.text
+    assert "unknown" in r.text
+    assert f'href="/stage-runs/' in r.text
+    assert f'href="/sarif/{s1}"' in r.text
+
+
 def test_metrics_per_agent_rollup(client, seeded):
     r = client.get("/metrics")
     assert r.status_code == 200
@@ -73,6 +122,125 @@ def test_metrics_per_agent_rollup(client, seeded):
     assert "Avg turns" in r.text
     assert "hypothesise" in r.text  # a per-stage row
     assert "static_verify" in r.text
+
+
+def test_metrics_review_funnel_and_stage_decisions(client, seeded, pg_pool):
+    s1, _ = seeded["scans"]
+    with pg_pool.connection() as c:
+        c.execute(
+            """INSERT INTO scans (repo, pr, head_sha, skills_version, status, triage)
+               VALUES ('acme/shop', 8, %s, 'dev', 'running', %s),
+                      ('acme/shop', 9, %s, 'dev', 'failed', %s),
+                      ('acme/shop', 10, %s, 'dev', 'queued', %s)""",
+            (
+                "d" * 40,
+                Jsonb({"decision": "full", "rationale": "still scanning"}),
+                "e" * 40,
+                Jsonb({"decision": "full", "rationale": "runner failed"}),
+                "f" * 40,
+                Jsonb({"decision": "scan", "rationale": "waiting"}),
+            ),
+        )
+        c.execute(
+            """INSERT INTO stage_runs (scan_id, task_id, stage, harness, harness_version, model, status, usage, output, errors, duration_s)
+               VALUES (%s, 't-rules', 'rules', 'codex', '0.50.0', 'agent-large', 'ok', %s, %s, %s, 7),
+                      (%s, 't-triage', 'triage', 'codex', '0.50.0', 'agent-large', 'ok', %s, %s, %s, 15),
+                      (%s, 't-skeptic-bad', 'skeptic', 'claude-code', '2.1.0', 'agent-large', 'ok', %s, %s, %s, 21),
+                      (%s, 't-dynamic', 'dynamic', 'claude-code', '2.1.0', 'agent-large', 'ok', %s, %s, %s, 33),
+                      (%s, 't-env-bad', 'env', 'claude-code', '2.1.0', 'agent-large', 'ok', %s, %s, %s, 8)""",
+            (
+                s1,
+                Jsonb({"usd": 0.1, "tokens_in": 50, "tokens_out": 10, "turns": 1}),
+                Jsonb({"decision": "scan", "reason": "security relevant"}),
+                Jsonb([]),
+                s1,
+                Jsonb({"usd": 0.2, "tokens_in": 60, "tokens_out": 20, "turns": 2}),
+                Jsonb({"decision": "full", "rationale": "changed authz"}),
+                Jsonb([]),
+                s1,
+                Jsonb({"usd": 0.4, "tokens_in": 55, "tokens_out": 35, "turns": 1}),
+                Jsonb({"refuted": "false", "confidence": "low"}),
+                Jsonb([]),
+                s1,
+                Jsonb({"usd": 0.3, "tokens_in": 80, "tokens_out": 30, "turns": 2}),
+                Jsonb({"outcome": "reproduced", "reasoning": "replay_confirmed"}),
+                Jsonb([]),
+                s1,
+                Jsonb({"usd": 0.05, "tokens_in": 10, "tokens_out": 3, "turns": 1}),
+                Jsonb(["malformed"]),
+                Jsonb([]),
+            ),
+        )
+
+    metrics = db.metrics()
+    assert metrics["review_funnel"] == {
+        "triggered": 5,
+        "active": 2,
+        "skipped": 1,
+        "failed": 1,
+        "fully_reviewed": 1,
+        "findings_total": 5,
+        "reproduced": 1,
+        "likely": 3,
+        "inconclusive": 1,
+    }
+    assert _stage_decision(metrics, "rules", "scan") == {
+        "stage": "rules",
+        "decision": "scan",
+        "runs": 1,
+        "ok": 1,
+        "failed": 0,
+        "avg_duration_s": 7.0,
+        "avg_cost": 0.1,
+        "avg_tokens": 60.0,
+        "avg_turns": 1.0,
+        "ok_rate": 1.0,
+    }
+    assert _stage_decision(metrics, "triage", "full")["runs"] == 1
+    assert _stage_decision(metrics, "triage", "full")["ok_rate"] == 1.0
+    assert _stage_decision(metrics, "dynamic", "reproduced")["avg_tokens"] == 110.0
+    assert _stage_decision(metrics, "static_verify", "output_invalid") == {
+        "stage": "static_verify",
+        "decision": "output_invalid",
+        "runs": 1,
+        "ok": 0,
+        "failed": 1,
+        "avg_duration_s": 80.0,
+        "avg_cost": 0.8,
+        "avg_tokens": 0.0,
+        "avg_turns": 0.0,
+        "ok_rate": 0.0,
+    }
+    assert _stage_decision(metrics, "skeptic", "unknown") == {
+        "stage": "skeptic",
+        "decision": "unknown",
+        "runs": 1,
+        "ok": 1,
+        "failed": 0,
+        "avg_duration_s": 21.0,
+        "avg_cost": 0.4,
+        "avg_tokens": 90.0,
+        "avg_turns": 1.0,
+        "ok_rate": 1.0,
+    }
+    assert not any(row["stage"] == "skeptic" and row["decision"] in {"upheld", "refuted"} for row in metrics["stage_decisions"])
+
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    assert "PR review funnel (30 days)" in r.text
+    assert 'Triggered scans</td><td class="num">5</td>' in r.text
+    assert 'Active scans</td><td class="num">2</td>' in r.text
+    assert 'Skipped scans</td><td class="num">1</td>' in r.text
+    assert 'Failed scans</td><td class="num">1</td>' in r.text
+    assert 'Fully reviewed scans</td><td class="num">1</td>' in r.text
+    assert 'Findings produced</td><td class="num">5</td>' in r.text
+    assert "reproduced 1, likely 3, inconclusive 1" in r.text
+    assert "Decision outcomes by stage (30 days)" in r.text
+    for needle in ("scan", "full", "reproduced", "output_invalid", "unknown"):
+        assert needle in r.text
+    assert "upheld" not in r.text
+    for needle in ("Precision by label", "By agent", "Harness comparison"):
+        assert needle in r.text
 
 
 def test_findings_filters(client, seeded):
@@ -248,19 +416,33 @@ def test_dashboard_restyle_escapes_untrusted_finding_and_scan_content(client, se
             "INSERT INTO scan_events (scan_id, kind, level, stage, message, data) VALUES (%s, 'triage', 'warning', 'triage', %s, %s)",
             (s1, hostile, Jsonb({"note": note})),
         )
+        c.execute(
+            """INSERT INTO stage_runs (scan_id, task_id, stage, harness, harness_version, model, status, usage, output, errors, duration_s)
+               VALUES (%s, 't-hostile', 'rules', 'codex', '0.50.0', 'agent-large', 'ok', %s, %s, %s, 9)""",
+            (
+                s1,
+                Jsonb({"usd": 0.1, "tokens_in": 20, "tokens_out": 4, "turns": 1}),
+                Jsonb({"decision": hostile, "reason": note}),
+                Jsonb([hostile]),
+            ),
+        )
     db.set_triage(fid, "accepted", note)
 
     finding_page = client.get(f"/findings/{fid}", headers={"X-Forwarded-User": forwarded})
+    metrics_page = client.get("/metrics", headers={"X-Forwarded-User": forwarded})
     scan_page = client.get(f"/scans/{s1}", headers={"X-Forwarded-User": forwarded})
-    for page in (finding_page, scan_page):
+    for page in (finding_page, metrics_page, scan_page):
         assert page.status_code == 200
         assert hostile not in page.text
         assert forwarded not in page.text
         assert "<img" not in page.text
         assert 'href="javascript:' not in page.text
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page.text
-        assert "&lt;img src=x onerror=alert(1)&gt;" in page.text
+        assert 'onclick="alert(2)' not in page.text
+    for page in (finding_page, scan_page):
         assert "javascript:alert(9)" in page.text
+    for page in (finding_page, scan_page):
+        assert "&lt;img src=x onerror=alert(1)&gt;" in page.text
 
 
 def test_finding_detail_handles_missing_optional_sections(client, seeded, pg_pool):

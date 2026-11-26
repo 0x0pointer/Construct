@@ -10,6 +10,26 @@
 <div class="grid2 grid2--equal">
   <section class="card">
     <div class="section-heading">
+      <h2>PR review funnel (30 days)</h2>
+      <p class="muted">How many PR scans were triggered, where they ended up, and what findings they produced.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Step</th><th class="num">Count</th><th>Details</th></tr></thead>
+        <tbody>
+          <tr><td>Triggered scans</td><td class="num">{{ m.review_funnel.triggered }}</td><td class="muted">All scans started in the last 30 days, including superseded ones.</td></tr>
+          <tr><td>Active scans</td><td class="num">{{ m.review_funnel.active }}</td><td class="muted">Queued or currently running scans.</td></tr>
+          <tr><td>Skipped scans</td><td class="num">{{ m.review_funnel.skipped }}</td><td class="muted">Stopped before full review.</td></tr>
+          <tr><td>Failed scans</td><td class="num">{{ m.review_funnel.failed }}</td><td class="muted">Ended with a scan-level failure.</td></tr>
+          <tr><td>Fully reviewed scans</td><td class="num">{{ m.review_funnel.fully_reviewed }}</td><td class="muted">Completed reviews with final findings.</td></tr>
+          <tr><td>Findings produced</td><td class="num">{{ m.review_funnel.findings_total }}</td>
+              <td class="muted">reproduced {{ m.review_funnel.reproduced }}, likely {{ m.review_funnel.likely }}, inconclusive {{ m.review_funnel.inconclusive }}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card">
+    <div class="section-heading">
       <h2>Scans by status</h2>
       <p class="muted">Recent scan volume by terminal and active status.</p>
     </div>
@@ -24,8 +44,6 @@
         </tbody>
       </table>
     </div>
-  </section>
-  <section class="card">
     <div class="section-heading">
       <h2>Last 30 days</h2>
       <p class="muted">Top-level scan efficiency and spend.</p>
@@ -39,6 +57,28 @@
     </dl>
   </section>
 </div>
+
+<section class="card">
+  <div class="section-heading">
+    <h2>Decision outcomes by stage (30 days)</h2>
+    <p class="muted">Observed decision keys per pipeline stage, ordered by the canonical stage enum.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Phase</th><th>Stage</th><th>Role</th><th>Decision key</th><th class="num">Runs</th><th class="num">OK rate</th><th class="num">Failed</th>
+        <th class="num">Avg duration</th><th class="num">Avg cost</th><th class="num">Avg tokens</th><th class="num">Avg turns</th></tr></thead>
+      <tbody>
+      {% for r in m.stage_decisions %}
+        <tr><td>{{ r.phase }}</td><td><code>{{ r.stage }}</code></td><td>{{ r.role }}</td><td><code>{{ r.decision }}</code></td>
+          <td class="num">{{ r.runs }}</td><td class="num">{{ r.ok_rate | pct }}</td>
+          <td class="num">{% if r.failed %}<span class="err">{{ r.failed }}</span>{% else %}0{% endif %}</td>
+          <td class="num">{{ r.avg_duration_s | dur }}</td><td class="num">{{ r.avg_cost | usd }}</td>
+          <td class="num">{{ r.avg_tokens | int }}</td><td class="num">{{ r.avg_turns | round(1) }}</td></tr>
+      {% else %}<tr><td colspan="11" class="muted">No stage decisions in the last 30 days.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 
 {% macro precision_table(rows, title) %}
 <table>
@@ -56,6 +96,10 @@
 
 <section class="card stack">
   <div class="section-heading">
+    <h2>Review quality and findings</h2>
+    <p class="muted">Triage precision over findings reported by recent reviews.</p>
+  </div>
+  <div class="section-heading">
     <h2>Precision by label</h2>
   </div>
   <div class="table-wrap">{{ precision_table(m.precision_by_label, 'Label') }}</div>
@@ -67,6 +111,10 @@
 </section>
 
 <section class="card">
+  <div class="section-heading">
+    <h2>Agent execution health</h2>
+    <p class="muted">Per-stage execution reliability, cost, and effort across recent runs.</p>
+  </div>
   <div class="section-heading">
     <h2>By agent (30 days)</h2>
     <p class="muted">One row per agent (pipeline stage): how reliably it runs, what it costs, and how much work it does.</p>

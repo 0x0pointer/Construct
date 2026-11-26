@@ -65,6 +65,15 @@ STAGE_ROLES = {
     "rules": "Rules gate", "triage": "Triage", "hypothesise": "Hypothesise",
     "static_verify": "Static verify", "skeptic": "Skeptic", "env": "Env builder", "dynamic": "Dynamic",
 }
+STAGE_PHASES = {
+    "rules": "Review intake",
+    "triage": "Review intake",
+    "hypothesise": "Static review",
+    "static_verify": "Static review",
+    "skeptic": "Static review",
+    "env": "Dynamic reproduction",
+    "dynamic": "Dynamic reproduction",
+}
 STAGE_ORDER = {s.value: i for i, s in enumerate(Stage)}
 
 
@@ -98,13 +107,60 @@ def _turns(usage: Any) -> int:
     return int((usage or {}).get("turns") or 0) if isinstance(usage, dict) else 0
 
 
+def _stage_decision_key(stage: str | None, status: str | None, output: Any) -> str:
+    if isinstance(output, dict):
+        if stage in {"rules", "triage"} and output.get("decision"):
+            return str(output["decision"])
+        if stage == "hypothesise" and isinstance(output.get("hypotheses"), list):
+            count = len(output["hypotheses"])
+            return f"{count}_hypothesis" if count == 1 else f"{count}_hypotheses"
+        if stage == "static_verify" and output.get("verdict"):
+            return str(output["verdict"])
+        if stage == "skeptic" and isinstance(output.get("refuted"), bool):
+            return "refuted" if output["refuted"] else "upheld"
+        if stage == "env" and output.get("envspec") is not None:
+            return "envspec_written"
+        if stage == "dynamic" and output.get("outcome"):
+            return str(output["outcome"])
+    if status and status != "ok":
+        return str(status)
+    return "unknown"
+
+
 def _enrich_stage_runs(stage_runs: list[dict[str, Any]]) -> None:
     """Attach a friendly role name, decision summary and turn count to each stage run (in place)."""
     for r in stage_runs:
         st = r.get("stage")
+        r["phase"] = STAGE_PHASES.get(st, st)
         r["role"] = STAGE_ROLES.get(st, st)
+        r["decision"] = _stage_decision_key(st, r.get("status"), r.get("output"))
         r["summary"] = _stage_summary(st, r.get("output"))
         r["turns"] = _turns(r.get("usage"))
+
+
+def _review_decision_rows(stage_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for idx, r in enumerate(stage_runs):
+        st = r.get("stage")
+        status = str(r.get("status") or "unknown")
+        rows.append(
+            {
+                "seq": idx,
+                "stage": st,
+                "role": STAGE_ROLES.get(st, st),
+                "phase": STAGE_PHASES.get(st, st),
+                "status": status,
+                "decision": _stage_decision_key(st, status, r.get("output")),
+                "summary": _stage_summary(st, r.get("output")),
+                "errors": r.get("errors") or [],
+                "task_id": r.get("task_id"),
+                "health": "ok" if status == "ok" else "failed",
+            }
+        )
+    rows.sort(key=lambda row: (STAGE_ORDER.get(row["stage"], 99), row["seq"]))
+    for row in rows:
+        row.pop("seq", None)
+    return rows
 
 
 def _agent_pipeline(stage_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -116,9 +172,9 @@ def _agent_pipeline(stage_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     agents: dict[str, dict[str, Any]] = {}
     for r in stage_runs:
         st = r.get("stage") or "?"
-        a = agents.setdefault(st, {"stage": st, "role": STAGE_ROLES.get(st, st), "runs": 0, "ok": 0,
-                                   "failed": 0, "cost": 0.0, "tokens": 0, "turns": 0, "duration_s": 0.0,
-                                   "decisions": []})
+        a = agents.setdefault(st, {"stage": st, "role": STAGE_ROLES.get(st, st), "phase": STAGE_PHASES.get(st, st),
+                                   "runs": 0, "ok": 0, "failed": 0, "cost": 0.0, "tokens": 0, "turns": 0,
+                                   "duration_s": 0.0, "decisions": []})
         usage = r.get("usage") if isinstance(r.get("usage"), dict) else {}
         a["runs"] += 1
         a["ok" if r.get("status") == "ok" else "failed"] += 1
@@ -201,8 +257,9 @@ def scan_detail(request: Request, scan_id: int):
     stage_runs = scan.get("stage_runs") or []
     _enrich_stage_runs(stage_runs)
     agents = _agent_pipeline(stage_runs)
+    decision_path = _review_decision_rows(stage_runs)
     events = obs_events.list_events(scan_id, after_id=0, limit=TIMELINE_INITIAL)
-    return _render(request, "scan.html", scan=scan, agents=agents,
+    return _render(request, "scan.html", scan=scan, agents=agents, decision_path=decision_path,
                    tl=_timeline_ctx(scan, events, 0, set(), TIMELINE_INITIAL))
 
 
@@ -394,7 +451,12 @@ def triage(request: Request, finding_id: int, state: Annotated[str, Form()], not
 
 @app.get("/metrics", response_class=HTMLResponse)
 def metrics(request: Request):
-    return _render(request, "metrics.html", m=db.metrics())
+    data = db.metrics()
+    for row in data.get("stage_decisions") or []:
+        st = row.get("stage")
+        row["role"] = STAGE_ROLES.get(st, st)
+        row["phase"] = STAGE_PHASES.get(st, st)
+    return _render(request, "metrics.html", m=data)
 
 
 @app.get("/sarif/{scan_id}", responses={404: {"description": "No SARIF stored for this scan, or it is unreadable"}})
