@@ -27,7 +27,7 @@ PRSEC_TEST_DATABASE_URL ?= postgresql://prsec:prsec@localhost:$(TEST_PG_PORT)/pr
 .PHONY: help images image-prsec image-workbench harness-volumes skills host-dirs config up down logs \
         migrate test test-db test-pg-up test-pg-down lint-skills conformance conformance-live test-e2e \
         test-dynamic local-up local-down local-worker local-dashboard eval \
-        kind-up kind-data kind-load kind-deploy kind-dashboard kind-eval test-k8s kind-down \
+        kind-up kind-data kind-load kind-deploy kind-deploy-openai kind-dashboard kind-eval test-k8s kind-down \
         do-images do-nfs do-deploy do-data do-test-k8s do-eval do-report do-down
 
 help: ## list targets
@@ -192,6 +192,20 @@ kind-deploy: kind-up kind-data kind-load ## deploy the whole stack on kind (gate
 	  --set-file gateway.hooks=deploy/compose/litellm/prsec_hooks.py \
 	  --set gateway.env.SPARK_API_BASE="http://$$spark_ip:$(SPARK_PORT)/v1" \
 	  --set "gateway.hostAliases[0].ip=$$spark_ip" --set "gateway.hostAliases[0].hostnames[0]=spark" \
+	  --wait --timeout 15m
+	$(KUBECTL) -n prsec get pods
+
+kind-deploy-openai: kind-up kind-data kind-load ## deploy the stack on kind with OpenAI models (no Spark needed; Codespaces)
+	@oa="$${OPENAI_API_KEY:-$$(grep -E '^OPENAI_API_KEY=' $(ENV_FILE) 2>/dev/null | tail -1 | cut -d= -f2-)}"; \
+	[ -n "$$oa" ] || { echo "OPENAI_API_KEY is not set (environment or $(ENV_FILE))" >&2; exit 1; }; \
+	sed "s|^workbench_image: .*|workbench_image: $(WORKBENCH_IMAGE)|" policy-openai.yaml > work/policy-kind-openai.yaml; \
+	$(HELM) upgrade --install construct deploy/helm/construct -n prsec --create-namespace \
+	  -f deploy/kind/values.yaml \
+	  --set gateway.keyDatabase.enabled=true \
+	  --set-file policy=work/policy-kind-openai.yaml \
+	  --set-file gateway.config=deploy/compose/litellm/config.openai.yaml \
+	  --set-file gateway.hooks=deploy/compose/litellm/prsec_hooks.py \
+	  --set-string secrets.openaiApiKey=$$oa \
 	  --wait --timeout 15m
 	$(KUBECTL) -n prsec get pods
 
