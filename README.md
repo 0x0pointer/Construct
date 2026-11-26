@@ -48,6 +48,26 @@ make test-e2e    # the full pipeline end to end, with a scripted fake agent
 
 All three should pass. `make test-pg-down` removes the test database afterwards.
 
+#### Or in GitHub Codespaces
+
+The repo ships a devcontainer, so all of this works without installing anything locally:
+create a Codespace on the repo (**Code → Codespaces**, a 4-core machine). It comes with
+Python 3.12, Docker, kind, kubectl and helm, and `.venv` already populated. `make test` and
+`make test-db` run automatically during creation — the verdict is in `work/startup-tests.log`
+(also in **Codespaces: View Creation Log**) by the time you attach. The other tiers:
+
+```bash
+make test-e2e                 # as above
+make conformance              # every harness adapter against stub CLIs
+make test-dynamic             # builds the images, replays the reference PoCs in real Docker envs
+```
+
+The Kubernetes tier ([5. Kubernetes](#5-kubernetes)) also runs inside the Codespace. Add an
+`OPENAI_API_KEY` [Codespaces secret](https://docs.github.com/en/codespaces/managing-your-codespaces/managing-your-account-specific-secrets-for-github-codespaces)
+and use `make kind-deploy-openai` instead of `make kind-deploy`: the same chart, with every
+model on OpenAI instead of the LAN Spark box (which a Codespace cannot reach). An 8-core
+machine is more comfortable for that tier.
+
 ### 2. Scan a real PR from your laptop
 
 This runs everything as plain processes on your machine (dev mode): no containers for the
@@ -206,6 +226,11 @@ make test-k8s                     # isolation probes and the reference replays, 
 make kind-eval TAG=dynamic        # the eval corpus through the in-cluster worker
 make kind-dashboard               # http://127.0.0.1:8082
 ```
+
+`make kind-deploy` points the gateway at the LAN Spark box. Without one (a Codespace, any
+machine off that LAN), `make kind-deploy-openai` deploys the same chart with every model on
+OpenAI (`policy-openai.yaml`, `OPENAI_API_KEY` from the environment or `.env`); `test-k8s`
+and `kind-eval` are identical from there.
 
 On a managed cluster, install the chart with your own values:
 - `storage.volume`: an RWX source (EFS, Filestore, Azure Files, NFS) holding `work/`, `skills/current`
