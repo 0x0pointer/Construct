@@ -1,0 +1,6 @@
+{
+  "outcome": "failed",
+  "notes": null,
+  "failure_reason": "Script failed with exit code: 1\n\n## output\nskipped pull request 24 - no check failed\nskipped pull request 25 - its branch fabro-stage-skills is not a fabro run branch\nskipped pull request 26 - its branch codespaces-devcontainer is not a fabro run branch\nNOTHING TO FIX: no pull request with failed checks is waiting (3 looked at).\n",
+  "timestamp": "2026-11-26T17:05:12.503251507Z"
+}
