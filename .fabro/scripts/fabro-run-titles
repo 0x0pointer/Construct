@@ -16,11 +16,17 @@ the automations run on a schedule: such a run is archived (hidden from the
 default run list) and its empty `fabro/run/<id>` branch is deleted on GitHub.
 Runs that picked an issue or pull request are never archived or pruned.
 
+After a successful issue-to-pr run it finishes the draft pull request Fabro
+opened: it puts `Closes #<issue>` at the top of the description, so merging
+the pull request closes the issue, and posts the Codespaces comment.
+
   fabro-run-titles          keep watching (run it as a service)
   fabro-run-titles --once   look once and exit
 
 Runs on the machine that hosts the Fabro server and talks to its local API
 with the server's dev token; branches are deleted over this machine's SSH key.
+GitHub calls use GITHUB_TOKEN from the environment, or else the GITHUB_TOKEN
+secret in Fabro's vault (the token the runs themselves use).
 State: ~/.fabro/run-titles.json (runs already handled).
 """
 import argparse
@@ -37,6 +43,7 @@ from datetime import datetime, timedelta, timezone
 SERVER = os.environ.get("FABRO_SERVER", "http://127.0.0.1:32276").rstrip("/") + "/api/v1"
 TOKEN_FILE = os.path.expanduser("~/.fabro/storage/server.dev-token")
 STATE = os.path.expanduser("~/.fabro/run-titles.json")
+VAULT = os.path.expanduser("~/.fabro/storage/vaults/default/secrets.json")
 GITHUB = os.environ.get("GITHUB_API", "https://api.github.com").rstrip("/")
 # Workflow graph name -> the node whose output names what the run works on.
 FIRST_STEP = {"IssueToPR": "check_issue", "FixCI": "pick_pr"}
@@ -48,6 +55,9 @@ SCRATCH_REPO = os.path.expanduser("~/.fabro/run-titles.git")
 MAX_AGE = timedelta(days=2)
 CODESPACE_MARKER = "<!-- fabro-codespace -->"
 DONE_CODESPACE = {"commented", "existing", "skipped old", "skipped malformed repo", "skipped malformed branch"}
+DONE_ISSUE_LINK = {"linked", "existing", "skipped old", "skipped malformed repo", "skipped malformed branch"}
+# The words GitHub reads in a pull request description as "merging this closes the issue".
+CLOSING_WORD = r"(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)"
 
 
 def api(path, body=None, method=None):
@@ -61,10 +71,18 @@ def api(path, body=None, method=None):
     return json.loads(content) if content else None
 
 
+def vault_github_token():
+    try:
+        with open(VAULT) as f:
+            return str(json.load(f)["GITHUB_TOKEN"]["value"]).strip()
+    except (OSError, ValueError, KeyError, TypeError):
+        return ""
+
+
 def github_api(path, body=None, method=None):
-    token = os.environ.get("GITHUB_TOKEN")
+    token = os.environ.get("GITHUB_TOKEN") or vault_github_token()
     if not token:
-        raise RuntimeError("GITHUB_TOKEN is not set")
+        raise RuntimeError("GITHUB_TOKEN is not set and Fabro's vault has none")
     data = json.dumps(body).encode() if body is not None else None
     headers = {
         "Authorization": "Bearer " + token,
@@ -137,12 +155,31 @@ def state_codespace(entry):
     return ""
 
 
+def state_issue_link(entry):
+    if isinstance(entry, dict):
+        return str(entry.get("issue") or "")
+    return ""
+
+
+def set_state(state, run_id, key, status):
+    entry = state.get(run_id)
+    entry = dict(entry) if isinstance(entry, dict) else {"title": state_title(entry)}
+    entry[key] = status
+    state[run_id] = entry
+
+
 def set_codespace_state(state, run_id, status):
-    state[run_id] = {"title": state_title(state.get(run_id)), "codespace": status}
+    set_state(state, run_id, "codespace", status)
+
+
+def picked_issue_number(entry):
+    """The issue a run picked, read from the title this script gave it. None if it picked none."""
+    picked = re.match(r"^[^:]+ #(\d+): ", state_title(entry))
+    return int(picked.group(1)) if picked else None
 
 
 def picked_issue_title(entry):
-    return bool(re.match(r"^[^:]+ #\d+: ", state_title(entry)))
+    return picked_issue_number(entry) is not None
 
 
 def repo_parts(run):
@@ -227,6 +264,41 @@ def add_codespace_comment(run):
     return "commented"
 
 
+def closes_issue(text, issue):
+    """Whether a pull request description already says that merging it closes the issue."""
+    return bool(re.search(rf"\b{CLOSING_WORD}:?\s+#{issue}\b", text or "", re.I))
+
+
+def link_issue(run, issue):
+    """Put `Closes #<issue>` in the description of the run's pull request, if ready.
+
+    GitHub then lists the issue on the pull request and closes it when the pull
+    request is merged. Returns a done status string, or None when a later sweep
+    should retry.
+    """
+    run_id = str(run.get("id") or "")
+    parts = repo_parts(run)
+    if not parts:
+        print(f"{run_id}: cannot link the issue for malformed repository name", file=sys.stderr, flush=True)
+        return "skipped malformed repo"
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", run_id):
+        print(f"{run_id}: cannot link the issue for malformed run id", file=sys.stderr, flush=True)
+        return "skipped malformed branch"
+    owner, repo = parts
+    pr = find_open_pr(owner, repo, f"fabro/run/{run_id}")
+    number = (pr or {}).get("number")
+    if not number:
+        return None
+    body = str(pr.get("body") or "")
+    if closes_issue(body, issue):
+        print(f"{run_id}: PR #{number} already closes issue #{issue}", flush=True)
+        return "existing"
+    path = f"/repos/{quote_path(owner)}/{quote_path(repo)}/pulls/{number}"
+    github_api(path, body={"body": f"Closes #{issue}\n\n{body}".rstrip() + "\n"}, method="PATCH")
+    print(f"{run_id}: PR #{number} now closes issue #{issue}", flush=True)
+    return "linked"
+
+
 def tidy(run):
     """Archive a finished run that had nothing to do and delete its empty branch."""
     run_id = run["id"]
@@ -300,12 +372,20 @@ def sweep(state):
                 print(f"{run_id}: {title}", flush=True)
                 changed += 1
             state[run_id] = title or "unrecognised output"
-        if (
-            graph == "IssueToPR"
-            and status == "succeeded"
-            and picked_issue_title(state.get(run_id))
-            and state_codespace(state.get(run_id)) not in DONE_CODESPACE
-        ):
+        issue = picked_issue_number(state.get(run_id))
+        if graph != "IssueToPR" or status != "succeeded" or issue is None:
+            continue
+        if state_issue_link(state.get(run_id)) not in DONE_ISSUE_LINK:
+            link_status = "skipped old" if old else None
+            if not old:
+                try:
+                    link_status = link_issue(run, issue)
+                except Exception as exc:
+                    print(f"{run_id}: could not link issue #{issue}: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+            if link_status:
+                set_state(state, run_id, "issue", link_status)
+                changed += 1
+        if state_codespace(state.get(run_id)) not in DONE_CODESPACE:
             if old:
                 set_codespace_state(state, run_id, "skipped old")
                 print(f"{run_id}: skipped codespace comment for old run", file=sys.stderr, flush=True)
