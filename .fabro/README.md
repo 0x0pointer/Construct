@@ -18,7 +18,7 @@ on a machine where Fabro is installed and logged in.
 | `workflows/fix-ci/` | Second workflow: repairs a Fabro pull request whose CI checks failed. |
 | `scripts/sync-pipeline` | Copies the shared pipeline files to the other repositories, or checks that they match. |
 | `scripts/construct-build` | Convenience command that builds every approved issue. |
-| `scripts/fabro-run-titles` | Watcher that titles runs after the issue or pull request they picked, tidies empty runs, and posts Codespaces links on successful IssueToPR draft PRs. |
+| `scripts/fabro-run-titles` | Watcher that titles runs after the issue or pull request they picked, tidies empty runs, and on successful IssueToPR draft PRs links the issue (`Closes #<n>`) and posts a Codespaces link. |
 | `scripts/fabro-server-recycle` | Cron job that restarts the Fabro server every 4 hours, starts it when it died, and resumes the runs that were in flight. |
 
 ## How an issue gets built
@@ -273,15 +273,25 @@ A run started from the web UI picks its issue or pull request in its first
 step, after Fabro has titled the run, so its title cannot name it. The watcher
 `scripts/fabro-run-titles` reads the first step's output through the server's
 local API and sets the title, for example `Construct #8: <issue title>` or
-`Fix CI: PR #11 (test)`. It also archives empty runs, prunes their branches,
-and, after a successful issue-to-PR run with application changes, posts one PR
-comment with an **Open in GitHub Codespaces** button for the run branch.
+`Fix CI: PR #11 (test)`. It also archives empty runs and prunes their branches.
 
-Run it on the machine that hosts the Fabro server, as a service. The service
-needs `GITHUB_TOKEN` in its environment for the Codespaces comment; a
-fine-grained token should have `metadata:read`, `pull_requests:read`, and
-`issues:write` on the repositories it watches. Without that token, titles and
-empty-run cleanup still work, and comment attempts are retried on later sweeps.
+After a successful issue-to-PR run it finishes the draft pull request that
+Fabro opened:
+
+- It puts `Closes #<issue>` at the top of the description. Fabro writes the
+  description itself and does not mention the issue, so without this line the
+  two are not connected. With it, GitHub lists the issue on the pull request
+  and closes the issue when the pull request is merged. Closing the pull
+  request without merging leaves the issue open.
+- It posts one comment with an **Open in GitHub Codespaces** button for the
+  run branch.
+
+Run it on the machine that hosts the Fabro server, as a service. For these two
+GitHub calls it uses `GITHUB_TOKEN` from its environment or, if that is not
+set, the `GITHUB_TOKEN` secret in Fabro's vault. A fine-grained token needs
+`metadata:read`, `pull_requests:write`, and `issues:write` on the repositories
+it watches. Without a token, titles and empty-run cleanup still work, and the
+GitHub calls are retried on later sweeps.
 
 ```ini
 # /etc/systemd/system/fabro-run-titles.service
@@ -290,7 +300,8 @@ Description=Title Fabro runs after the issue or pull request they picked
 After=network.target
 
 [Service]
-EnvironmentFile=/root/.fabro/run-titles.env
+# Optional; without it the token comes from Fabro's vault.
+EnvironmentFile=-/root/.fabro/run-titles.env
 ExecStart=/usr/bin/python3 /root/.fabro/bin/fabro-run-titles
 Restart=always
 RestartSec=10
@@ -302,8 +313,9 @@ WantedBy=multi-user.target
 ```bash
 # A copy, not a symlink: the service must keep working whatever branch is checked out.
 install -m 755 .fabro/scripts/fabro-run-titles ~/.fabro/bin/fabro-run-titles
-touch ~/.fabro/run-titles.env && chmod 600 ~/.fabro/run-titles.env
-$EDITOR ~/.fabro/run-titles.env  # add: GITHUB_TOKEN=<fine-grained token>
+# Only to use another token than the one in Fabro's vault:
+# touch ~/.fabro/run-titles.env && chmod 600 ~/.fabro/run-titles.env
+# $EDITOR ~/.fabro/run-titles.env  # add: GITHUB_TOKEN=<fine-grained token>
 systemctl daemon-reload && systemctl enable --now fabro-run-titles
 ```
 

@@ -53,6 +53,8 @@ class FakeApis:
         self.patches = []
         self.posts = []
         self.pr_visible = True
+        self.pr_body = "What changed"
+        self.body_patches = []
         self.fail_github = False
         self.events_allowed = True
 
@@ -84,7 +86,11 @@ class FakeApis:
             self.fail_github = False
             raise RuntimeError("temporary GitHub failure")
         if path.startswith("/repos/0x0pointer/Construct/pulls?state=open&head="):
-            return [{"number": 7}] if self.pr_visible else []
+            return [{"number": 7, "body": self.pr_body}] if self.pr_visible else []
+        if path == "/repos/0x0pointer/Construct/pulls/7" and method == "PATCH":
+            self.body_patches.append(body["body"])
+            self.pr_body = body["body"]
+            return {"number": 7}
         if path == "/repos/0x0pointer/Construct/pulls/7/files?per_page=100":
             return self.files
         if path == "/repos/0x0pointer/Construct/issues/7/comments?per_page=100":
@@ -171,12 +177,12 @@ def test_sweep_comments_once_for_successful_issue_run(monkeypatch, run_titles):
     monkeypatch.setattr(run_titles, "github_api", fake.github)
     state = {}
 
-    assert run_titles.sweep(state) == 2
+    assert run_titles.sweep(state) == 3
     assert fake.patches == [{"title": "Construct #19: Useful app feature"}]
     assert len(fake.posts) == 1
     assert "repo=42" in fake.posts[0]
     assert "ref=fabro%2Frun%2F01ABCDEF" in fake.posts[0]
-    assert state[RUN_ID] == {"title": "Construct #19: Useful app feature", "codespace": "commented"}
+    assert state[RUN_ID] == {"title": "Construct #19: Useful app feature", "issue": "linked", "codespace": "commented"}
 
     assert run_titles.sweep(state) == 0
     assert len(fake.posts) == 1
@@ -213,19 +219,22 @@ def test_sweep_retries_when_pr_missing_or_github_fails(monkeypatch, run_titles):
     monkeypatch.setattr(run_titles, "github_api", fake.github)
     state = {}
 
-    run_titles.sweep(state)
-    assert fake.posts == []
-    assert state[RUN_ID] == "Construct #19: Useful app feature"
-
     fake.pr_visible = False
     run_titles.sweep(state)
     assert fake.posts == []
     assert state[RUN_ID] == "Construct #19: Useful app feature"
 
     fake.pr_visible = True
+    fake.fail_github = True
     run_titles.sweep(state)
+    assert fake.body_patches == []
     assert len(fake.posts) == 1
-    assert state[RUN_ID]["codespace"] == "commented"
+    assert state[RUN_ID] == {"title": "Construct #19: Useful app feature", "codespace": "commented"}
+
+    run_titles.sweep(state)
+    assert fake.body_patches == ["Closes #19\n\nWhat changed\n"]
+    assert len(fake.posts) == 1
+    assert state[RUN_ID]["issue"] == "linked"
 
 
 def test_existing_marker_prevents_duplicate_comment(monkeypatch, run_titles):
@@ -250,7 +259,7 @@ def test_old_string_state_is_backward_compatible(monkeypatch, run_titles):
     run_titles.sweep(state)
 
     assert len(fake.posts) == 1
-    assert state[RUN_ID] == {"title": "Construct #19: Useful app feature", "codespace": "commented"}
+    assert state[RUN_ID] == {"title": "Construct #19: Useful app feature", "issue": "linked", "codespace": "commented"}
 
 
 def test_sweep_comments_for_non_application_changes_too(monkeypatch, run_titles):
@@ -269,4 +278,45 @@ def test_sweep_comments_for_non_application_changes_too(monkeypatch, run_titles)
 
     assert len(fake.posts) == 1
     assert "repo=42" in fake.posts[0]
-    assert state[RUN_ID] == {"title": "Construct #19: Useful app feature", "codespace": "commented"}
+    assert state[RUN_ID] == {"title": "Construct #19: Useful app feature", "issue": "linked", "codespace": "commented"}
+
+
+def test_sweep_links_the_issue_in_the_pr_description_once(monkeypatch, run_titles):
+    fake = FakeApis()
+    monkeypatch.setattr(run_titles, "api", fake.fabro)
+    monkeypatch.setattr(run_titles, "github_api", fake.github)
+    state = {}
+
+    run_titles.sweep(state)
+    run_titles.sweep(state)
+
+    assert fake.body_patches == ["Closes #19\n\nWhat changed\n"]
+    assert state[RUN_ID]["issue"] == "linked"
+
+
+@pytest.mark.parametrize("body", ["Closes #19\n\nWhat changed", "This fixes #19.", "resolved: #19"])
+def test_description_that_already_closes_the_issue_is_left_alone(monkeypatch, run_titles, body):
+    fake = FakeApis()
+    fake.pr_body = body
+    monkeypatch.setattr(run_titles, "api", fake.fabro)
+    monkeypatch.setattr(run_titles, "github_api", fake.github)
+    state = {}
+
+    run_titles.sweep(state)
+
+    assert fake.body_patches == []
+    assert state[RUN_ID]["issue"] == "existing"
+
+
+@pytest.mark.parametrize("body", ["See #19", "Closes #190", "Closes #1", None])
+def test_other_issue_mentions_do_not_count_as_closing(run_titles, body):
+    assert not run_titles.closes_issue(body, 19)
+
+
+def test_github_token_falls_back_to_the_fabro_vault(monkeypatch, tmp_path, run_titles):
+    vault = tmp_path / "secrets.json"
+    vault.write_text('{"GITHUB_TOKEN": {"value": "from-vault\\n"}}')
+    monkeypatch.setattr(run_titles, "VAULT", str(vault))
+    assert run_titles.vault_github_token() == "from-vault"
+    monkeypatch.setattr(run_titles, "VAULT", str(tmp_path / "missing.json"))
+    assert run_titles.vault_github_token() == ""
