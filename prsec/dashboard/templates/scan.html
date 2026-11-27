@@ -60,16 +60,44 @@
 {% set health_badge = {'ok': 'st-ok', 'failed': 'st-failed', 'partial': 'st-running'} %}
 <section class="card">
   <div class="section-heading">
+    <h2>Review decision path</h2>
+    <p class="muted">Each stage decision in pipeline order, including fan-out stage runs and malformed or failed outputs.</p>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Phase</th><th>Agent</th><th>Status</th><th>Decision</th><th>Details</th><th>Task</th><th>Errors</th></tr></thead>
+      <tbody>
+      {% for r in decision_path %}
+        <tr>
+          <td>{{ r.phase }}</td>
+          <td><strong>{{ r.role }}</strong><br><span class="muted">{{ r.stage }}</span></td>
+          <td><span class="badge st-{{ r.status }}">{{ r.status }}</span></td>
+          <td><code>{{ r.decision }}</code></td>
+          <td class="wrap-anywhere">{{ r.summary or '-' }}</td>
+          <td><code>{{ r.task_id or '-' }}</code></td>
+          <td>{% for e in r.errors %}<div class="err wrap-anywhere">{{ e }}</div>{% else %}<span class="muted">-</span>{% endfor %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="muted">No stage decisions recorded yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <div class="section-heading">
     <h2>Agents</h2>
     <p class="muted">The agent pipeline for this scan, in order. Each row is one agent and fan-out stages collapse per-hypothesis runs.</p>
   </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Agent</th><th>Stage</th><th class="num">Runs</th><th>Status</th><th>Decision</th>
+      <thead><tr><th>Phase</th><th>Agent</th><th>Stage</th><th class="num">Runs</th><th>Status</th><th>Decision</th>
         <th class="num">Tokens</th><th class="num">Turns</th><th class="num">Cost</th><th class="num">Duration</th></tr></thead>
       <tbody>
       {% for a in agents %}
         <tr>
+          <td>{{ a.phase }}</td>
           <td><strong>{{ a.role }}</strong></td>
           <td><code>{{ a.stage }}</code></td>
           <td class="num">{{ a.runs }}</td>
@@ -81,7 +109,7 @@
           <td class="num">{{ a.duration_s | dur }}</td>
         </tr>
       {% else %}
-        <tr><td colspan="9" class="muted">No agent runs.</td></tr>
+        <tr><td colspan="10" class="muted">No agent runs.</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -107,7 +135,7 @@
           <td>{{ r.harness }}</td>
           <td>{{ r.model }}</td>
           <td><span class="badge st-{{ r.status }}">{{ r.status }}</span></td>
-          <td class="wrap-anywhere">{{ r.summary or '-' }}</td>
+          <td class="wrap-anywhere">{{ r.summary or r.decision }}</td>
           <td class="num">{{ r.attempts }}</td>
           <td class="num">{{ r.usage.tokens_in or 0 }} / {{ r.usage.tokens_out or 0 }}</td>
           <td class="num">{{ r.turns or '-' }}</td>

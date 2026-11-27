@@ -292,12 +292,30 @@ def metrics() -> dict[str, Any]:
         ).fetchall()
         agg = conn.execute(
             """SELECT count(*) FILTER (WHERE status IN ('done', 'skipped', 'failed')) AS finished,
-                      count(*) FILTER (WHERE status = 'skipped') AS skipped,
-                      count(*) FILTER (WHERE status = 'done') AS done,
-                      COALESCE(avg(cost_usd) FILTER (WHERE status IN ('done', 'skipped', 'failed')), 0)::float AS avg_cost,
+                       count(*) FILTER (WHERE status = 'skipped') AS skipped,
+                       count(*) FILTER (WHERE status = 'done') AS done,
+                       COALESCE(avg(cost_usd) FILTER (WHERE status IN ('done', 'skipped', 'failed')), 0)::float AS avg_cost,
                       COALESCE(sum(cost_usd), 0)::float AS total_cost,
                       avg(EXTRACT(EPOCH FROM (finished_at - started_at)))::float AS avg_duration_s
                FROM scans WHERE created_at > now() - interval '30 days'"""
+        ).fetchone()
+        review_funnel = conn.execute(
+            """SELECT count(*) AS triggered,
+                      count(*) FILTER (WHERE status IN ('queued', 'running')) AS active,
+                      count(*) FILTER (WHERE status = 'skipped') AS skipped,
+                      count(*) FILTER (WHERE status = 'failed') AS failed,
+                      count(*) FILTER (WHERE status = 'done') AS fully_reviewed
+               FROM scans
+               WHERE created_at > now() - interval '30 days'"""
+        ).fetchone()
+        findings_funnel = conn.execute(
+            """SELECT count(*) AS findings_total,
+                      count(*) FILTER (WHERE o.label = 'reproduced') AS reproduced,
+                      count(*) FILTER (WHERE o.label = 'likely') AS likely,
+                      count(*) FILTER (WHERE o.label = 'inconclusive') AS inconclusive
+               FROM finding_occurrences o
+               JOIN scans s ON s.id = o.scan_id
+               WHERE s.created_at > now() - interval '30 days'"""
         ).fetchone()
 
         def precision_by(col: str) -> list[dict]:
@@ -341,10 +359,52 @@ def metrics() -> dict[str, Any]:
                  AND task_id NOT LIKE '%-shadow-%'  -- shadow arms (policy `shadows`) are not the stage's agent
                GROUP BY stage"""
         ).fetchall()
+        stage_decisions = conn.execute(
+            """SELECT stage,
+                      CASE
+                          WHEN jsonb_typeof(output) = 'object' AND stage IN ('rules', 'triage')
+                               AND COALESCE(output->>'decision', '') <> ''
+                              THEN output->>'decision'
+                          WHEN jsonb_typeof(output) = 'object' AND stage = 'hypothesise'
+                               AND jsonb_typeof(output->'hypotheses') = 'array'
+                              THEN CASE
+                                  WHEN jsonb_array_length(output->'hypotheses') = 1 THEN '1_hypothesis'
+                                  ELSE jsonb_array_length(output->'hypotheses')::text || '_hypotheses'
+                              END
+                          WHEN jsonb_typeof(output) = 'object' AND stage = 'static_verify'
+                               AND COALESCE(output->>'verdict', '') <> ''
+                              THEN output->>'verdict'
+                          WHEN jsonb_typeof(output) = 'object' AND stage = 'skeptic'
+                               AND jsonb_typeof(output->'refuted') = 'boolean'
+                              THEN CASE output->>'refuted' WHEN 'true' THEN 'refuted' WHEN 'false' THEN 'upheld' END
+                          WHEN jsonb_typeof(output) = 'object' AND stage = 'env'
+                               AND output ? 'envspec' AND output->'envspec' <> 'null'::jsonb
+                              THEN 'envspec_written'
+                          WHEN jsonb_typeof(output) = 'object' AND stage = 'dynamic'
+                               AND COALESCE(output->>'outcome', '') <> ''
+                              THEN output->>'outcome'
+                          WHEN status <> 'ok' THEN status
+                          ELSE 'unknown'
+                      END AS decision,
+                      count(*) AS runs,
+                      count(*) FILTER (WHERE status = 'ok') AS ok,
+                      count(*) FILTER (WHERE status <> 'ok') AS failed,
+                      avg(duration_s)::float AS avg_duration_s,
+                      COALESCE(avg((usage->>'usd')::float), 0)::float AS avg_cost,
+                      COALESCE(avg((usage->>'tokens_in')::float + (usage->>'tokens_out')::float), 0)::float AS avg_tokens,
+                      COALESCE(avg((usage->>'turns')::float), 0)::float AS avg_turns
+               FROM stage_runs
+               WHERE created_at > now() - interval '30 days'
+                 AND task_id NOT LIKE '%-shadow-%'
+               GROUP BY stage, decision"""
+        ).fetchall()
         for r in [*per_harness, *per_stage_harness, *per_stage]:
             r["ok_rate"] = round(r["ok"] / r["runs"], 3) if r["runs"] else None
         order = {s.value: i for i, s in enumerate(Stage)}
         per_stage.sort(key=lambda r: order.get(r["stage"], 99))
+        for r in stage_decisions:
+            r["ok_rate"] = round(r["ok"] / r["runs"], 3) if r["runs"] else None
+        stage_decisions.sort(key=lambda r: (order.get(r["stage"], 99), r["decision"]))
         by_bug_class = precision_by("bug_class")
         by_label = precision_by("label")
 
@@ -359,6 +419,18 @@ def metrics() -> dict[str, Any]:
         "avg_cost_usd": round(agg["avg_cost"], 4),
         "total_cost_usd": round(agg["total_cost"], 4),
         "avg_duration_s": agg["avg_duration_s"],
+        "review_funnel": {
+            "triggered": review_funnel["triggered"],
+            "active": review_funnel["active"],
+            "skipped": review_funnel["skipped"],
+            "failed": review_funnel["failed"],
+            "fully_reviewed": review_funnel["fully_reviewed"],
+            "findings_total": findings_funnel["findings_total"],
+            "reproduced": findings_funnel["reproduced"],
+            "likely": findings_funnel["likely"],
+            "inconclusive": findings_funnel["inconclusive"],
+        },
+        "stage_decisions": stage_decisions,
         "precision_by_bug_class": by_bug_class,
         "precision_by_label": by_label,
         "per_harness": per_harness,
