@@ -2,7 +2,7 @@
 
 This folder configures [Fabro](https://docs.fabro.sh) to turn an approved GitHub
 issue into a draft pull request: spec, human approval, code, automated checks,
-one independent review (standard or security), PR.
+code review, security review where needed, PR.
 
 Nothing here runs by itself. A maintainer starts it, from the Fabro web UI or
 on a machine where Fabro is installed and logged in.
@@ -14,7 +14,7 @@ on a machine where Fabro is installed and logged in.
 | `project.toml` | Fabro project settings (draft PRs on successful runs). |
 | `docker/Dockerfile` | Sandbox image: Python 3.12, git, `gh`, project dependencies, and a Postgres for the tests marked `db`. |
 | `workflows/issue-to-pr/` | The workflow graph (`workflow.fabro`) and its run settings (`workflow.toml`). The graph is the same file in every repository that uses the pipeline; what is specific to this one is in `workflow.toml`. |
-| `skills/` | Skills the model stages are told to follow: spec writing and task breakdown for the planner, test-driven and incremental implementation for the implementer, systematic debugging for the fix stages, verification before completion for every stage that changes code, code review for the standard reviewer, and the Trail of Bits `differential-review` skill for the security reviewer. `skills/README.md` lists which stage uses which, with source and license. |
+| `skills/` | Skills the model stages are told to follow: spec writing and task breakdown for the planner, test-driven and incremental implementation for the implementer, systematic debugging for the fix stages, verification before completion for every stage that changes code, code review for the code reviewer of every change, and the Trail of Bits `differential-review` skill for the security reviewer. `skills/README.md` lists which stage uses which, with source and license. |
 | `workflows/fix-ci/` | Second workflow: repairs a Fabro pull request whose CI checks failed. |
 | `scripts/sync-pipeline` | Copies the shared pipeline files to the other repositories, or checks that they match. |
 | `scripts/construct-build` | Convenience command that builds every approved issue. |
@@ -57,20 +57,20 @@ on a machine where Fabro is installed and logged in.
       passes it prepares the review: the complete change as one diff file, a
       brief (size, security triggers, and any loosened checks such as
       skipped or deleted tests, removed assertions and new suppression
-      comments), and the choice of reviewer.
-   7. **Reviews** independently, with one reviewer per round and a fresh
-      context. Both reviewers read the spec, the diff file and the brief,
-      write a verdict that a script reads, and may not edit files.
-      - The **standard reviewer** (balanced model) checks the change against
-        the acceptance criteria, then the tests, correctness, a short
-        security pass and complexity. It can hand the change over to the
-        security reviewer.
-      - The **security reviewer** (strong model) gets every change that is
-        security-sensitive, high-risk or large. It follows the Trail of Bits
-        `differential-review` skill in `skills/`: risk triage per file, git
-        history of removed code, test coverage, blast radius, and attacker
-        modelling for high-risk files. It is then the only reviewer, so it
-        also checks the change against the spec.
+      comments), and whether a security review is needed.
+   7. **Reviews** independently, in two steps with one job each. Each
+      reviewer has a fresh context, reads the spec, the diff file and the
+      brief, writes a verdict that a script reads, and may not edit files.
+      1. **Code review** (balanced model), for every change. It follows the
+         `code-review-and-quality` skill in `skills/`: the change against
+         the acceptance criteria, then the tests, correctness, a short
+         security pass and complexity. It can ask for a security review.
+      2. **Security review** (strong model), after a passed code review, for
+         every change that is security-sensitive, high-risk or large, or
+         that the code reviewer flagged. It reviews security only and
+         follows the Trail of Bits `differential-review` skill in `skills/`:
+         risk triage per file, git history of removed code, test coverage,
+         blast radius, and attacker modelling for high-risk files.
    8. **Fixes.** A failed check or a rejected review is written to one file,
       `/tmp/fabro/todo.md`, and goes back to the implementer, later to the
       strong model, then steps 6 and 7 run again. A second review looks at
@@ -166,20 +166,22 @@ The two models are set once, in the `model_stylesheet` at the top of
 | Stage | Model | Why |
 |---|---|---|
 | Plan, security review, escalated fix | strong (`gpt-5.5`, high effort) | Mistakes here are the expensive ones. |
-| Implement, fix, standard review | balanced (`gpt-5.4`) | Most of the tokens are spent here. |
+| Implement, fix, code review | balanced (`gpt-5.4`) | Most of the tokens are spent here. |
 
 Routing is decided by scripts, not by a model:
 
 - **Failed verification.** The implementer gets the first
   `first_fix_attempts` failures in a row, the strong model the next ones up
   to `max_fix_attempts`, then the run pauses and asks a human.
-- **Which reviewer.** A change gets the security reviewer if it touches one
-  of the `sensitive_paths`, adds a risky construct (subprocess, SQL
-  execution, network calls, secrets and the like), has more than
-  `max_standard_review_lines` changed lines, or the spec says
-  `Risk level: high` or states no risk level. Everything else gets the
-  standard reviewer. If that one asks for a security review, or its verdict
-  is unreadable, the security reviewer takes over for the rest of the run.
+- **Which reviews.** Every change gets the code review. After it passes,
+  the change also gets the security review if it touches one of the
+  `sensitive_paths`, adds a risky construct (subprocess, SQL execution,
+  network calls, secrets and the like), has more than
+  `max_standard_review_lines` changed lines, the spec says
+  `Risk level: high` or states no risk level, or the code reviewer asked for
+  it. A rejection by either reviewer goes to a fix, and after the fix the
+  reviews start again with the code review. An unreadable verdict goes to a
+  human.
 - **Rejected review.** The first rejection goes to the implementer, the next
   one to the strong model. After `max_review_rounds` rejections a human is
   asked, and at once when a finding says the spec itself is wrong.
@@ -209,9 +211,9 @@ aimed at the model, and limits what such instructions can achieve:
   voids the approval.
 - A human approves the spec before code is written. The spec must list any
   suspicious instructions found in the issue.
-- An independent reviewer checks the finished change. Security-sensitive
-  changes go to the security reviewer; the standard reviewer does a short
-  security pass and hands over when in doubt. The verdict is read by a script
+- An independent code reviewer checks every finished change. It does a short
+  security pass and asks for a security review when in doubt;
+  security-sensitive changes get the security review in any case. The verdict is read by a script
   that fails closed, and a review during which files changed is discarded.
 - Loosened checks (skipped or deleted tests, removed assertions, suppression
   comments) are found by a script and put in front of the reviewer.
@@ -370,8 +372,8 @@ Edit `workflows/issue-to-pr/workflow.toml`:
 - `approval_label`: the label name.
 - `in_progress_label`: the label a run adds to the issue it accepts.
 - `first_fix_attempts`, `max_fix_attempts`, `max_review_rounds`: retry budgets.
-- `max_standard_review_lines`, `sensitive_paths`: when the security reviewer
-  is used.
+- `max_standard_review_lines`, `sensitive_paths`: when a change also gets
+  the security review.
 - `install_command`, `lint_command`, `test_command`, `test_notes`,
   `protected_prefixes`, `protected_files`, `repo_description`, `repo_rules`:
   what is specific to this repository.
