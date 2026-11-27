@@ -86,6 +86,8 @@ def _fresh_dir(path: Path) -> Path:
     if path.exists():
         shutil.rmtree(path)
     path.mkdir(parents=True)
+    # a default ACL (e.g. Codespaces /tmp) overrides the umask on mkdir
+    path.chmod(0o755)
     return path
 
 
@@ -195,7 +197,9 @@ def _seed_dir(st: _State, src: Path, env_name: str, name: str, seeds: list[str],
             log.warning("scan %s: seed %r of %s is not a data file (%s); skipped", st.ctx.scan_id, rel, name,
                         ", ".join(entry.seed_suffixes))
             continue
-        shutil.copyfile(f, out / f"{n:02d}-{f.name}")
+        dest = out / f"{n:02d}-{f.name}"
+        shutil.copyfile(f, dest)
+        dest.chmod(0o644)  # the service container reads seeds as a non-root uid
     return str(out)
 
 
